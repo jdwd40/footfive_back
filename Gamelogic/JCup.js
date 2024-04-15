@@ -73,7 +73,7 @@ class JCup {
             this.teams = winners;
             this.currentRound = 4;
             const winner = winners[0];
-            Team.addJCupsWon(winner.id);
+            await Team.addJCupsWon(winner.id);
             const runner = null;
             return {
                 roundResults,

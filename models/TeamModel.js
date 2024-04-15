@@ -89,7 +89,7 @@ class Team {
             SELECT name, jcups_won
             FROM teams
             ORDER BY jcups_won DESC
-            LIMIT 3
+            LIMIT 10
         `);
 
         return result.rows;

@@ -12,7 +12,16 @@ class MatchSimulator {
     simulate() {
         for (this.minute = 1; this.minute <= 90; this.minute++) {
             this.simulateMinute();
+            if (this.minute === 45 ) {
+                this.highlights.push("Half time: The score is " + this.score[this.team1.name] + "-" + this.score[this.team2.name]);
+                this.shortHighlights.push("Half time: " + this.score[this.team1.name] + "-" + this.score[this.team2.name]);
+            }
+            if (this.minute === 90) {
+                this.highlights.push("Full time: The score is " + this.score[this.team1.name] + "-" + this.score[this.team2.name]);
+                this.shortHighlights.push("Full time: " + this.score[this.team1.name] + "-" + this.score[this.team2.name]);
+            }
         }
+
         if (this.score[this.team1.name] === this.score[this.team2.name]) {
             this.highlights.push("Full time: The match is a draw. Starting penalty shootout.");
             this.shortHighlights.push("Starting penalty shootout.");
@@ -63,10 +72,10 @@ class MatchSimulator {
             if (!this.goalkeeperSaves(defendingTeam)) {
                 this.score[attackingTeam.name]++;
                 this.highlights.push(`${this.minute}': GOAL by ${attackingTeam.name}! Score is now ${this.score[attackingTeam.name]}-${this.score[defendingTeam.name]}`);
-                this.shortHighlights.push(`${this.minute}': GOAL by ${attackingTeam.name}`);
+                this.shortHighlights.push(`${this.minute}': GOAL by ${attackingTeam.name}`,`  Latest score: ${attackingTeam.name} ${this.score[attackingTeam.name]} - ${defendingTeam.name} ${this.score[defendingTeam.name]}` );
             } else {
                 this.highlights.push(`${this.minute}': Shot on target by ${attackingTeam.name} saved by ${defendingTeam.name}`);
-                this.shortHighlights.push(`${this.minute}': Shot on target saved by ${defendingTeam.name}`);
+                this.shortHighlights.push(`${this.minute}': Shot on target by ${attackingTeam.name}. Saved!!`);
             }
         } else {
             this.highlights.push(`${this.minute}': Shot by ${attackingTeam.name} missed`);
@@ -87,6 +96,7 @@ class MatchSimulator {
             this.shortHighlights.push(`${this.minute}': PENALTY missed by ${attackingTeam.name}`);
         }
     }
+// ------------------------------ pen shoot out --------------------
 
     handlePenaltyShootout() {
         let team1Score = 0;
@@ -130,7 +140,7 @@ class MatchSimulator {
             this.shortHighlights.push(`Winner: ${this.team2.name} on penalties (${team1Score}-${team2Score})`);
         }
     }
-
+// ----------------------- 
     formatFinalResult() {
         if (Object.values(this.penaltyScore).some(score => score > 0)) {
             return `${this.team1.name} ${this.score[this.team1.name]}(${this.penaltyScore[this.team1.name]}) - ${this.team2.name} ${this.score[this.team2.name]}(${this.penaltyScore[this.team2.name]})`;
