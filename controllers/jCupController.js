@@ -26,6 +26,16 @@ exports.playRound = async (req, res) => {
 
     try {
         const roundResults = await jCup.simulateRound(); // Simulate the current round
+
+        // Check if it's round 4
+        if (jCup.currentRound === 4) {
+            console.log(roundResults);
+            return res.status(200).json({
+                message: `Final played successfully.`,
+                results: roundResults
+            });
+        }
+
         return res.status(200).json({
             message: `Round ${jCup.currentRound} played successfully.`,
             results: roundResults
@@ -37,3 +47,22 @@ exports.playRound = async (req, res) => {
         });
     }
 };
+
+// increace jcupwon count
+exports.jCupWon = async (req, res) => {
+    try {
+        const {winner_id, runner_id} = req.body;
+        const jCupWon = await jCup.jCupWon(winner_id, runner_id);
+        return res.status(200).json({
+            message: "jCupWon updated successfully",
+            jCupWon: jCupWon
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: "Failed to increase jCupWon",
+            error: error.message
+        });
+    }
+};
+
+

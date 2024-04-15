@@ -56,7 +56,7 @@ class JCup {
             }
             match.team1 = await Team.getRatingByTeamName(match.team1.name);
             match.team2 = await Team.getRatingByTeamName(match.team2.name);
-            const result = await new MatchSimulator(match.team1, match.team2).simulate();
+            const result = new MatchSimulator(match.team1, match.team2).simulate();
             const winner = result.score[match.team1.name] > result.score[match.team2.name] ? match.team1 : match.team2;
             winners.push(winner);
             roundResults.push(result.finalResult);
@@ -71,10 +71,17 @@ class JCup {
         } else {
             // Reset for a new tournament if you want to start over automatically
             this.teams = winners;
-            this.currentRound = 0;
-            this.fixtures = [];
-            this.results = [];
-            this.generateFixtures();
+            this.currentRound = 4;
+            const winner = winners[0];
+            Team.addJCupsWon(winner.id);
+            const runner = null;
+            return {
+                roundResults,
+                highlights,
+                nextRoundFixtures: this.fixtures[this.currentRound] || "Tournament finished, initializing new tournament.",
+                winner,
+                runner
+            };
         }
 
         return {
@@ -97,7 +104,12 @@ class JCup {
         this.fixtures = [];  // Clear fixtures
         this.results = [];
         // Optionally clear teams if they are supposed to be reloaded each tournament
-        // this.teams = [];
+        this.teams = [];
+    }
+
+    async jCupWon(winner_id) {
+        await Team.addJCupsWon(winner_id);
+        return { msg: "updated" };
     }
     
 }
