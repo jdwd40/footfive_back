@@ -2,11 +2,11 @@ module.exports = [
     {
         name: "Metro City",
         players: [
-            { name: "R Burke", attack: 95, defense: 50, isGoalkeeper: false },
-            { name: "E Martin", attack: 93, defense: 76, isGoalkeeper: false },
-            { name: "M Lassila", attack: 40, defense: 85, isGoalkeeper: false },
-            { name: "C Mason", attack: 30, defense: 87, isGoalkeeper: false },
-            { name: "D O'Brien", attack: 30, defense: 75, isGoalkeeper: true }
+            { name: "R Burke", attack: 85, defense: 50, isGoalkeeper: false },
+            { name: "E Martin", attack: 87, defense: 56, isGoalkeeper: false },
+            { name: "M Lassila", attack: 40, defense: 83, isGoalkeeper: false },
+            { name: "C Mason", attack: 33, defense: 77, isGoalkeeper: false },
+            { name: "D O'Brien", attack: 33, defense: 75, isGoalkeeper: true }
         ]
     },
     {
@@ -63,7 +63,7 @@ module.exports = [
         name: "Orlean City",
         players: [
             { name: "E Normand", attack: 60, defense: 45, isGoalkeeper: false },
-            { name: "F Bergeron", attack: 72, defense: 37, isGoalkeeper: false },
+            { name: "F Bergeron", attack: 62, defense: 37, isGoalkeeper: false },
             { name: "G Hebert", attack: 38, defense: 63, isGoalkeeper: false },
             { name: "H Boudreaux", attack: 30, defense: 55, isGoalkeeper: false },
             { name: "I Thibodeaux", attack: 40, defense: 70, isGoalkeeper: true }
@@ -75,7 +75,7 @@ module.exports = [
             { name: "G Monet", attack: 72, defense: 48, isGoalkeeper: false },
             { name: "H Dupont", attack: 70, defense: 46, isGoalkeeper: false },
             { name: "I Beaumont", attack: 39, defense: 65, isGoalkeeper: false },
-            { name: "J Martel", attack: 41, defense: 67, isGoalkeeper: false },
+            { name: "J Martel", attack: 41, defense: 57, isGoalkeeper: false },
             { name: "K Moreau", attack: 49, defense: 69, isGoalkeeper: true }
         ]
     }
@@ -86,17 +86,17 @@ module.exports = [
             { name: "I Reaves", attack: 45, defense: 30, isGoalkeeper: false },
             { name: "B Elector", attack: 47, defense: 52, isGoalkeeper: false },
             { name: "W Larista", attack: 26, defense: 41, isGoalkeeper: false },
-            { name: "C Vertile", attack: 18, defense: 33, isGoalkeeper: false },
-            { name: "H Harris", attack: 38, defense: 58, isGoalkeeper: true }
+            { name: "C Vertile", attack: 18, defense: 43, isGoalkeeper: false },
+            { name: "H Harris", attack: 38, defense: 68, isGoalkeeper: true }
         ]
     },
     {
         name: "Atlan City",
         players: [
-            { name: "A Renault", attack: 43, defense: 18, isGoalkeeper: false },
-            { name: "B Lacroix", attack: 41, defense: 16, isGoalkeeper: false },
+            { name: "A Renault", attack: 73, defense: 18, isGoalkeeper: false },
+            { name: "B Lacroix", attack: 51, defense: 16, isGoalkeeper: false },
             { name: "C Joubert", attack: 14, defense: 49, isGoalkeeper: false },
-            { name: "D Fontaine", attack: 12, defense: 47, isGoalkeeper: false },
+            { name: "D Fontaine", attack: 22, defense: 47, isGoalkeeper: false },
             { name: "E Marchand", attack: 42, defense: 62, isGoalkeeper: true }
         ]
     }
@@ -114,8 +114,8 @@ module.exports = [
     {
         name: "Virgin City",
         players: [
-            { name: "J Fontenot", attack: 82, defense: 18, isGoalkeeper: false },
-            { name: "K Landry", attack: 80, defense: 16, isGoalkeeper: false },
+            { name: "J Fontenot", attack: 82, defense: 28, isGoalkeeper: false },
+            { name: "K Landry", attack: 77, defense: 26, isGoalkeeper: false },
             { name: "L Robichaux", attack: 19, defense: 75, isGoalkeeper: false },
             { name: "M Guidry", attack: 21, defense: 67, isGoalkeeper: false },
             { name: "N Leblanc", attack: 59, defense: 69, isGoalkeeper: true }
@@ -134,31 +134,31 @@ module.exports = [
     {
         name: "Metro Bay",
         players: [
-            { name: "T Dufrene", attack: 33, defense: 18, isGoalkeeper: false },
+            { name: "T Dufrene", attack: 63, defense: 18, isGoalkeeper: false },
             { name: "U Fournet", attack: 31, defense: 16, isGoalkeeper: false },
-            { name: "G Vaudin", attack: 34, defense: 29, isGoalkeeper: false },
-            { name: "A Plank", attack: 52, defense: 37, isGoalkeeper: false },
+            { name: "G Vaudin", attack: 24, defense: 29, isGoalkeeper: false },
+            { name: "A Plank", attack: 22, defense: 37, isGoalkeeper: false },
             { name: "X Melancon", attack: 42, defense: 52, isGoalkeeper: true }
         ]
     },
     {
         name: "Redstone City",
         players: [
-            { name: "L Morel", attack: 35, defense: 10, isGoalkeeper: false },
-            { name: "M Noel", attack: 37, defense: 12, isGoalkeeper: false },
-            { name: "N Monet", attack: 36, defense: 31, isGoalkeeper: false },
-            { name: "O Boucher", attack: 38, defense: 43, isGoalkeeper: false },
+            { name: "L Morel", attack: 75, defense: 10, isGoalkeeper: false },
+            { name: "M Noel", attack: 47, defense: 12, isGoalkeeper: false },
+            { name: "N Monet", attack: 26, defense: 41, isGoalkeeper: false },
+            { name: "O Boucher", attack: 28, defense: 43, isGoalkeeper: false },
             { name: "P Durand", attack: 55, defense: 60, isGoalkeeper: true }
         ]
     },
     {
         name: "Swirl City",
         players: [
-            { name: "Q Foret", attack: 34, defense: 19, isGoalkeeper: false },
+            { name: "Q Foret", attack: 54, defense: 19, isGoalkeeper: false },
             { name: "R Loire", attack: 33, defense: 18, isGoalkeeper: false },
-            { name: "S Mare", attack: 22, defense: 27, isGoalkeeper: false },
-            { name: "T Jura", attack: 25, defense: 30, isGoalkeeper: false },
-            { name: "U Ardennes", attack: 30, defense: 55, isGoalkeeper: true }
+            { name: "S Mare", attack: 22, defense: 37, isGoalkeeper: false },
+            { name: "T Jura", attack: 25, defense: 40, isGoalkeeper: false },
+            { name: "U Ardennes", attack: 30, defense: 59, isGoalkeeper: true }
         ]
     }
 

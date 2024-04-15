@@ -13,12 +13,12 @@ class MatchSimulator {
         for (this.minute = 1; this.minute <= 90; this.minute++) {
             this.simulateMinute();
             if (this.minute === 45 ) {
-                this.highlights.push("Half time: The score is " + this.score[this.team1.name] + "-" + this.score[this.team2.name]);
-                this.shortHighlights.push("Half time: " + this.score[this.team1.name] + "-" + this.score[this.team2.name]);
+                this.highlights.push("Half time: The score is " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name);
+                this.shortHighlights.push("---------------------", "Half time: " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name, "----------------", "Second half");
             }
             if (this.minute === 90) {
-                this.highlights.push("Full time: The score is " + this.score[this.team1.name] + "-" + this.score[this.team2.name]);
-                this.shortHighlights.push("Full time: " + this.score[this.team1.name] + "-" + this.score[this.team2.name]);
+                this.highlights.push("Full time: The score is " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name);
+                this.shortHighlights.push("------------------","Full time: " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name);
             }
         }
 
@@ -89,8 +89,8 @@ class MatchSimulator {
     handlePenalty(attackingTeam) {
         if (Math.random() < 0.5) {
             this.score[attackingTeam.name]++;
-            this.highlights.push(`${this.minute}': PENALTY scored by ${attackingTeam.name}!`);
-            this.shortHighlights.push(`${this.minute}': PENALTY scored by ${attackingTeam.name}`);
+            this.highlights.push(`${this.minute}': PENALTY scored by ${attackingTeam.name}! Score is now ${this.score[attackingTeam.name]}-${this.score[this.team2.name]}`);
+            this.shortHighlights.push(`${this.minute}': PENALTY scored by ${attackingTeam.name}`, `  Latest score: ${attackingTeam.name} ${this.score[attackingTeam.name]} - ${this.team2.name} ${this.score[this.team2.name]}`);
         } else {
             this.highlights.push(`${this.minute}': PENALTY missed by ${attackingTeam.name}`);
             this.shortHighlights.push(`${this.minute}': PENALTY missed by ${attackingTeam.name}`);
