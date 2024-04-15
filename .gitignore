@@ -1,0 +1,37 @@
+# Dependency directories
+node_modules/
+/dist
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Production build files
+/build
+
+# Local environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production.local
+
+# Editor directories and files
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+.vs/
+*.swp
+*.swa
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Optional npm cache & logs
+.npm
+*.log
+*.log.*
