@@ -1,3 +1,13 @@
+const HIGHLIGHT_TYPES = {
+    GOAL: 'goal',
+    SHOT: 'shot',
+    PENALTY: 'penalty',
+    HALF_TIME: 'halfTime',
+    FULL_TIME: 'fullTime',
+    BLOCKED: 'blocked',
+    PENALTY_SHOOTOUT: 'penaltyShootout'
+};
+
 class MatchSimulator {
     constructor(team1, team2) {
         this.team1 = team1;
@@ -5,33 +15,48 @@ class MatchSimulator {
         this.score = { [team1.name]: 0, [team2.name]: 0 };
         this.penaltyScore = { [team1.name]: 0, [team2.name]: 0 }; // Track penalty scores separately
         this.highlights = [];
-        this.shortHighlights = []; // New list for short highlights
         this.minute = 0;
+        this.homeTeam = team1.name;
+        this.awayTeam = team2.name;
     }
 
     simulate() {
         for (this.minute = 1; this.minute <= 90; this.minute++) {
             this.simulateMinute();
             if (this.minute === 45 ) {
-                this.highlights.push("Half time: The score is " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name);
-                this.shortHighlights.push("---------------------", "Half time: " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name, "----------------", "Second half");
+                this.highlights.push({
+                    minute: this.minute,
+                    type: HIGHLIGHT_TYPES.HALF_TIME,
+                    description: "Half time: The score is " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name,
+                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                });
+
             }
             if (this.minute === 90) {
-                this.highlights.push("Full time: The score is " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name);
-                this.shortHighlights.push("------------------","Full time: " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name);
+                this.highlights.push({
+                    minute: this.minute,
+                    type: HIGHLIGHT_TYPES.FULL_TIME,
+                    description: "Full time: The score is " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name,
+                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                });
+
             }
         }
 
         if (this.score[this.team1.name] === this.score[this.team2.name]) {
-            this.highlights.push("Full time: The match is a draw. Starting penalty shootout.");
-            this.shortHighlights.push("Starting penalty shootout.");
+            this.highlights.push({
+                minute: 90,
+                type: HIGHLIGHT_TYPES.PENALTY_SHOOTOUT,
+                description: "Full time: The match is a draw. Starting penalty shootout.",
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            });
+
             this.handlePenaltyShootout();
         }
         return {
             score: this.score,
             penaltyScore: this.penaltyScore, // Include penalty scores in the result
             highlights: this.highlights,
-            shortHighlights: this.shortHighlights,
             finalResult: this.formatFinalResult() // Include formatted final result
         };
     }
@@ -59,7 +84,13 @@ class MatchSimulator {
                 this.handleShot(attackingTeam, defendingTeam);
             }
         } else {
-            this.highlights.push(`${this.minute}': Attack by ${attackingTeam.name} blocked by ${defendingTeam.name}`);
+            this.highlights.push({
+                minute: this.minute,
+                type: HIGHLIGHT_TYPES.BLOCKED,
+                team: attackingTeam.name,
+                description: `${this.minute}': Attack by ${attackingTeam.name} blocked by ${defendingTeam.name}`,
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            });
         }
     }
 
@@ -71,14 +102,32 @@ class MatchSimulator {
         if (Math.random() < 0.6) { // Chance of being on target
             if (!this.goalkeeperSaves(defendingTeam)) {
                 this.score[attackingTeam.name]++;
-                this.highlights.push(`${this.minute}': GOAL by ${attackingTeam.name}! Score is now ${this.score[attackingTeam.name]}-${this.score[defendingTeam.name]}`);
-                this.shortHighlights.push(`${this.minute}': GOAL by ${attackingTeam.name}`,`  Latest score: ${attackingTeam.name} ${this.score[attackingTeam.name]} - ${defendingTeam.name} ${this.score[defendingTeam.name]}` );
+                this.highlights.push({
+                    minute: this.minute,
+                    type: HIGHLIGHT_TYPES.GOAL,
+                    team: attackingTeam.name,
+                    description: `${this.minute}': GOAL by ${attackingTeam.name}! Score is now ${this.score[attackingTeam.name]}-${this.score[defendingTeam.name]}`,
+                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                });
+
             } else {
-                this.highlights.push(`${this.minute}': Shot on target by ${attackingTeam.name} saved by ${defendingTeam.name}`);
-                this.shortHighlights.push(`${this.minute}': Shot on target by ${attackingTeam.name}. Saved!!`);
+                this.highlights.push({
+                    minute: this.minute,
+                    type: HIGHLIGHT_TYPES.SHOT,
+                    team: attackingTeam.name,
+                    description: `${this.minute}': Shot on target by ${attackingTeam.name} saved by ${defendingTeam.name}`,
+                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                });
+
             }
         } else {
-            this.highlights.push(`${this.minute}': Shot by ${attackingTeam.name} missed`);
+            this.highlights.push({
+                minute: this.minute,
+                type: HIGHLIGHT_TYPES.SHOT,
+                team: attackingTeam.name,
+                description: `${this.minute}': Shot by ${attackingTeam.name} missed`,
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            });
         }
     }
 
@@ -89,11 +138,23 @@ class MatchSimulator {
     handlePenalty(attackingTeam) {
         if (Math.random() < 0.5) {
             this.score[attackingTeam.name]++;
-            this.highlights.push(`${this.minute}': PENALTY scored by ${attackingTeam.name}! Score is now ${this.score[attackingTeam.name]}-${this.score[this.team2.name]}`);
-            this.shortHighlights.push(`${this.minute}': PENALTY scored by ${attackingTeam.name}`, `  Latest score: ${attackingTeam.name} ${this.score[attackingTeam.name]} - ${this.team2.name} ${this.score[this.team2.name]}`);
+            this.highlights.push({
+                minute: this.minute,
+                type: HIGHLIGHT_TYPES.PENALTY,
+                team: attackingTeam.name,
+                description: `${this.minute}': PENALTY scored by ${attackingTeam.name}! Score is now ${this.score[attackingTeam.name]}-${this.score[this.team2.name]}`,
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            });
+
         } else {
-            this.highlights.push(`${this.minute}': PENALTY missed by ${attackingTeam.name}`);
-            this.shortHighlights.push(`${this.minute}': PENALTY missed by ${attackingTeam.name}`);
+            this.highlights.push({
+                minute: this.minute,
+                type: HIGHLIGHT_TYPES.PENALTY,
+                team: attackingTeam.name,
+                description: `${this.minute}': PENALTY missed by ${attackingTeam.name}`,
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            });
+
         }
     }
 // ------------------------------ pen shoot out --------------------
@@ -117,12 +178,24 @@ class MatchSimulator {
     takePenalty(team) {
         const success = Math.random() < 0.75;
         if (success) {
-            this.highlights.push(`Penalty Shootout: ${team.name} scores!`);
-            this.shortHighlights.push(`Penalty: ${team.name} scores!`);
+            this.highlights.push({
+                minute: 90,
+                type: HIGHLIGHT_TYPES.PENALTY_SHOOTOUT,
+                team: team.name,
+                description: `Penalty Shootout: ${team.name} scores!`,
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            });
+
             return 1;
         } else {
-            this.highlights.push(`Penalty Shootout: ${team.name} misses!`);
-            this.shortHighlights.push(`Penalty: ${team.name} misses!`);
+            this.highlights.push({
+                minute: 90,
+                type: HIGHLIGHT_TYPES.PENALTY_SHOOTOUT,
+                team: team.name,
+                description: `Penalty Shootout: ${team.name} misses!`,
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            });
+
             return 0;
         }
     }
@@ -131,13 +204,25 @@ class MatchSimulator {
         if (team1Score > team2Score) {
             this.score[this.team1.name] += team1Score;
             this.score[this.team2.name] += team2Score;
-            this.highlights.push(`Penalty Shootout Winner: ${this.team1.name} on penalties (${team1Score}-${team2Score})`);
-            this.shortHighlights.push(`Winner: ${this.team1.name} on penalties (${team1Score}-${team2Score})`);
+            this.highlights.push({
+                minute: 90,
+                type: HIGHLIGHT_TYPES.PENALTY_SHOOTOUT,
+                team: this.team1.name,
+                description: `Penalty Shootout Winner: ${this.team1.name} on penalties (${team1Score}-${team2Score})`,
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            });
+
         } else {
             this.score[this.team1.name] += team1Score;
             this.score[this.team2.name] += team2Score;
-            this.highlights.push(`Penalty Shootout Winner: ${this.team2.name} on penalties (${team1Score}-${team2Score})`);
-            this.shortHighlights.push(`Winner: ${this.team2.name} on penalties (${team1Score}-${team2Score})`);
+            this.highlights.push({
+                minute: 90,
+                type: HIGHLIGHT_TYPES.PENALTY_SHOOTOUT,
+                team: this.team2.name,
+                description: `Penalty Shootout Winner: ${this.team2.name} on penalties (${team1Score}-${team2Score})`,
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            });
+
         }
     }
 // ----------------------- 

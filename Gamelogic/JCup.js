@@ -44,14 +44,12 @@ class JCup {
 
         const matches = this.fixtures[this.currentRound];
         const roundResults = [];
-        const highlights = [];
         const winners = [];
 
         for (const match of matches) {
             console.log(match);
             if (match.team2 === null) {  // Check for a bye
                 winners.push(match.team1);
-                highlights.push(`${match.team1.name} had a bye.`);
                 continue;
             }
             match.team1 = await Team.getRatingByTeamName(match.team1.name);
@@ -59,11 +57,22 @@ class JCup {
             const result = new MatchSimulator(match.team1, match.team2).simulate();
             const winner = result.score[match.team1.name] > result.score[match.team2.name] ? match.team1 : match.team2;
             winners.push(winner);
-            roundResults.push(result.finalResult);
-            highlights.push(result.shortHighlights);
+            roundResults.push({
+                score: result.score,
+                penaltyScore: result.penaltyScore,
+                highlights: result.highlights,
+                finalResult: result.finalResult,
+                matchMetadata: {
+                    homeTeam: match.team1.name,
+                    awayTeam: match.team2.name,
+                    venue: "Stadium Name", // This could be made dynamic in the future
+                    date: new Date().toISOString(),
+                    round: `Round ${this.currentRound + 1}`
+                }
+            });
         }
 
-        this.results.push({ roundResults, highlights });
+        this.results.push({ roundResults });
         this.currentRound++;
 
         if (winners.length > 1) {
@@ -77,7 +86,6 @@ class JCup {
             const runner = null;
             return {
                 roundResults,
-                highlights,
                 nextRoundFixtures: this.fixtures[this.currentRound] || "Tournament finished, initializing new tournament.",
                 winner,
                 runner
@@ -86,7 +94,6 @@ class JCup {
 
         return {
             roundResults,
-            highlights,
             nextRoundFixtures: this.fixtures[this.currentRound] || "Tournament finished, initializing new tournament."
         };
     }
