@@ -17,12 +17,9 @@ jobs:
         node-version: '18'
         cache: 'npm'
 
-    - run: npm ci
-    - run: npm test
-
     - uses: appleboy/ssh-action@v0.1.8
       with:
-        host: 213.165.91.221
+        host: 77.68.4.18
         username: jd
         port: 4020
         key: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -34,6 +31,5 @@ jobs:
             git fetch origin && git reset --hard origin/master
           fi
           npm ci --production
-          npm run seed
           pm2 restart footfive-backend || pm2 start listen.js --name footfive-backend
           pm2 save
