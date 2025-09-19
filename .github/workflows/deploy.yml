@@ -1,0 +1,39 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - run: npm ci
+    - run: npm test
+
+    - uses: appleboy/ssh-action@v0.1.8
+      with:
+        host: 213.165.91.221
+        username: jd
+        port: 4020
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          cd /home/jd/footfive-backend
+          if [ ! -d ".git" ]; then
+            git clone https://github.com/jdwd40/footfive_back.git .
+          else
+            git fetch origin && git reset --hard origin/master
+          fi
+          npm ci --production
+          npm run seed
+          pm2 restart footfive-backend || pm2 start listen.js --name footfive-backend
+          pm2 save
