@@ -30,8 +30,9 @@ jobs:
           else
             git fetch origin && git reset --hard origin/master
           fi
-          source ~/.nvm/nvm.sh
-          nvm use node
-          npm ci --production
-          pm2 restart footfive-backend || pm2 start listen.js --name footfive-backend
-          pm2 save
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+          [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+          /home/jd/.nvm/versions/node/v24.5.0/bin/npm ci --production
+          /home/jd/.nvm/versions/node/v24.5.0/bin/npx pm2 restart footfive-backend || /home/jd/.nvm/versions/node/v24.5.0/bin/npx pm2 start listen.js --name footfive-backend
+          /home/jd/.nvm/versions/node/v24.5.0/bin/npx pm2 save
