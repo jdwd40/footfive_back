@@ -30,6 +30,8 @@ jobs:
           else
             git fetch origin && git reset --hard origin/master
           fi
+          source ~/.nvm/nvm.sh
+          nvm use node
           npm ci --production
           pm2 restart footfive-backend || pm2 start listen.js --name footfive-backend
           pm2 save
