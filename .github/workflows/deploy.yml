@@ -1,4 +1,5 @@
 name: Deploy to VPS
+# Updated with full paths for npm and pm2
 
 on:
   push:
