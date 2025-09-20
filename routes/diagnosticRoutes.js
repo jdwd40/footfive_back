@@ -8,5 +8,6 @@ router.get('/db', diagnosticController.getDatabaseStatus);
 
 // Route to manually seed the database
 router.post('/seed', diagnosticController.seedDatabase);
+router.get('/seed', diagnosticController.seedDatabase); // GET alternative for easier testing
 
 module.exports = router;
