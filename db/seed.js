@@ -1,8 +1,9 @@
 const db = require('./connection'); // Your PostgreSQL connection setup
 const format = require('pg-format');
-const teamsData = require('./data/teams');
 
-const seed = async () => {
+const seed = async (data) => {
+    // Handle both direct teams array and data object with teams property
+    const teamsData = data && data.teams ? data.teams : require('./data/teams');
     // Start by clearing the existing data
     await db.query('DROP TABLE IF EXISTS players CASCADE;');
     await db.query('DROP TABLE IF EXISTS teams CASCADE;');
