@@ -5,7 +5,18 @@
   "main": "index.js",
   "scripts": {
     "seed": "node ./db/run-seed.js",
-    "test": "node test.js",
+    "test": "node test-runner-tdd.js",
+    "test:db": "node test-database.js",
+    "test:match": "node run-tests.js test-match-simulator.js",
+    "test:jcup": "node run-tests.js test-jcup-gamelogic.js",
+    "test:team": "node run-tests.js test-team-model.js",
+    "test:team-api": "node run-tests.js test-team-controller.js",
+    "test:jcup-api": "node run-tests.js test-jcup-controller.js",
+    "test:gamelogic": "npm run test:match && npm run test:jcup",
+    "test:api": "npm run test:team-api && npm run test:jcup-api",
+    "test:all": "npm run test:gamelogic && npm run test:team && npm run test:api",
+    "test:legacy": "node test.js",
+    "test:setup": "node run-tests.js --setup-only",
     "start": "node listen.js"
   },
   "keywords": [],
@@ -17,5 +28,8 @@
     "express": "^4.19.2",
     "pg": "^8.11.5",
     "pg-format": "^1.0.4"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.4"
   }
 }

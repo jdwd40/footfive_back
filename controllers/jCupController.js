@@ -25,20 +25,20 @@ exports.playRound = async (req, res) => {
     }
 
     try {
-        const roundResults = await jCup.simulateRound(); // Simulate the current round
+        const simulationResult = await jCup.simulateRound(); // Simulate the current round
 
         // Check if it's round 4
         if (jCup.currentRound === 4) {
-            console.log(roundResults);
+            console.log(simulationResult);
             return res.status(200).json({
                 message: `Final played successfully.`,
-                results: roundResults
+                results: simulationResult.roundResults || simulationResult
             });
         }
 
         return res.status(200).json({
             message: `Round ${jCup.currentRound} played successfully.`,
-            results: roundResults
+            results: simulationResult.roundResults || simulationResult
         });
     } catch (error) {
         return res.status(500).json({
