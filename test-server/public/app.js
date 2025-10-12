@@ -257,7 +257,11 @@ function getEventBadge(type) {
         fullTime: '<span class="badge bg-dark"><i class="bi bi-stop-circle"></i> Full Time</span>',
         blocked: '<span class="badge bg-primary"><i class="bi bi-shield-fill"></i> Blocked</span>',
         penaltyShootout: '<span class="badge bg-danger"><i class="bi bi-bullseye"></i> Penalty Shootout</span>',
+        pressure: '<span class="badge bg-warning"><i class="bi bi-lightning-fill"></i> Pressure</span>',
+        extraTimeStart: '<span class="badge bg-warning text-dark"><i class="bi bi-play-circle"></i> Extra Time Start</span>',
         extraTimeHalf: '<span class="badge bg-warning text-dark"><i class="bi bi-pause-circle"></i> Extra Time Half</span>',
+        extraTimeEnd: '<span class="badge bg-warning text-dark"><i class="bi bi-stop-circle"></i> Extra Time End</span>',
+        // Legacy support for old naming
         extraTimeFull: '<span class="badge bg-warning text-dark"><i class="bi bi-stop-circle"></i> Extra Time End</span>'
     };
 

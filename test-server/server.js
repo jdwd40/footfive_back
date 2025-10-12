@@ -105,7 +105,10 @@ app.post('/api/simulate', async (req, res) => {
         result.highlights.forEach(highlight => {
             if (highlight.type === 'penaltyShootout') {
                 penaltyHighlights.push(highlight);
-            } else if (highlight.minute > 90 && highlight.minute <= 120) {
+            } else if (highlight.type === 'extraTimeStart' || 
+                       highlight.type === 'extraTimeHalf' || 
+                       highlight.type === 'extraTimeEnd' ||
+                       (highlight.minute > 90 && highlight.minute <= 120)) {
                 extraTimeHighlights.push(highlight);
             } else {
                 regularTimeHighlights.push(highlight);
