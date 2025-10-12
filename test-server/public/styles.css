@@ -692,3 +692,471 @@ header .lead {
     }
 }
 
+/* ============= LIVE MATCH MODAL STYLES ============= */
+
+/* Live Match Modal */
+#liveMatchModal .modal-content {
+    border-radius: 15px;
+    overflow: hidden;
+}
+
+#liveMatchModal .modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+#liveMatchModal .modal-body {
+    background: #f8f9fa;
+    padding: 1.5rem;
+}
+
+/* Live Match Header */
+.live-match-header {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.team-display .team-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #495057;
+}
+
+.team-display .team-score {
+    font-size: 3rem;
+    font-weight: bold;
+    transition: all 0.3s ease;
+}
+
+.vs-display {
+    min-width: 100px;
+}
+
+#liveMinute {
+    color: #667eea;
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
+}
+
+#matchStatus {
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+}
+
+/* Highlights Feed */
+.highlights-feed {
+    background: white;
+    border-radius: 12px;
+    padding: 1rem;
+    max-height: 400px;
+    overflow-y: auto;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.highlights-feed::-webkit-scrollbar {
+    width: 8px;
+}
+
+.highlights-feed::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.highlights-feed::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 10px;
+}
+
+.highlights-feed::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Highlight Item in Live Feed */
+.highlight-item-live {
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    border-radius: 8px;
+    border-left: 4px solid #0d6efd;
+    background: #f8f9fa;
+    transition: all 0.3s ease;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.highlight-item-live.goal {
+    border-left-color: #28a745;
+    background: #d4edda;
+}
+
+.highlight-item-live.penalty {
+    border-left-color: #ffc107;
+    background: #fff3cd;
+}
+
+.highlight-item-live.shot {
+    border-left-color: #17a2b8;
+    background: #d1ecf1;
+}
+
+.highlight-item-live.blocked {
+    border-left-color: #dc3545;
+    background: #f8d7da;
+}
+
+.highlight-item-live.pressure {
+    border-left-color: #fd7e14;
+    background: #ffe5d0;
+}
+
+.highlight-item-live .minute-badge {
+    font-weight: bold;
+    min-width: 50px;
+    display: inline-block;
+    color: #667eea;
+}
+
+.highlight-item-live .highlight-text {
+    font-size: 0.95rem;
+    color: #212529;
+    line-height: 1.4;
+}
+
+/* Score Update Animation */
+@keyframes scoreUpdate {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.2);
+        color: #28a745;
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.score-updated {
+    animation: scoreUpdate 0.5s ease-out;
+}
+
+/* Watch Button on Match Card */
+.match-card .btn-watch {
+    width: 100%;
+    margin-top: 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    color: white;
+    padding: 0.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.match-card .btn-watch:hover {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.match-card .btn-watch:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.match-card.completed {
+    opacity: 0.7;
+    border-color: #28a745;
+}
+
+.match-card.completed .match-card-header {
+    background: #d4edda;
+    padding: 0.5rem;
+    border-radius: 8px;
+}
+
+/* Goal Celebration Styling */
+.highlight-item-live.goal-celebration {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    border: none;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    animation: goalPulse 0.6s ease-in-out;
+}
+
+@keyframes goalPulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    25% {
+        transform: scale(1.05);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+    75% {
+        transform: scale(1.05);
+    }
+}
+
+.goal-announcement {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.goal-icon {
+    font-size: 3rem;
+    animation: goalBounce 0.6s ease-in-out;
+}
+
+@keyframes goalBounce {
+    0%, 100% {
+        transform: translateY(0) rotate(0deg);
+    }
+    25% {
+        transform: translateY(-15px) rotate(-10deg);
+    }
+    50% {
+        transform: translateY(-20px) rotate(10deg);
+    }
+    75% {
+        transform: translateY(-10px) rotate(-5deg);
+    }
+}
+
+.goal-text {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: white;
+    text-align: center;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Penalty Awarded Animation */
+.highlight-item-live.penalty-awarded {
+    background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+    border: none;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    animation: penaltyAlert 0.6s ease-in-out;
+}
+
+@keyframes penaltyAlert {
+    0%, 100% {
+        transform: scale(1);
+    }
+    25% {
+        transform: scale(1.03);
+    }
+    50% {
+        transform: scale(1.08);
+    }
+    75% {
+        transform: scale(1.03);
+    }
+}
+
+.penalty-announcement {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.penalty-icon {
+    font-size: 3rem;
+    animation: penaltyShake 0.6s ease-in-out;
+}
+
+@keyframes penaltyShake {
+    0%, 100% {
+        transform: rotate(0deg);
+    }
+    25% {
+        transform: rotate(-10deg);
+    }
+    50% {
+        transform: rotate(10deg);
+    }
+    75% {
+        transform: rotate(-5deg);
+    }
+}
+
+.penalty-text {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: #212529;
+    text-align: center;
+    text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.5);
+}
+
+/* Penalty Saved Animation */
+.highlight-item-live.penalty-saved {
+    background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+    border: none;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    animation: penaltySaveFlash 0.6s ease-in-out;
+}
+
+@keyframes penaltySaveFlash {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.8;
+        transform: scale(1.05);
+    }
+}
+
+/* Penalty Missed Animation */
+.highlight-item-live.penalty-missed {
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+    border: none;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    animation: penaltyMissShake 0.6s ease-in-out;
+}
+
+@keyframes penaltyMissShake {
+    0%, 100% {
+        transform: translateX(0);
+    }
+    25% {
+        transform: translateX(-10px);
+    }
+    50% {
+        transform: translateX(10px);
+    }
+    75% {
+        transform: translateX(-5px);
+    }
+}
+
+.penalty-outcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.penalty-outcome-icon {
+    font-size: 3rem;
+    animation: penaltyOutcomeBounce 0.6s ease-in-out;
+}
+
+@keyframes penaltyOutcomeBounce {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.2);
+    }
+}
+
+.penalty-outcome-text {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: white;
+    text-align: center;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Special Message Styling (Half-time, Full-time) */
+.special-message {
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    border-radius: 12px;
+    animation: specialMessageSlide 0.5s ease-out;
+}
+
+@keyframes specialMessageSlide {
+    0% {
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.special-message-content {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: white;
+    text-align: center;
+    line-height: 1.6;
+}
+
+.special-message.bg-info {
+    background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+    box-shadow: 0 4px 16px rgba(23, 162, 184, 0.4);
+}
+
+.special-message.bg-warning {
+    background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+    box-shadow: 0 4px 16px rgba(255, 193, 7, 0.4);
+    color: #212529 !important;
+}
+
+.special-message.bg-warning .special-message-content {
+    color: #212529;
+}
+
+/* Responsive adjustments for live match */
+@media (max-width: 768px) {
+    .team-display .team-score {
+        font-size: 2rem;
+    }
+    
+    .live-match-header {
+        padding: 1rem;
+    }
+    
+    .highlights-feed {
+        max-height: 300px;
+    }
+    
+    #liveMinute {
+        font-size: 1.5rem;
+    }
+    
+    .goal-icon {
+        font-size: 2rem;
+    }
+    
+    .goal-text {
+        font-size: 1rem;
+    }
+    
+    .special-message-content {
+        font-size: 1.1rem;
+    }
+    
+    .penalty-icon,
+    .penalty-outcome-icon {
+        font-size: 2rem;
+    }
+    
+    .penalty-text,
+    .penalty-outcome-text {
+        font-size: 1rem;
+    }
+}
+

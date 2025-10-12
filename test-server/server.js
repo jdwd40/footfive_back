@@ -164,6 +164,7 @@ app.get('/api/championship/status', (req, res) => {
                 totalRounds: championship.fixtures.length,
                 fixtures: championship.fixtures,
                 results: championship.results,
+                completedMatches: championship.completedMatches,
                 isComplete: championship.currentRound >= championship.fixtures.length && championship.fixtures.length > 0
             }
         });
@@ -203,6 +204,68 @@ app.post('/api/championship/init', async (req, res) => {
             error: 'Failed to initialize championship',
             details: error.message,
             stack: error.stack
+        });
+    }
+});
+
+// POST /api/championship/simulate-match - Simulate a single match in current round
+app.post('/api/championship/simulate-match', async (req, res) => {
+    try {
+        const { matchIndex } = req.body;
+
+        // Validate input
+        if (matchIndex === undefined || matchIndex === null) {
+            return res.status(400).json({
+                success: false,
+                error: 'matchIndex is required'
+            });
+        }
+
+        // Check if championship is initialized
+        if (!championship.fixtures || championship.fixtures.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Championship not initialized. Please initialize first.'
+            });
+        }
+
+        // Check if there are rounds left to play
+        if (championship.currentRound >= championship.fixtures.length) {
+            return res.status(400).json({
+                success: false,
+                error: 'Championship is complete. No more rounds to simulate.'
+            });
+        }
+
+        console.log('Simulating single match - Round:', championship.currentRound, 'Match:', matchIndex);
+        
+        // Simulate the single match
+        const result = await championship.simulateSingleMatch(matchIndex);
+        
+        console.log('Match simulation complete:', result.matchResult.matchMetadata?.homeTeam, 'vs', result.matchResult.matchMetadata?.awayTeam);
+        
+        // Check if all matches in the round are complete
+        const isRoundComplete = championship.isRoundComplete();
+        
+        res.json({
+            success: true,
+            message: 'Match simulated successfully',
+            matchIndex: matchIndex,
+            result: result.matchResult,
+            winner: result.winner,
+            isRoundComplete: isRoundComplete,
+            championship: {
+                currentRound: championship.currentRound,
+                totalRounds: championship.fixtures.length,
+                completedMatches: championship.completedMatches[championship.currentRound] || {}
+            }
+        });
+    } catch (error) {
+        console.error('Error simulating match:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to simulate match',
+            details: error.message
         });
     }
 });

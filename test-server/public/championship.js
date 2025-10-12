@@ -5,7 +5,16 @@ let championshipState = {
     totalRounds: 0,
     fixtures: [],
     results: [],
+    completedMatches: {}, // Track completed matches: { roundIndex: { matchIndex: result } }
     currentView: 'welcome' // welcome, fixtures, results, final
+};
+
+// Live match state
+let liveMatchState = {
+    isPlaying: false,
+    matchIndex: null,
+    highlightIndex: 0,
+    timeouts: []
 };
 
 // DOM elements
@@ -21,6 +30,7 @@ const alertContainer = document.getElementById('alertContainer');
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     checkChampionshipStatus();
+    setupModalEventListeners();
 });
 
 // Setup event listeners
@@ -29,6 +39,15 @@ function setupEventListeners() {
     simulateRoundBtn.addEventListener('click', simulateRound);
     nextRoundBtn.addEventListener('click', advanceToNextRound);
     restartChampionshipBtn.addEventListener('click', resetChampionship);
+}
+
+// Setup modal event listeners
+function setupModalEventListeners() {
+    const liveMatchModal = document.getElementById('liveMatchModal');
+    liveMatchModal.addEventListener('hidden.bs.modal', function () {
+        // Clean up when modal is closed
+        stopLiveMatch();
+    });
 }
 
 // Check championship status on load
@@ -45,6 +64,7 @@ async function checkChampionshipStatus() {
                 totalRounds: data.championship.totalRounds,
                 fixtures: data.championship.fixtures,
                 results: data.championship.results,
+                completedMatches: data.championship.completedMatches || {},
                 currentView: data.championship.isComplete ? 'final' : 'fixtures'
             };
             
@@ -79,6 +99,7 @@ async function fetchUpdatedChampionshipState() {
             championshipState.fixtures = data.championship.fixtures;
             championshipState.totalRounds = data.championship.totalRounds;
             championshipState.currentRound = data.championship.currentRound;
+            championshipState.completedMatches = data.championship.completedMatches || {};
         }
     } catch (error) {
         console.error('Error fetching championship state:', error);
@@ -104,6 +125,7 @@ async function startChampionship() {
             championshipState.totalRounds = data.championship.totalRounds;
             championshipState.fixtures = data.championship.fixtures;
             championshipState.results = [];
+            championshipState.completedMatches = {};
             championshipState.currentView = 'fixtures';
 
             // Show championship container
@@ -159,9 +181,19 @@ function displayFixtures() {
         const matchCard = createMatchCard(fixture, index);
         matchesContainer.appendChild(matchCard);
     });
+    
+    // Update simulate button text based on completed matches
+    updateSimulateButtonText();
 
     fixturesBracket.appendChild(matchesContainer);
 
+    // Re-enable simulate button if not all matches are complete
+    const completedInRound = championshipState.completedMatches[championshipState.currentRound] || {};
+    const totalMatches = currentRoundFixtures.length;
+    if (Object.keys(completedInRound).length < totalMatches) {
+        simulateRoundBtn.disabled = false;
+    }
+    
     // Show fixtures section, hide results
     document.getElementById('fixturesSection').style.display = 'block';
     document.getElementById('resultsSection').style.display = 'none';
@@ -173,11 +205,19 @@ function createMatchCard(fixture, index) {
     const card = document.createElement('div');
     card.className = 'match-card';
     
+    // Check if match is completed
+    const isCompleted = championshipState.completedMatches[championshipState.currentRound] && 
+                       championshipState.completedMatches[championshipState.currentRound][index];
+    
+    if (isCompleted) {
+        card.classList.add('completed');
+    }
+    
     if (fixture.team2 === null) {
         // Bye match
         card.innerHTML = `
             <div class="match-card-header">
-                <span class="badge bg-secondary">Match ${index + 1}</span>
+                <span class="badge ${isCompleted ? 'bg-success' : 'bg-secondary'}">Match ${index + 1} ${isCompleted ? '✓' : ''}</span>
             </div>
             <div class="match-teams">
                 <div class="team-name text-center">
@@ -195,7 +235,7 @@ function createMatchCard(fixture, index) {
     } else {
         card.innerHTML = `
             <div class="match-card-header">
-                <span class="badge bg-secondary">Match ${index + 1}</span>
+                <span class="badge ${isCompleted ? 'bg-success' : 'bg-secondary'}">Match ${index + 1} ${isCompleted ? '✓' : ''}</span>
             </div>
             <div class="match-teams">
                 <div class="team-name">
@@ -210,6 +250,9 @@ function createMatchCard(fixture, index) {
                     <strong>${fixture.team2.name}</strong>
                 </div>
             </div>
+            <button class="btn btn-watch" onclick="watchMatch(${index})" ${isCompleted ? 'disabled' : ''}>
+                <i class="bi bi-play-circle-fill"></i> ${isCompleted ? 'Match Completed' : 'Watch Game'}
+            </button>
         `;
     }
 
@@ -485,6 +528,481 @@ function displayFinalWinner(finalResult, allResults) {
     celebrateWinner();
 }
 
+// Update simulate button text based on completed matches
+function updateSimulateButtonText() {
+    const currentRoundMatches = championshipState.fixtures[championshipState.currentRound] || [];
+    const completedInRound = championshipState.completedMatches[championshipState.currentRound] || {};
+    const completedCount = Object.keys(completedInRound).length;
+    const totalCount = currentRoundMatches.length;
+    
+    if (completedCount === 0) {
+        simulateRoundBtn.innerHTML = '<i class="bi bi-play-fill"></i> Simulate Round';
+    } else if (completedCount < totalCount) {
+        simulateRoundBtn.innerHTML = `<i class="bi bi-play-fill"></i> Simulate Remaining Matches (${totalCount - completedCount})`;
+    } else {
+        simulateRoundBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> All Matches Complete';
+        simulateRoundBtn.disabled = true;
+    }
+}
+
+// Watch a specific match
+async function watchMatch(matchIndex) {
+    try {
+        liveMatchState.matchIndex = matchIndex;
+        liveMatchState.isPlaying = true;
+        liveMatchState.highlightIndex = 0;
+        liveMatchState.timeouts = [];
+
+        // Get match fixture
+        const fixture = championshipState.fixtures[championshipState.currentRound][matchIndex];
+        
+        // Open modal
+        const liveMatchModal = new bootstrap.Modal(document.getElementById('liveMatchModal'));
+        liveMatchModal.show();
+        
+        // Initialize modal
+        document.getElementById('liveTeam1Name').textContent = fixture.team1.name;
+        document.getElementById('liveTeam2Name').textContent = fixture.team2.name;
+        document.getElementById('liveTeam1Score').textContent = '0';
+        document.getElementById('liveTeam2Score').textContent = '0';
+        document.getElementById('liveMinute').textContent = "0'";
+        document.getElementById('matchStatus').textContent = 'Simulating...';
+        document.getElementById('matchStatus').className = 'badge bg-info';
+        document.getElementById('highlightsFeed').innerHTML = '<div class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Starting match...</div>';
+        
+        // Disable close buttons during simulation
+        document.getElementById('closeMatchModal').disabled = true;
+        document.getElementById('closeMatchModalBtn').disabled = true;
+        
+        showAlert('Simulating match...', 'info');
+
+        // Simulate the match
+        const response = await fetch('/api/championship/simulate-match', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ matchIndex })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            clearAlerts();
+            
+            // Update completed matches in state
+            if (!championshipState.completedMatches[championshipState.currentRound]) {
+                championshipState.completedMatches[championshipState.currentRound] = {};
+            }
+            championshipState.completedMatches[championshipState.currentRound][matchIndex] = data.result;
+            
+            // Play the match live
+            await playMatchLive(data.result, fixture);
+            
+            // Re-enable close buttons
+            document.getElementById('closeMatchModal').disabled = false;
+            document.getElementById('closeMatchModalBtn').disabled = false;
+            
+            // Refresh the fixtures display to show completed match
+            displayFixtures();
+            
+            // Check if round is complete
+            if (data.isRoundComplete) {
+                showAlert('All matches in this round are complete! You can advance to the next round.', 'success');
+            }
+        } else {
+            showAlert(`Error: ${data.error}`, 'danger');
+            liveMatchModal.hide();
+        }
+    } catch (error) {
+        showAlert(`Failed to watch match: ${error.message}`, 'danger');
+        console.error('Watch match error:', error);
+        const liveMatchModal = bootstrap.Modal.getInstance(document.getElementById('liveMatchModal'));
+        if (liveMatchModal) {
+            liveMatchModal.hide();
+        }
+    }
+}
+
+// Play match live with progressive highlights
+async function playMatchLive(matchResult, fixture) {
+    return new Promise((resolve) => {
+        const highlights = matchResult.highlights;
+        const team1Name = fixture.team1.name;
+        const team2Name = fixture.team2.name;
+        let currentScore = { [team1Name]: 0, [team2Name]: 0 };
+        let penaltyScore = { [team1Name]: 0, [team2Name]: 0 };
+        
+        // Clear highlights feed
+        document.getElementById('highlightsFeed').innerHTML = '';
+        document.getElementById('matchStatus').textContent = 'In Progress';
+        document.getElementById('matchStatus').className = 'badge bg-success';
+        
+        // Separate regular highlights from penalty shootout
+        const regularHighlights = [];
+        const penaltyShootoutHighlights = [];
+        
+        highlights.forEach(highlight => {
+            if (highlight.type === 'penaltyShootout') {
+                penaltyShootoutHighlights.push(highlight);
+            } else {
+                regularHighlights.push(highlight);
+            }
+        });
+        
+        // Group regular highlights by minute
+        const highlightsByMinute = {};
+        regularHighlights.forEach(highlight => {
+            const minute = highlight.minute;
+            if (!highlightsByMinute[minute]) {
+                highlightsByMinute[minute] = [];
+            }
+            highlightsByMinute[minute].push(highlight);
+        });
+        
+        // Get all unique minutes in order
+        const minutes = Object.keys(highlightsByMinute).map(Number).sort((a, b) => a - b);
+        let currentMinuteIndex = 0;
+        let totalElapsedTime = 0; // Track total elapsed time
+        
+        // Check if match has extra time
+        const hasExtraTime = regularHighlights.some(h => h.type === 'extraTimeStart');
+        
+        // Play highlights minute by minute
+        function playNextMinute() {
+            if (!liveMatchState.isPlaying) {
+                resolve();
+                return;
+            }
+            
+            if (currentMinuteIndex >= minutes.length) {
+                // Regular time and extra time complete - check for penalty shootout
+                if (penaltyShootoutHighlights.length > 0) {
+                    playPenaltyShootout();
+                } else {
+                    // Match complete
+                    document.getElementById('matchStatus').textContent = 'Match Complete';
+                    document.getElementById('matchStatus').className = 'badge bg-secondary';
+                    resolve();
+                }
+                return;
+            }
+            
+            const minute = minutes[currentMinuteIndex];
+            const minuteHighlights = highlightsByMinute[minute];
+            
+            // Update minute display at the START of this minute - only show actual game minutes (not penalty shootout time)
+            const displayMinute = minute > 120 ? 120 : minute; // Cap display at 120 for penalty shootouts
+            const updateMinuteTimeout = setTimeout(() => {
+                if (!liveMatchState.isPlaying) return;
+                document.getElementById('liveMinute').textContent = `${displayMinute}'`;
+            }, totalElapsedTime);
+            liveMatchState.timeouts.push(updateMinuteTimeout);
+            
+            let eventDelay = 500; // Start events 0.5 seconds into the minute
+            
+            // Display all highlights for this minute with staggered delays
+            minuteHighlights.forEach((highlight, index) => {
+                const timeout = setTimeout(() => {
+                    if (!liveMatchState.isPlaying) return;
+                    
+                    addHighlightToFeed(highlight, team1Name, team2Name);
+                    
+                    // Update score if it's a goal OR a scored penalty
+                    const isGoalScored = highlight.type === 'goal' || 
+                                       (highlight.type === 'penalty' && 
+                                        (highlight.description.includes('GOAL') || 
+                                         highlight.description.includes('score')));
+                    
+                    if (isGoalScored) {
+                        if (highlight.description.includes(team1Name)) {
+                            currentScore[team1Name]++;
+                            document.getElementById('liveTeam1Score').textContent = currentScore[team1Name];
+                            document.getElementById('liveTeam1Score').classList.add('score-updated');
+                            setTimeout(() => {
+                                document.getElementById('liveTeam1Score').classList.remove('score-updated');
+                            }, 500);
+                        } else {
+                            currentScore[team2Name]++;
+                            document.getElementById('liveTeam2Score').textContent = currentScore[team2Name];
+                            document.getElementById('liveTeam2Score').classList.add('score-updated');
+                            setTimeout(() => {
+                                document.getElementById('liveTeam2Score').classList.remove('score-updated');
+                            }, 500);
+                        }
+                    }
+                }, totalElapsedTime + eventDelay);
+                liveMatchState.timeouts.push(timeout);
+                
+                // Add pause after goals and penalties
+                if (highlight.type === 'goal' || highlight.type === 'penalty') {
+                    eventDelay += 1500; // 1.5 second pause
+                } else {
+                    eventDelay += 500; // 0.5 second between regular events in same minute
+                }
+            });
+            
+            // Ensure minimum time per minute
+            if (eventDelay < 2500) {
+                eventDelay = 2500; // Minimum 2.5 seconds per minute
+            }
+            
+            currentMinuteIndex++;
+            
+            // Check for special pauses - only for actual game minutes, not penalty shootouts
+            let additionalPause = 0;
+            if (minute === 45 && minute <= 120) {
+                // Half-time pause
+                const halfTimeTimeout = setTimeout(() => {
+                    if (!liveMatchState.isPlaying) return;
+                    showSpecialMessage(`Half Time<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`, 'bg-info');
+                }, totalElapsedTime + eventDelay);
+                liveMatchState.timeouts.push(halfTimeTimeout);
+                additionalPause = 5000; // 5 second pause at half-time
+            } else if (minute === 90 && hasExtraTime) {
+                // Full-time pause before extra time
+                const fullTimeTimeout = setTimeout(() => {
+                    if (!liveMatchState.isPlaying) return;
+                    showSpecialMessage(`Full Time - Going to Extra Time<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`, 'bg-warning');
+                }, totalElapsedTime + eventDelay);
+                liveMatchState.timeouts.push(fullTimeTimeout);
+                additionalPause = 5000; // 5 second pause at full-time
+            }
+            
+            // Total time for this minute
+            const totalMinuteTime = eventDelay + additionalPause;
+            totalElapsedTime += totalMinuteTime;
+            
+            // Schedule next minute
+            const nextTimeout = setTimeout(playNextMinute, totalMinuteTime);
+            liveMatchState.timeouts.push(nextTimeout);
+        }
+        
+        // Play penalty shootout with special timing
+        function playPenaltyShootout() {
+            if (!liveMatchState.isPlaying) {
+                resolve();
+                return;
+            }
+            
+            document.getElementById('matchStatus').textContent = 'Penalty Shootout';
+            document.getElementById('matchStatus').className = 'badge bg-warning';
+            
+            let shootoutIndex = 0;
+            
+            function playNextPenalty() {
+                if (!liveMatchState.isPlaying || shootoutIndex >= penaltyShootoutHighlights.length) {
+                    // Shootout complete - show final message with penalty result
+                    const timeout = setTimeout(() => {
+                        if (!liveMatchState.isPlaying) return;
+                        
+                        // Keep showing the draw score with penalty scores in brackets
+                        document.getElementById('liveTeam1Score').textContent = 
+                            `${currentScore[team1Name]}(${penaltyScore[team1Name]})`;
+                        document.getElementById('liveTeam2Score').textContent = 
+                            `${currentScore[team2Name]}(${penaltyScore[team2Name]})`;
+                        
+                        // Show final result message
+                        const winner = penaltyScore[team1Name] > penaltyScore[team2Name] ? team1Name : team2Name;
+                        const winnerPenScore = Math.max(penaltyScore[team1Name], penaltyScore[team2Name]);
+                        const loserPenScore = Math.min(penaltyScore[team1Name], penaltyScore[team2Name]);
+                        
+                        showSpecialMessage(
+                            `Match Complete<br>${winner} wins ${winnerPenScore}-${loserPenScore} on penalties<br>Final Score: ${currentScore[team1Name]}-${currentScore[team2Name]} (Draw)`,
+                            'bg-secondary'
+                        );
+                        
+                        document.getElementById('matchStatus').textContent = 'Match Complete';
+                        document.getElementById('matchStatus').className = 'badge bg-secondary';
+                        resolve();
+                    }, totalElapsedTime);
+                    liveMatchState.timeouts.push(timeout);
+                    return;
+                }
+                
+                const highlight = penaltyShootoutHighlights[shootoutIndex];
+                
+                // Display penalty highlight
+                const timeout = setTimeout(() => {
+                    if (!liveMatchState.isPlaying) return;
+                    
+                    addHighlightToFeed(highlight, team1Name, team2Name);
+                    
+                    // Check if this is a scored penalty in shootout
+                    if (highlight.description.includes('score') || highlight.description.includes('GOAL')) {
+                        // Determine which team scored
+                        if (highlight.description.includes(team1Name)) {
+                            penaltyScore[team1Name]++;
+                        } else if (highlight.description.includes(team2Name)) {
+                            penaltyScore[team2Name]++;
+                        }
+                        
+                        // Update display with bracketed penalty scores - KEEP the draw score
+                        document.getElementById('liveTeam1Score').textContent = 
+                            `${currentScore[team1Name]}(${penaltyScore[team1Name]})`;
+                        document.getElementById('liveTeam1Score').classList.add('score-updated');
+                        setTimeout(() => {
+                            document.getElementById('liveTeam1Score').classList.remove('score-updated');
+                        }, 500);
+                        
+                        document.getElementById('liveTeam2Score').textContent = 
+                            `${currentScore[team2Name]}(${penaltyScore[team2Name]})`;
+                        document.getElementById('liveTeam2Score').classList.add('score-updated');
+                        setTimeout(() => {
+                            document.getElementById('liveTeam2Score').classList.remove('score-updated');
+                        }, 500);
+                    }
+                }, totalElapsedTime);
+                liveMatchState.timeouts.push(timeout);
+                
+                shootoutIndex++;
+                totalElapsedTime += 1500; // 1.5 seconds per penalty
+                
+                // Schedule next penalty
+                const nextTimeout = setTimeout(playNextPenalty, 1500);
+                liveMatchState.timeouts.push(nextTimeout);
+            }
+            
+            // Start penalty shootout
+            playNextPenalty();
+        }
+        
+        // Start playing
+        playNextMinute();
+    });
+}
+
+// Add highlight to feed
+function addHighlightToFeed(highlight, team1Name, team2Name) {
+    const feed = document.getElementById('highlightsFeed');
+    const highlightItem = document.createElement('div');
+    
+    // Check if this is a penalty awarded message
+    const isPenaltyAwarded = highlight.type === 'penalty' && 
+                            (highlight.description.includes('awarded') || 
+                             highlight.description.includes('PENALTY'));
+    
+    // Check if this is a penalty outcome (scored/saved/missed) - both regular and shootout
+    const isPenaltyScored = (highlight.type === 'penalty' || highlight.type === 'penaltyShootout') && 
+                           (highlight.description.includes('GOAL') || 
+                            highlight.description.includes('score') ||
+                            highlight.description.includes('convert'));
+    
+    const isPenaltySaved = (highlight.type === 'penalty' || highlight.type === 'penaltyShootout') && 
+                          (highlight.description.includes('SAVED') || 
+                           highlight.description.includes('save') ||
+                           highlight.description.includes('denies') ||
+                           highlight.description.includes('keeper') ||
+                           highlight.description.includes('stops'));
+    
+    const isPenaltyMissed = (highlight.type === 'penalty' || highlight.type === 'penaltyShootout') && 
+                           (highlight.description.includes('MISSED') || 
+                            highlight.description.includes('miss') ||
+                            highlight.description.includes('Wide') ||
+                            highlight.description.includes('WIDE') ||
+                            highlight.description.includes('Over') ||
+                            highlight.description.includes('over the bar') ||
+                            highlight.description.includes('blast'));
+    
+    // Check if this is a regular goal (not from penalty)
+    const isRegularGoal = highlight.type === 'goal';
+    
+    // Determine highlight type class
+    let typeClass = '';
+    if (isRegularGoal || isPenaltyScored) {
+        typeClass = 'goal';
+    }
+    else if (highlight.type === 'penalty' || highlight.type === 'penaltyShootout') typeClass = 'penalty';
+    else if (highlight.type === 'shot') typeClass = 'shot';
+    else if (highlight.type === 'blocked') typeClass = 'blocked';
+    else if (highlight.type === 'pressure') typeClass = 'pressure';
+    
+    highlightItem.className = `highlight-item-live ${typeClass}`;
+    
+    // Special display for penalty awarded
+    if (isPenaltyAwarded) {
+        highlightItem.classList.add('penalty-awarded');
+        highlightItem.innerHTML = `
+            <div class="penalty-announcement">
+                <div class="penalty-icon">⚠️</div>
+                <div class="penalty-text">${highlight.description}</div>
+            </div>
+        `;
+    }
+    // Special display for penalty scored
+    else if (isPenaltyScored) {
+        highlightItem.classList.add('goal-celebration');
+        highlightItem.innerHTML = `
+            <div class="goal-announcement">
+                <div class="goal-icon">⚽</div>
+                <div class="goal-text">${highlight.description}</div>
+            </div>
+        `;
+    }
+    // Special display for penalty saved
+    else if (isPenaltySaved) {
+        highlightItem.classList.add('penalty-saved');
+        highlightItem.innerHTML = `
+            <div class="penalty-outcome">
+                <div class="penalty-outcome-icon">🧤</div>
+                <div class="penalty-outcome-text">${highlight.description}</div>
+            </div>
+        `;
+    }
+    // Special display for penalty missed
+    else if (isPenaltyMissed) {
+        highlightItem.classList.add('penalty-missed');
+        highlightItem.innerHTML = `
+            <div class="penalty-outcome">
+                <div class="penalty-outcome-icon">❌</div>
+                <div class="penalty-outcome-text">${highlight.description}</div>
+            </div>
+        `;
+    }
+    // Special display for regular goals
+    else if (isRegularGoal) {
+        highlightItem.classList.add('goal-celebration');
+        highlightItem.innerHTML = `
+            <div class="goal-announcement">
+                <div class="goal-icon">⚽</div>
+                <div class="goal-text">${highlight.description}</div>
+            </div>
+        `;
+    } 
+    // Regular highlight display
+    else {
+        highlightItem.innerHTML = `
+            <div class="d-flex align-items-start">
+                <span class="minute-badge">${highlight.minute}'</span>
+                <span class="highlight-text flex-fill">${highlight.description}</span>
+            </div>
+        `;
+    }
+    
+    // Prepend to top instead of append to bottom
+    feed.insertBefore(highlightItem, feed.firstChild);
+}
+
+// Show special message (half-time, full-time)
+function showSpecialMessage(message, badgeClass) {
+    const feed = document.getElementById('highlightsFeed');
+    const messageItem = document.createElement('div');
+    messageItem.className = `special-message ${badgeClass}`;
+    messageItem.innerHTML = `
+        <div class="special-message-content">
+            ${message}
+        </div>
+    `;
+    feed.insertBefore(messageItem, feed.firstChild);
+}
+
+// Stop live match
+function stopLiveMatch() {
+    liveMatchState.isPlaying = false;
+    liveMatchState.timeouts.forEach(timeout => clearTimeout(timeout));
+    liveMatchState.timeouts = [];
+}
+
 // Reset championship
 async function resetChampionship() {
     try {
@@ -505,6 +1023,7 @@ async function resetChampionship() {
                 totalRounds: 0,
                 fixtures: [],
                 results: [],
+                completedMatches: {},
                 currentView: 'welcome'
             };
 

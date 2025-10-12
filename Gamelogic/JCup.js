@@ -7,6 +7,7 @@ class JCup {
         this.currentRound = 0;
         this.fixtures = []; // Array of rounds, each containing pairs of matches
         this.results = [];
+        this.completedMatches = {}; // Track completed matches by round: { roundIndex: { matchIndex: result } }
     }
 
     async loadTeams() {
@@ -50,7 +51,21 @@ class JCup {
         const currentTeamCount = matches.length * 2; // Each match has 2 teams
         const currentRoundName = this.getRoundName(currentTeamCount);
 
-        for (const match of matches) {
+        // Initialize completed matches for this round if not exists
+        if (!this.completedMatches[this.currentRound]) {
+            this.completedMatches[this.currentRound] = {};
+        }
+
+        for (let i = 0; i < matches.length; i++) {
+            const match = matches[i];
+            
+            // Skip if match already completed
+            if (this.completedMatches[this.currentRound][i]) {
+                const completedResult = this.completedMatches[this.currentRound][i];
+                roundResults.push(completedResult.matchResult);
+                winners.push(completedResult.winner);
+                continue;
+            }
             console.log(match);
             if (match.team2 === null) {  // Check for a bye
                 winners.push(match.team1);
@@ -82,7 +97,7 @@ class JCup {
             await Team.updateHighestRound(match.team2.id, currentRoundName);
             
             winners.push(winner);
-            roundResults.push({
+            const matchResult = {
                 score: result.score,
                 penaltyScore: result.penaltyScore,
                 highlights: result.highlights,
@@ -94,7 +109,8 @@ class JCup {
                     date: new Date().toISOString(),
                     round: `Round ${this.currentRound + 1}`
                 }
-            });
+            };
+            roundResults.push(matchResult);
         }
 
         this.results.push({ roundResults });
@@ -158,10 +174,110 @@ class JCup {
         if (teamCount === 32) return 'Round of 32';
         return `Round of ${teamCount}`;
     }
+    async simulateSingleMatch(matchIndex) {
+        if (this.currentRound >= this.fixtures.length) {
+            throw new Error("No active round to simulate.");
+        }
+
+        const matches = this.fixtures[this.currentRound];
+        
+        if (matchIndex < 0 || matchIndex >= matches.length) {
+            throw new Error(`Invalid match index. Must be between 0 and ${matches.length - 1}`);
+        }
+
+        const match = matches[matchIndex];
+
+        // Initialize completed matches for this round if not exists
+        if (!this.completedMatches[this.currentRound]) {
+            this.completedMatches[this.currentRound] = {};
+        }
+
+        // Check if already completed
+        if (this.completedMatches[this.currentRound][matchIndex]) {
+            return this.completedMatches[this.currentRound][matchIndex];
+        }
+
+        // Determine the current round name
+        const currentTeamCount = matches.length * 2;
+        const currentRoundName = this.getRoundName(currentTeamCount);
+
+        // Handle bye
+        if (match.team2 === null) {
+            await Team.updateHighestRound(match.team1.id, currentRoundName);
+            const result = {
+                matchResult: {
+                    isBye: true,
+                    team: match.team1.name
+                },
+                winner: match.team1
+            };
+            this.completedMatches[this.currentRound][matchIndex] = result;
+            return result;
+        }
+
+        // Fetch ratings if needed
+        if (!match.team1.attackRating || !match.team1.defenseRating || !match.team1.goalkeeperRating) {
+            match.team1 = await Team.getRatingByTeamName(match.team1.name);
+        }
+        if (!match.team2.attackRating || !match.team2.defenseRating || !match.team2.goalkeeperRating) {
+            match.team2 = await Team.getRatingByTeamName(match.team2.name);
+        }
+
+        // Simulate the match
+        const result = new MatchSimulator(match.team1, match.team2).simulate();
+        const winner = result.score[match.team1.name] > result.score[match.team2.name] ? match.team1 : match.team2;
+        
+        // Get scores for each team
+        const team1Goals = result.score[match.team1.name];
+        const team2Goals = result.score[match.team2.name];
+        
+        // Update match statistics for both teams
+        await Team.updateMatchStats(match.team1.id, winner.id === match.team1.id, team1Goals, team2Goals);
+        await Team.updateMatchStats(match.team2.id, winner.id === match.team2.id, team2Goals, team1Goals);
+        
+        // Update highest round reached for both teams
+        await Team.updateHighestRound(match.team1.id, currentRoundName);
+        await Team.updateHighestRound(match.team2.id, currentRoundName);
+
+        const matchResult = {
+            score: result.score,
+            penaltyScore: result.penaltyScore,
+            highlights: result.highlights,
+            finalResult: result.finalResult,
+            matchMetadata: {
+                homeTeam: match.team1.name,
+                awayTeam: match.team2.name,
+                venue: "Stadium Name",
+                date: new Date().toISOString(),
+                round: `Round ${this.currentRound + 1}`
+            }
+        };
+
+        // Store the completed match
+        this.completedMatches[this.currentRound][matchIndex] = {
+            matchResult,
+            winner
+        };
+
+        return { matchResult, winner };
+    }
+
+    isRoundComplete() {
+        if (this.currentRound >= this.fixtures.length) {
+            return true;
+        }
+
+        const matches = this.fixtures[this.currentRound];
+        const completedInRound = this.completedMatches[this.currentRound] || {};
+        
+        return matches.length === Object.keys(completedInRound).length;
+    }
+
     resetJCup() {
         this.currentRound = 0;
         this.fixtures = [];  // Clear fixtures
         this.results = [];
+        this.completedMatches = {};
         // Optionally clear teams if they are supposed to be reloaded each tournament
         this.teams = [];
     }

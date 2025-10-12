@@ -126,6 +126,54 @@
                 </div>
             </section>
         </div>
+
+        <!-- Live Match Viewer Modal -->
+        <div class="modal fade" id="liveMatchModal" tabindex="-1" aria-labelledby="liveMatchModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title" id="liveMatchModalLabel">
+                            <i class="bi bi-broadcast"></i> Live Match
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" id="closeMatchModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Match Header with Teams and Score -->
+                        <div class="live-match-header mb-4">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="team-display text-center flex-fill">
+                                    <div class="team-name h5 mb-2" id="liveTeam1Name">Team 1</div>
+                                    <div class="team-score display-4 fw-bold text-primary" id="liveTeam1Score">0</div>
+                                </div>
+                                <div class="vs-display text-center px-3">
+                                    <div class="text-muted small">MINUTE</div>
+                                    <div class="h3 mb-0" id="liveMinute">0'</div>
+                                </div>
+                                <div class="team-display text-center flex-fill">
+                                    <div class="team-name h5 mb-2" id="liveTeam2Name">Team 2</div>
+                                    <div class="team-score display-4 fw-bold text-danger" id="liveTeam2Score">0</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Match Status -->
+                        <div class="text-center mb-3">
+                            <span class="badge bg-success" id="matchStatus">Starting...</span>
+                        </div>
+
+                        <!-- Highlights Feed -->
+                        <div class="highlights-feed" id="highlightsFeed">
+                            <div class="text-center text-muted py-4">
+                                <i class="bi bi-hourglass-split"></i> Waiting for match to begin...
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="closeMatchModalBtn">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Bootstrap 5 JS -->
