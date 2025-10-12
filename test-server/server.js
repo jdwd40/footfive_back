@@ -2,9 +2,13 @@ const express = require('express');
 const path = require('path');
 const db = require('../db/connection');
 const MatchSimulator = require('../Gamelogic/MatchSimulator');
+const JCup = require('../Gamelogic/JCup');
 
 const app = express();
 const PORT = 3001;
+
+// Championship state
+const championship = new JCup();
 
 // Middleware
 app.use(express.json());
@@ -142,6 +146,132 @@ app.post('/api/simulate', async (req, res) => {
             success: false, 
             error: 'Simulation failed',
             details: error.message 
+        });
+    }
+});
+
+// Championship API Routes
+
+// GET /api/championship/status - Get current championship state
+app.get('/api/championship/status', (req, res) => {
+    try {
+        res.json({
+            success: true,
+            championship: {
+                isInitialized: championship.teams.length > 0,
+                currentRound: championship.currentRound,
+                totalRounds: championship.fixtures.length,
+                fixtures: championship.fixtures,
+                results: championship.results,
+                isComplete: championship.currentRound >= championship.fixtures.length && championship.fixtures.length > 0
+            }
+        });
+    } catch (error) {
+        console.error('Error getting championship status:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get championship status',
+            details: error.message
+        });
+    }
+});
+
+// POST /api/championship/init - Initialize new championship
+app.post('/api/championship/init', async (req, res) => {
+    try {
+        console.log('Initializing championship...');
+        await championship.loadTeams();
+        console.log('Teams loaded:', championship.teams.length);
+        console.log('Fixtures generated:', championship.fixtures.length);
+        
+        res.json({
+            success: true,
+            message: 'Championship initialized successfully',
+            championship: {
+                currentRound: championship.currentRound,
+                totalRounds: championship.fixtures.length,
+                fixtures: championship.fixtures,
+                teamCount: championship.teams.length
+            }
+        });
+    } catch (error) {
+        console.error('Error initializing championship:', error);
+        console.error('Error stack:', error.stack);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to initialize championship',
+            details: error.message,
+            stack: error.stack
+        });
+    }
+});
+
+// POST /api/championship/simulate-round - Simulate current round
+app.post('/api/championship/simulate-round', async (req, res) => {
+    try {
+        // Check if championship is initialized
+        if (!championship.fixtures || championship.fixtures.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Championship not initialized. Please initialize first.'
+            });
+        }
+
+        // Check if there are rounds left to play
+        if (championship.currentRound >= championship.fixtures.length) {
+            return res.status(400).json({
+                success: false,
+                error: 'Championship is complete. No more rounds to simulate.'
+            });
+        }
+
+        console.log('Before simulation - currentRound:', championship.currentRound, 'totalRounds:', championship.fixtures.length);
+        
+        // Simulate the round
+        const simulationResult = await championship.simulateRound();
+        
+        console.log('After simulation - currentRound:', championship.currentRound, 'totalRounds:', championship.fixtures.length);
+        console.log('Simulation result has winner?', !!simulationResult.winner);
+        
+        // Check if this was the final (only 1 winner remains)
+        const isFinal = simulationResult.winner !== undefined;
+        
+        res.json({
+            success: true,
+            message: 'Round simulated successfully',
+            result: simulationResult,
+            championship: {
+                currentRound: championship.currentRound,
+                totalRounds: championship.fixtures.length,
+                isComplete: isFinal || championship.currentRound >= championship.fixtures.length,
+                isFinal: isFinal
+            }
+        });
+    } catch (error) {
+        console.error('Error simulating round:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to simulate round',
+            details: error.message
+        });
+    }
+});
+
+// POST /api/championship/reset - Reset championship state
+app.post('/api/championship/reset', (req, res) => {
+    try {
+        championship.resetJCup();
+        
+        res.json({
+            success: true,
+            message: 'Championship reset successfully'
+        });
+    } catch (error) {
+        console.error('Error resetting championship:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to reset championship',
+            details: error.message
         });
     }
 });

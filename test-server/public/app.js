@@ -3,13 +3,25 @@ let teamsData = [];
 let selectedTeam1 = null;
 let selectedTeam2 = null;
 
+// Slow simulation state
+let slowSimState = {
+    isRunning: false,
+    timeouts: [],
+    currentScore: { team1: 0, team2: 0 },
+    team1Name: '',
+    team2Name: ''
+};
+
 // DOM elements
 const team1Select = document.getElementById('team1Select');
 const team2Select = document.getElementById('team2Select');
 const loadTeamsBtn = document.getElementById('loadTeamsBtn');
 const simulateBtn = document.getElementById('simulateBtn');
+const simulateSlowBtn = document.getElementById('simulateSlowBtn');
+const stopSlowBtn = document.getElementById('stopSlowBtn');
 const ratingEditor = document.getElementById('ratingEditor');
 const resultsSection = document.getElementById('resultsSection');
+const liveFeedSection = document.getElementById('liveFeedSection');
 const alertContainer = document.getElementById('alertContainer');
 
 // Initialize on page load
@@ -58,6 +70,8 @@ function setupEventListeners() {
     team2Select.addEventListener('change', checkTeamSelection);
     loadTeamsBtn.addEventListener('click', loadTeamData);
     simulateBtn.addEventListener('click', simulateMatch);
+    simulateSlowBtn.addEventListener('click', simulateMatchSlow);
+    stopSlowBtn.addEventListener('click', stopSlowSimulation);
 }
 
 // Check if both teams are selected
@@ -294,5 +308,265 @@ function showAlert(message, type = 'info') {
 // Clear all alerts
 function clearAlerts() {
     alertContainer.innerHTML = '';
+}
+
+// ============= SLOW SIMULATION FUNCTIONS =============
+
+// Simulate match in slow mode
+async function simulateMatchSlow() {
+    try {
+        // Get current ratings from inputs
+        const team1Data = {
+            name: document.getElementById('team1Name').textContent,
+            attackRating: parseInt(document.getElementById('team1Attack').value),
+            defenseRating: parseInt(document.getElementById('team1Defense').value),
+            goalkeeperRating: parseInt(document.getElementById('team1Goalkeeper').value)
+        };
+
+        const team2Data = {
+            name: document.getElementById('team2Name').textContent,
+            attackRating: parseInt(document.getElementById('team2Attack').value),
+            defenseRating: parseInt(document.getElementById('team2Defense').value),
+            goalkeeperRating: parseInt(document.getElementById('team2Goalkeeper').value)
+        };
+
+        // Disable buttons
+        simulateBtn.disabled = true;
+        simulateSlowBtn.disabled = true;
+        simulateSlowBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Loading...';
+        
+        // Initialize slow sim state
+        slowSimState.isRunning = true;
+        slowSimState.timeouts = [];
+        slowSimState.currentScore = { team1: 0, team2: 0 };
+        slowSimState.team1Name = team1Data.name;
+        slowSimState.team2Name = team2Data.name;
+
+        // Send simulation request to get all highlights
+        const response = await fetch('/api/simulate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ team1: team1Data, team2: team2Data })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Show live feed section
+            liveFeedSection.style.display = 'block';
+            resultsSection.style.display = 'none';
+            
+            // Initialize live feed
+            initializeLiveFeed(team1Data.name, team2Data.name);
+            
+            // Scroll to live feed
+            setTimeout(() => {
+                liveFeedSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+            
+            // Process highlights with timing
+            processHighlightsWithTiming(data.result.highlights, data.result);
+            
+            clearAlerts();
+        } else {
+            showAlert(`Simulation failed: ${data.error}`, 'danger');
+            stopSlowSimulation();
+        }
+
+    } catch (error) {
+        showAlert(`Simulation error: ${error.message}`, 'danger');
+        console.error('Simulation error:', error);
+        stopSlowSimulation();
+    } finally {
+        // Re-enable simulate button
+        simulateSlowBtn.innerHTML = '<i class="bi bi-stopwatch-fill"></i> Slow Simulate Match';
+    }
+}
+
+// Initialize the live feed display
+function initializeLiveFeed(team1Name, team2Name) {
+    document.getElementById('liveTeam1Name').textContent = team1Name;
+    document.getElementById('liveTeam2Name').textContent = team2Name;
+    document.getElementById('liveScoreDisplay').textContent = '0 - 0';
+    document.getElementById('liveMinuteDisplay').textContent = 'Kick-off';
+    document.getElementById('liveFeed').innerHTML = '';
+}
+
+// Process highlights with proper timing
+function processHighlightsWithTiming(highlights, fullResult) {
+    let cumulativeDelay = 0;
+    let lastMinute = 0;
+    let pendingPenaltyOutcome = null;
+    
+    highlights.forEach((highlight, index) => {
+        const currentMinute = highlight.minute || 90;
+        
+        // Calculate base delay (1 second per game minute)
+        if (currentMinute > lastMinute) {
+            cumulativeDelay += (currentMinute - lastMinute) * 1000;
+        }
+        lastMinute = currentMinute;
+        
+        // Check for penalties - split into awarded and outcome
+        if (highlight.type === 'penalty') {
+            if (highlight.description.toLowerCase().includes('awarded') || 
+                highlight.description.toLowerCase().includes('points to the spot')) {
+                // This is the penalty awarded message
+                scheduleHighlightDisplay(highlight, cumulativeDelay);
+                pendingPenaltyOutcome = index;
+                cumulativeDelay += 2000; // 2 second delay before outcome
+            } else if (pendingPenaltyOutcome !== null && index === pendingPenaltyOutcome + 1) {
+                // This is the penalty outcome (next highlight after awarded)
+                scheduleHighlightDisplay(highlight, cumulativeDelay);
+                pendingPenaltyOutcome = null;
+            } else {
+                // Single penalty highlight (shouldn't happen with current logic)
+                scheduleHighlightDisplay(highlight, cumulativeDelay);
+            }
+        }
+        // Check for half-time
+        else if (highlight.type === 'halfTime') {
+            scheduleHighlightDisplay(highlight, cumulativeDelay);
+            cumulativeDelay += 3000; // 3 second delay after half-time
+        }
+        // All other highlights
+        else {
+            scheduleHighlightDisplay(highlight, cumulativeDelay);
+        }
+    });
+    
+    // Schedule final results display
+    const finalTimeout = setTimeout(() => {
+        if (slowSimState.isRunning) {
+            displayFinalResults(fullResult);
+        }
+    }, cumulativeDelay + 2000);
+    
+    slowSimState.timeouts.push(finalTimeout);
+}
+
+// Schedule a highlight to be displayed after a delay
+function scheduleHighlightDisplay(highlight, delay) {
+    const timeoutId = setTimeout(() => {
+        if (slowSimState.isRunning) {
+            displayLiveFeedHighlight(highlight);
+        }
+    }, delay);
+    
+    slowSimState.timeouts.push(timeoutId);
+}
+
+// Display a single highlight in the live feed
+function displayLiveFeedHighlight(highlight) {
+    const liveFeed = document.getElementById('liveFeed');
+    const badge = getEventBadge(highlight.type);
+    const minute = highlight.minute || '90';
+    
+    // Update minute display
+    let minuteText = `${minute}'`;
+    if (minute > 90 && minute <= 120) {
+        minuteText = `${minute}' (ET)`;
+    } else if (highlight.type === 'penaltyShootout') {
+        minuteText = 'Penalties';
+    }
+    document.getElementById('liveMinuteDisplay').textContent = minuteText;
+    
+    // Update score if it's a goal
+    if (highlight.type === 'goal' || (highlight.type === 'penalty' && highlight.description.toLowerCase().includes('goal'))) {
+        updateLiveScore(highlight);
+    }
+    
+    // Create highlight element
+    const highlightElement = document.createElement('div');
+    highlightElement.className = 'live-feed-item';
+    highlightElement.innerHTML = `
+        <div class="d-flex align-items-start p-3 border-bottom">
+            <div class="minute-indicator me-3">
+                <span class="badge bg-dark">${minuteText}</span>
+            </div>
+            <div class="flex-grow-1">
+                <div class="mb-1">
+                    ${badge}
+                    ${highlight.team ? `<span class="text-primary fw-bold">${highlight.team}</span>` : ''}
+                </div>
+                <p class="mb-0 highlight-text">${highlight.description}</p>
+            </div>
+        </div>
+    `;
+    
+    // Add animation class
+    highlightElement.style.opacity = '0';
+    highlightElement.style.transform = 'translateY(-20px)';
+    
+    // Insert at the top (newest first)
+    liveFeed.insertBefore(highlightElement, liveFeed.firstChild);
+    
+    // Trigger animation
+    setTimeout(() => {
+        highlightElement.style.transition = 'all 0.4s ease-out';
+        highlightElement.style.opacity = '1';
+        highlightElement.style.transform = 'translateY(0)';
+    }, 10);
+}
+
+// Update the live score display
+function updateLiveScore(highlight) {
+    // Extract score from highlight
+    if (highlight.score) {
+        const homeScore = highlight.score.home;
+        const awayScore = highlight.score.away;
+        document.getElementById('liveScoreDisplay').textContent = `${homeScore} - ${awayScore}`;
+        slowSimState.currentScore = { team1: homeScore, team2: awayScore };
+    }
+}
+
+// Display final results after slow simulation completes
+function displayFinalResults(result) {
+    showAlert('Match complete!', 'success');
+    
+    // Display in regular results section
+    displayResults(result);
+    
+    // Show a completion message in live feed
+    const liveFeed = document.getElementById('liveFeed');
+    const completionElement = document.createElement('div');
+    completionElement.className = 'live-feed-item bg-success text-white';
+    completionElement.innerHTML = `
+        <div class="text-center p-4">
+            <h4><i class="bi bi-check-circle-fill"></i> Match Complete</h4>
+            <p class="mb-0">Scroll down to see full match results</p>
+        </div>
+    `;
+    liveFeed.insertBefore(completionElement, liveFeed.firstChild);
+    
+    // Reset state
+    slowSimState.isRunning = false;
+    simulateBtn.disabled = false;
+    simulateSlowBtn.disabled = false;
+    
+    // Scroll to results after a moment
+    setTimeout(() => {
+        resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 2000);
+}
+
+// Stop slow simulation
+function stopSlowSimulation() {
+    // Clear all pending timeouts
+    slowSimState.timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    slowSimState.timeouts = [];
+    slowSimState.isRunning = false;
+    
+    // Re-enable buttons
+    simulateBtn.disabled = false;
+    simulateSlowBtn.disabled = false;
+    simulateSlowBtn.innerHTML = '<i class="bi bi-stopwatch-fill"></i> Slow Simulate Match';
+    
+    // Hide live feed
+    liveFeedSection.style.display = 'none';
+    
+    showAlert('Slow simulation stopped', 'info');
 }
 
