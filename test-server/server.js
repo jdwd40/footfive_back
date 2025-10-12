@@ -3,6 +3,7 @@ const path = require('path');
 const db = require('../db/connection');
 const MatchSimulator = require('../Gamelogic/MatchSimulator');
 const JCup = require('../Gamelogic/JCup');
+const Team = require('../models/TeamModel');
 
 const app = express();
 const PORT = 3001;
@@ -271,6 +272,25 @@ app.post('/api/championship/reset', (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Failed to reset championship',
+            details: error.message
+        });
+    }
+});
+
+// GET /api/stats - Get all team statistics
+app.get('/api/stats', async (req, res) => {
+    try {
+        const stats = await Team.getAllStats();
+        
+        res.json({
+            success: true,
+            stats: stats
+        });
+    } catch (error) {
+        console.error('Error fetching stats:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch team statistics',
             details: error.message
         });
     }

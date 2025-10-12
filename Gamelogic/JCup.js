@@ -46,10 +46,16 @@ class JCup {
         const roundResults = [];
         const winners = [];
 
+        // Determine the current round name (before matches are played)
+        const currentTeamCount = matches.length * 2; // Each match has 2 teams
+        const currentRoundName = this.getRoundName(currentTeamCount);
+
         for (const match of matches) {
             console.log(match);
             if (match.team2 === null) {  // Check for a bye
                 winners.push(match.team1);
+                // Update highest round for team with bye
+                await Team.updateHighestRound(match.team1.id, currentRoundName);
                 continue;
             }
             // Only fetch from database if teams don't already have ratings
@@ -61,6 +67,20 @@ class JCup {
             }
             const result = new MatchSimulator(match.team1, match.team2).simulate();
             const winner = result.score[match.team1.name] > result.score[match.team2.name] ? match.team1 : match.team2;
+            const loser = winner.id === match.team1.id ? match.team2 : match.team1;
+            
+            // Get scores for each team
+            const team1Goals = result.score[match.team1.name];
+            const team2Goals = result.score[match.team2.name];
+            
+            // Update match statistics for both teams
+            await Team.updateMatchStats(match.team1.id, winner.id === match.team1.id, team1Goals, team2Goals);
+            await Team.updateMatchStats(match.team2.id, winner.id === match.team2.id, team2Goals, team1Goals);
+            
+            // Update highest round reached for both teams (winner will advance, so they reach this round)
+            await Team.updateHighestRound(match.team1.id, currentRoundName);
+            await Team.updateHighestRound(match.team2.id, currentRoundName);
+            
             winners.push(winner);
             roundResults.push({
                 score: result.score,
@@ -95,9 +115,13 @@ class JCup {
             // Get runner-up team object
             const runnerUp = matches[0].team1.name === runnerUpName ? matches[0].team1 : matches[0].team2;
             
-            // Update statistics
+            // Update championship winner and runner-up statistics
             await Team.addJCupsWon(winner.id);
             await Team.addRunnerUp(runnerUp.id);
+            
+            // Update highest round for winner and runner-up
+            await Team.updateHighestRound(winner.id, 'Winner');
+            await Team.updateHighestRound(runnerUp.id, 'Runner-up');
             
             this.teams = winners;
             this.currentRound = 4;
@@ -123,6 +147,16 @@ class JCup {
             [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
         }
         return shuffled;
+    }
+
+    // Get round name based on number of teams
+    getRoundName(teamCount) {
+        if (teamCount === 2) return 'Final';
+        if (teamCount === 4) return 'Semi-finals';
+        if (teamCount === 8) return 'Quarter-finals';
+        if (teamCount === 16) return 'Round of 16';
+        if (teamCount === 32) return 'Round of 32';
+        return `Round of ${teamCount}`;
     }
     resetJCup() {
         this.currentRound = 0;

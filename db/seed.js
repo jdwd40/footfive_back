@@ -19,6 +19,7 @@ const seed = async (data) => {
         goals_against INTEGER DEFAULT 0 NOT NULL,
         jcups_won INTEGER DEFAULT 0 NOT NULL,
         runner_ups INTEGER DEFAULT 0 NOT NULL,
+        highest_round_reached VARCHAR(50) DEFAULT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     ); 

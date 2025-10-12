@@ -301,23 +301,59 @@ function createResultCard(match, index) {
     const team1Score = match.score[team1Name];
     const team2Score = match.score[team2Name];
 
+    // Check for extra time and penalties
+    const hadExtraTime = match.highlights.some(h => 
+        h.type === 'extraTimeStart' || h.type === 'extraTimeHalf' || h.type === 'extraTimeEnd'
+    );
+    const hadPenalties = match.highlights.some(h => h.type === 'penaltyShootout');
+
     // Determine winner
     let winnerClass1 = '';
     let winnerClass2 = '';
     let resultBadge = '';
+    let winnerName = '';
 
-    if (team1Score > team2Score) {
-        winnerClass1 = 'winner';
-        resultBadge = '<span class="badge bg-success">Winner</span>';
-    } else if (team2Score > team1Score) {
-        winnerClass2 = 'winner';
-        resultBadge = '<span class="badge bg-success">Winner</span>';
+    if (hadPenalties) {
+        // Winner determined by penalties
+        const team1PenScore = match.penaltyScore[team1Name];
+        const team2PenScore = match.penaltyScore[team2Name];
+        if (team1PenScore > team2PenScore) {
+            winnerClass1 = 'winner';
+            winnerName = team1Name;
+        } else {
+            winnerClass2 = 'winner';
+            winnerName = team2Name;
+        }
+    } else {
+        // Winner determined by regular/extra time score
+        if (team1Score > team2Score) {
+            winnerClass1 = 'winner';
+            winnerName = team1Name;
+        } else if (team2Score > team1Score) {
+            winnerClass2 = 'winner';
+            winnerName = team2Name;
+        }
     }
 
-    // Check for penalties or extra time
+    // Build match note showing how game was decided
     let matchNote = '';
-    if (match.penaltyScore && (match.penaltyScore[team1Name] !== undefined)) {
-        matchNote = `<small class="text-muted">(Penalties: ${match.penaltyScore[team1Name]}-${match.penaltyScore[team2Name]})</small>`;
+    if (hadPenalties) {
+        const team1PenScore = match.penaltyScore[team1Name];
+        const team2PenScore = match.penaltyScore[team2Name];
+        matchNote = `
+            <div class="text-center mt-2">
+                <small class="text-muted d-block">After Extra Time: ${team1Score}-${team2Score}</small>
+                <small class="text-warning fw-bold">Won on Penalties: ${team1PenScore}-${team2PenScore}</small>
+            </div>
+        `;
+    } else if (hadExtraTime) {
+        matchNote = `
+            <div class="text-center mt-2">
+                <small class="text-info fw-bold">
+                    <i class="bi bi-clock-history"></i> Decided in Extra Time
+                </small>
+            </div>
+        `;
     }
 
     card.innerHTML = `
@@ -328,16 +364,16 @@ function createResultCard(match, index) {
             <div class="team-result ${winnerClass1}">
                 <span class="team-name">${team1Name}</span>
                 <span class="team-score">${team1Score}</span>
-                ${team1Score > team2Score ? resultBadge : ''}
+                ${winnerClass1 ? '<span class="badge bg-success">Winner</span>' : ''}
             </div>
             <div class="score-divider">-</div>
             <div class="team-result ${winnerClass2}">
                 <span class="team-score">${team2Score}</span>
                 <span class="team-name">${team2Name}</span>
-                ${team2Score > team1Score ? resultBadge : ''}
+                ${winnerClass2 ? '<span class="badge bg-success">Winner</span>' : ''}
             </div>
         </div>
-        ${matchNote ? `<div class="text-center mt-2">${matchNote}</div>` : ''}
+        ${matchNote}
     `;
 
     return card;
@@ -373,12 +409,26 @@ function displayFinalWinner(finalResult, allResults) {
         const team1Score = finalMatch.score[team1Name];
         const team2Score = finalMatch.score[team2Name];
 
-        // Display final match score
-        let scoreDisplay = `Final Score: ${team1Name} ${team1Score} - ${team2Score} ${team2Name}`;
-        if (finalMatch.penaltyScore && (finalMatch.penaltyScore[team1Name] !== undefined)) {
-            scoreDisplay += ` (Penalties: ${finalMatch.penaltyScore[team1Name]}-${finalMatch.penaltyScore[team2Name]})`;
+        // Check for extra time and penalties
+        const hadExtraTime = finalMatch.highlights.some(h => 
+            h.type === 'extraTimeStart' || h.type === 'extraTimeHalf' || h.type === 'extraTimeEnd'
+        );
+        const hadPenalties = finalMatch.highlights.some(h => h.type === 'penaltyShootout');
+
+        // Display final match score with appropriate details
+        let scoreDisplay = `<div class="final-score-details">`;
+        scoreDisplay += `<h4 class="mb-2">Final Score: ${team1Name} ${team1Score} - ${team2Score} ${team2Name}</h4>`;
+        
+        if (hadPenalties) {
+            const team1PenScore = finalMatch.penaltyScore[team1Name];
+            const team2PenScore = finalMatch.penaltyScore[team2Name];
+            scoreDisplay += `<p class="text-warning mb-1"><i class="bi bi-bullseye"></i> Won on Penalties: ${team1PenScore}-${team2PenScore}</p>`;
+        } else if (hadExtraTime) {
+            scoreDisplay += `<p class="text-info"><i class="bi bi-clock-history"></i> Decided in Extra Time</p>`;
         }
-        document.getElementById('finalMatchScore').textContent = scoreDisplay;
+        
+        scoreDisplay += `</div>`;
+        document.getElementById('finalMatchScore').innerHTML = scoreDisplay;
     } else {
         // Fallback for old format
         const finalMatch = finalResult;
@@ -387,18 +437,40 @@ function displayFinalWinner(finalResult, allResults) {
         const team1Score = finalMatch.score[team1Name];
         const team2Score = finalMatch.score[team2Name];
 
-        const winner = team1Score > team2Score ? team1Name : team2Name;
-        const runnerUp = team1Score > team2Score ? team2Name : team1Name;
+        // Check for extra time and penalties
+        const hadExtraTime = finalMatch.highlights.some(h => 
+            h.type === 'extraTimeStart' || h.type === 'extraTimeHalf' || h.type === 'extraTimeEnd'
+        );
+        const hadPenalties = finalMatch.highlights.some(h => h.type === 'penaltyShootout');
+
+        let winner, runnerUp;
+        if (hadPenalties) {
+            const team1PenScore = finalMatch.penaltyScore[team1Name];
+            const team2PenScore = finalMatch.penaltyScore[team2Name];
+            winner = team1PenScore > team2PenScore ? team1Name : team2Name;
+            runnerUp = team1PenScore > team2PenScore ? team2Name : team1Name;
+        } else {
+            winner = team1Score > team2Score ? team1Name : team2Name;
+            runnerUp = team1Score > team2Score ? team2Name : team1Name;
+        }
 
         document.getElementById('winnerName').textContent = winner;
         document.getElementById('runnerUpName').textContent = runnerUp;
 
-        // Display final match score
-        let scoreDisplay = `Final Score: ${team1Name} ${team1Score} - ${team2Score} ${team2Name}`;
-        if (finalMatch.penaltyScore && (finalMatch.penaltyScore[team1Name] !== undefined)) {
-            scoreDisplay += ` (Penalties: ${finalMatch.penaltyScore[team1Name]}-${finalMatch.penaltyScore[team2Name]})`;
+        // Display final match score with appropriate details
+        let scoreDisplay = `<div class="final-score-details">`;
+        scoreDisplay += `<h4 class="mb-2">Final Score: ${team1Name} ${team1Score} - ${team2Score} ${team2Name}</h4>`;
+        
+        if (hadPenalties) {
+            const team1PenScore = finalMatch.penaltyScore[team1Name];
+            const team2PenScore = finalMatch.penaltyScore[team2Name];
+            scoreDisplay += `<p class="text-warning mb-1"><i class="bi bi-bullseye"></i> Won on Penalties: ${team1PenScore}-${team2PenScore}</p>`;
+        } else if (hadExtraTime) {
+            scoreDisplay += `<p class="text-info"><i class="bi bi-clock-history"></i> Decided in Extra Time</p>`;
         }
-        document.getElementById('finalMatchScore').textContent = scoreDisplay;
+        
+        scoreDisplay += `</div>`;
+        document.getElementById('finalMatchScore').innerHTML = scoreDisplay;
     }
 
     // Hide other sections, show final section
