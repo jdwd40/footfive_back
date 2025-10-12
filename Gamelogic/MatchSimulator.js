@@ -136,13 +136,14 @@ class MatchSimulator {
     }
 
     handlePenalty(attackingTeam) {
+        const defendingTeam = attackingTeam.name === this.team1.name ? this.team2 : this.team1;
         if (Math.random() < 0.5) {
             this.score[attackingTeam.name]++;
             this.highlights.push({
                 minute: this.minute,
                 type: HIGHLIGHT_TYPES.PENALTY,
                 team: attackingTeam.name,
-                description: `${this.minute}': PENALTY scored by ${attackingTeam.name}! Score is now ${this.score[attackingTeam.name]}-${this.score[this.team2.name]}`,
+                description: `${this.minute}': PENALTY scored by ${attackingTeam.name}! Score is now ${this.score[attackingTeam.name]}-${this.score[defendingTeam.name]}`,
                 score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
             });
 

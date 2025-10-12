@@ -33,6 +33,11 @@ class Player {
       const res = await pool.query('SELECT players.name AS player_name, players.attack, players.defense, players.is_goalkeeper FROM players JOIN teams ON players.team_id = teams.team_id WHERE teams.name = $1', [teamName]);
       return res.rows.map(p => new Player(p.player_id, p.team_id, p.player_name, p.attack, p.defense, p.is_goalkeeper));
     }
+
+    static async fetchByTeamId(teamId) {
+      const res = await pool.query('SELECT * FROM players WHERE team_id = $1', [teamId]);
+      return res.rows.map(p => new Player(p.player_id, p.team_id, p.name, p.attack, p.defense, p.is_goalkeeper));
+    }
 }
 
 module.exports = Player;

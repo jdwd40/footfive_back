@@ -12,6 +12,7 @@ FootFive is a REST Express.js backend for a football (soccer) management simulat
 - [Game Logic](#game-logic)
 - [Match Simulation](#match-simulation)
 - [Tournament System](#tournament-system)
+- [Testing](#testing)
 - [Setup & Installation](#setup--installation)
 - [Usage Examples](#usage-examples)
 
@@ -21,6 +22,7 @@ FootFive is a REST Express.js backend for a football (soccer) management simulat
 - **Backend**: Node.js + Express.js
 - **Database**: PostgreSQL
 - **Database Driver**: `pg` (node-postgres)
+- **Testing**: Jest + Supertest
 - **Environment**: dotenv for configuration
 - **CORS**: Enabled for frontend integration
 
@@ -226,6 +228,52 @@ Team ratings are calculated from the best player stats in each category:
 - **Random Shuffling**: Teams are randomly paired each round
 - **Fair Distribution**: Ensures no team gets multiple byes
 - **Progressive Structure**: Winners advance to next stage
+
+## Testing
+
+FootFive uses **Jest** as the testing framework with comprehensive test coverage across all components.
+
+### Test Structure
+- **Unit Tests**: Models and game logic (`__tests__/unit/`)
+- **Integration Tests**: Controllers with database (`__tests__/integration/`)
+- **API Tests**: Route configuration (`__tests__/api/`)
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run with coverage report
+npm run test:coverage
+
+# Run in watch mode (auto-rerun on changes)
+npm run test:watch
+
+# Run specific test suites
+npm run test:models        # Model tests only
+npm run test:gamelogic     # Game logic tests only
+npm run test:controllers   # Controller tests only
+npm run test:routes        # Route tests only
+```
+
+### Test Database
+
+Tests use a separate test database (`footfive_test`) to avoid affecting development data:
+
+```bash
+# Setup test database (first time only)
+bash setup-test-database.sh
+```
+
+### Coverage Goals
+- Models: 90%+ coverage
+- Controllers: 85%+ coverage
+- Game Logic: 90%+ coverage
+- Routes: 80%+ coverage
+- Overall: 70%+ minimum
+
+**For detailed testing documentation, see [TESTING.md](./TESTING.md)**
 
 ## Setup & Installation
 

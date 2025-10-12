@@ -1,6 +1,11 @@
 const JCup = require('../Gamelogic/JCup');
 const jCup = new JCup(); // Initialize JCup instance globally if it's to be reused across multiple requests
 
+// Reset function for testing purposes
+exports.resetJCup = () => {
+    jCup.resetJCup();
+};
+
 // Initialize tournament and generate fixtures
 exports.initTournament = async (req, res) => {
     try {
@@ -20,6 +25,13 @@ exports.initTournament = async (req, res) => {
 
 // Simulate a round
 exports.playRound = async (req, res) => {
+    // Check if tournament has been initialized
+    if (!jCup.fixtures || jCup.fixtures.length === 0 || !jCup.teams || jCup.teams.length === 0) {
+        return res.status(400).json({ 
+            message: "Tournament not initialized. Please call /api/jcup/init first." 
+        });
+    }
+
     if (jCup.currentRound >= jCup.fixtures.length) {
         return res.status(400).json({ message: "No more rounds to play or tournament not initialized." });
     }

@@ -52,8 +52,13 @@ class JCup {
                 winners.push(match.team1);
                 continue;
             }
-            match.team1 = await Team.getRatingByTeamName(match.team1.name);
-            match.team2 = await Team.getRatingByTeamName(match.team2.name);
+            // Only fetch from database if teams don't already have ratings
+            if (!match.team1.attackRating || !match.team1.defenseRating || !match.team1.goalkeeperRating) {
+                match.team1 = await Team.getRatingByTeamName(match.team1.name);
+            }
+            if (!match.team2.attackRating || !match.team2.defenseRating || !match.team2.goalkeeperRating) {
+                match.team2 = await Team.getRatingByTeamName(match.team2.name);
+            }
             const result = new MatchSimulator(match.team1, match.team2).simulate();
             const winner = result.score[match.team1.name] > result.score[match.team2.name] ? match.team1 : match.team2;
             winners.push(winner);
@@ -78,17 +83,30 @@ class JCup {
         if (winners.length > 1) {
             this.generateFixtures(winners);
         } else {
-            // Reset for a new tournament if you want to start over automatically
+            // Tournament finished - determine winner and runner-up from final match
+            const finalMatch = roundResults[0]; // The last match is the final
+            const winner = winners[0];
+            
+            // Determine runner-up from the final match
+            const finalMatchTeam1 = matches[0].team1.name;
+            const finalMatchTeam2 = matches[0].team2.name;
+            const runnerUpName = finalMatchTeam1 === winner.name ? finalMatchTeam2 : finalMatchTeam1;
+            
+            // Get runner-up team object
+            const runnerUp = matches[0].team1.name === runnerUpName ? matches[0].team1 : matches[0].team2;
+            
+            // Update statistics
+            await Team.addJCupsWon(winner.id);
+            await Team.addRunnerUp(runnerUp.id);
+            
             this.teams = winners;
             this.currentRound = 4;
-            const winner = winners[0];
-            await Team.addJCupsWon(winner.id);
-            const runner = null;
+            
             return {
                 roundResults,
                 nextRoundFixtures: this.fixtures[this.currentRound] || "Tournament finished, initializing new tournament.",
                 winner,
-                runner
+                runner: runnerUp
             };
         }
 
@@ -114,8 +132,11 @@ class JCup {
         this.teams = [];
     }
 
-    async jCupWon(winner_id) {
+    async jCupWon(winner_id, runner_id) {
         await Team.addJCupsWon(winner_id);
+        if (runner_id) {
+            await Team.addRunnerUp(runner_id);
+        }
         return { msg: "updated" };
     }
     
