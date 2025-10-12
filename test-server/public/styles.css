@@ -1,0 +1,277 @@
+/* Custom styles for Match Simulator Test GUI */
+
+body {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.container {
+    max-width: 1200px;
+}
+
+/* Header Styles */
+header h1 {
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+    color: #fff !important;
+}
+
+header .lead {
+    color: #fff !important;
+}
+
+/* Card Enhancements */
+.card {
+    border: none;
+    border-radius: 15px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2) !important;
+}
+
+.card-header {
+    border-radius: 15px 15px 0 0 !important;
+    padding: 1rem 1.5rem;
+    font-size: 1.1rem;
+}
+
+/* Rating Card Styles */
+.rating-card {
+    background: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 10px;
+    border: 2px solid #dee2e6;
+}
+
+.team-name {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #495057;
+    padding-bottom: 0.5rem;
+    border-bottom: 3px solid #0d6efd;
+}
+
+/* Form Controls */
+.form-control-lg {
+    border-radius: 8px;
+    border: 2px solid #ced4da;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.form-control-lg:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.form-select-lg {
+    border-radius: 8px;
+    border: 2px solid #ced4da;
+}
+
+/* Button Styles */
+.btn-lg {
+    padding: 0.75rem 2rem;
+    font-size: 1.1rem;
+    border-radius: 10px;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    border: none;
+}
+
+.btn-success:hover {
+    background: linear-gradient(135deg, #38ef7d 0%, #11998e 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(56, 239, 125, 0.4);
+}
+
+/* Final Score Display */
+#finalScore {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    border-radius: 15px;
+}
+
+#finalScore h3 {
+    font-weight: 600;
+    opacity: 0.9;
+}
+
+#scoreDisplay {
+    font-size: 3.5rem;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+#outcomeDisplay {
+    color: white !important;
+    font-size: 1.3rem;
+    font-weight: 500;
+}
+
+/* Tabs Styling */
+.nav-tabs {
+    border: none;
+}
+
+.nav-tabs .nav-link {
+    border: 2px solid #dee2e6;
+    border-radius: 10px 10px 0 0;
+    color: #495057;
+    font-weight: 600;
+    transition: all 0.3s;
+    margin-right: 0.5rem;
+}
+
+.nav-tabs .nav-link:hover {
+    border-color: #0d6efd;
+    color: #0d6efd;
+}
+
+.nav-tabs .nav-link.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white !important;
+    border-color: #667eea;
+}
+
+/* Highlights Container */
+.highlights-container {
+    max-height: 500px;
+    overflow-y: auto;
+    padding: 0.5rem;
+}
+
+.highlights-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.highlights-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.highlights-container::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 10px;
+}
+
+.highlights-container::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Highlight Items */
+.highlight-item {
+    border-left: 4px solid #0d6efd;
+    margin-bottom: 0.5rem;
+    transition: all 0.2s;
+}
+
+.highlight-item:hover {
+    background-color: #f8f9fa;
+    transform: translateX(5px);
+}
+
+.highlight-description {
+    font-size: 1rem;
+    color: #212529;
+}
+
+.minute-badge {
+    font-size: 0.9rem;
+    padding: 0.35rem 0.6rem;
+    margin-right: 0.5rem;
+}
+
+/* Event Type Badges */
+.badge {
+    font-size: 0.85rem;
+    padding: 0.35rem 0.6rem;
+    margin-right: 0.5rem;
+}
+
+/* Alert Styles */
+.alert {
+    border-radius: 10px;
+    border: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .display-4 {
+        font-size: 2rem;
+    }
+
+    #scoreDisplay {
+        font-size: 2.5rem;
+    }
+
+    .rating-card {
+        margin-bottom: 1rem;
+    }
+
+    .nav-tabs .nav-link {
+        font-size: 0.9rem;
+        padding: 0.5rem;
+    }
+
+    .btn-lg {
+        padding: 0.5rem 1rem;
+        font-size: 1rem;
+    }
+}
+
+/* Loading Animation */
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+.spinner-border-sm {
+    animation: pulse 1s infinite;
+}
+
+/* Icon Styling */
+.bi {
+    vertical-align: middle;
+}
+
+/* List Group Enhancements */
+.list-group-item {
+    border-radius: 8px !important;
+    border: 1px solid #dee2e6;
+}
+
+.list-group-item:first-child {
+    border-top-left-radius: 8px !important;
+    border-top-right-radius: 8px !important;
+}
+
+.list-group-item:last-child {
+    border-bottom-left-radius: 8px !important;
+    border-bottom-right-radius: 8px !important;
+}
+
