@@ -43,11 +43,21 @@ function setupEventListeners() {
 
 // Setup modal event listeners
 function setupModalEventListeners() {
-    const liveMatchModal = document.getElementById('liveMatchModal');
-    liveMatchModal.addEventListener('hidden.bs.modal', function () {
-        // Clean up when modal is closed
+    // Set up explicit close button handlers
+    const closeMatchModal = document.getElementById('closeMatchModal');
+    const closeMatchModalBtn = document.getElementById('closeMatchModalBtn');
+    
+    // Only stop live match when user explicitly clicks close buttons
+    closeMatchModal.addEventListener('click', function () {
         stopLiveMatch();
     });
+    
+    closeMatchModalBtn.addEventListener('click', function () {
+        stopLiveMatch();
+    });
+    
+    // Note: We don't listen to 'hidden.bs.modal' so the match continues playing
+    // even if the modal is hidden (e.g., user navigates away, switches tabs, etc.)
 }
 
 // Check championship status on load
@@ -153,6 +163,19 @@ async function startChampionship() {
 function displayFixtures() {
     console.log('displayFixtures called - currentRound:', championshipState.currentRound, 'totalRounds:', championshipState.totalRounds);
     console.log('Fixtures array length:', championshipState.fixtures.length);
+    
+    // Defensive checks
+    if (!championshipState.fixtures || championshipState.fixtures.length === 0) {
+        console.error('No fixtures available in championship state');
+        showAlert('Championship not initialized', 'warning');
+        return;
+    }
+    
+    if (championshipState.currentRound < 0 || championshipState.currentRound >= championshipState.fixtures.length) {
+        console.error('Invalid currentRound index:', championshipState.currentRound, 'Fixtures length:', championshipState.fixtures.length);
+        showAlert('Invalid round state', 'warning');
+        return;
+    }
     
     const currentRoundFixtures = championshipState.fixtures[championshipState.currentRound];
     
@@ -603,12 +626,43 @@ async function watchMatch(matchIndex) {
             document.getElementById('closeMatchModal').disabled = false;
             document.getElementById('closeMatchModalBtn').disabled = false;
             
-            // Refresh the fixtures display to show completed match
-            displayFixtures();
-            
-            // Check if round is complete
-            if (data.isRoundComplete) {
+            // Check if championship is complete FIRST before updating display
+            if (data.championshipComplete && data.championshipWinner) {
+                // Update championship state BEFORE closing modal and showing winner
+                championshipState.currentRound = data.championship.currentRound;
+                championshipState.totalRounds = data.championship.totalRounds;
+                
+                // Close the modal
+                const liveMatchModal = bootstrap.Modal.getInstance(document.getElementById('liveMatchModal'));
+                if (liveMatchModal) {
+                    liveMatchModal.hide();
+                }
+                
+                // Build the result object in the expected format for displayFinalWinner
+                const finalResult = {
+                    winner: data.championshipWinner,
+                    runner: data.championshipRunner,
+                    roundResults: [data.result]
+                };
+                
+                // Display the final winner screen
+                setTimeout(() => {
+                    displayFinalWinner(finalResult, championshipState.results);
+                    clearAlerts();
+                    showAlert('Championship complete!', 'success');
+                }, 500);
+            } else if (data.isRoundComplete) {
+                // Round complete but not the final
+                // Fetch updated state including new fixtures for next round
+                await fetchUpdatedChampionshipState();
+                
+                // Refresh the fixtures display to show completed match
+                displayFixtures();
+                
                 showAlert('All matches in this round are complete! You can advance to the next round.', 'success');
+            } else {
+                // Match complete but round not complete - refresh fixtures display
+                displayFixtures();
             }
         } else {
             showAlert(`Error: ${data.error}`, 'danger');
@@ -635,7 +689,7 @@ async function playMatchLive(matchResult, fixture) {
         
         // Clear highlights feed
         document.getElementById('highlightsFeed').innerHTML = '';
-        document.getElementById('matchStatus').textContent = 'In Progress';
+        document.getElementById('matchStatus').textContent = 'First Half';
         document.getElementById('matchStatus').className = 'badge bg-success';
         
         // Separate regular highlights from penalty shootout
@@ -645,7 +699,8 @@ async function playMatchLive(matchResult, fixture) {
         highlights.forEach(highlight => {
             if (highlight.type === 'penaltyShootout') {
                 penaltyShootoutHighlights.push(highlight);
-            } else {
+            } else if (highlight.type !== 'halfTime' && highlight.type !== 'fullTime') {
+                // Skip halfTime and fullTime highlights - we'll show them via showSpecialMessage instead
                 regularHighlights.push(highlight);
             }
         });
@@ -749,12 +804,38 @@ async function playMatchLive(matchResult, fixture) {
             
             currentMinuteIndex++;
             
+            // Update status badge based on game phase
+            if (minute === 46) {
+                const secondHalfTimeout = setTimeout(() => {
+                    if (!liveMatchState.isPlaying) return;
+                    document.getElementById('matchStatus').textContent = 'Second Half';
+                    document.getElementById('matchStatus').className = 'badge bg-success';
+                }, totalElapsedTime);
+                liveMatchState.timeouts.push(secondHalfTimeout);
+            } else if (minute === 91 && hasExtraTime) {
+                const extraTimeTimeout = setTimeout(() => {
+                    if (!liveMatchState.isPlaying) return;
+                    document.getElementById('matchStatus').textContent = 'Extra Time - First Half';
+                    document.getElementById('matchStatus').className = 'badge bg-warning';
+                }, totalElapsedTime);
+                liveMatchState.timeouts.push(extraTimeTimeout);
+            } else if (minute === 106 && hasExtraTime) {
+                const extraTime2Timeout = setTimeout(() => {
+                    if (!liveMatchState.isPlaying) return;
+                    document.getElementById('matchStatus').textContent = 'Extra Time - Second Half';
+                    document.getElementById('matchStatus').className = 'badge bg-warning';
+                }, totalElapsedTime);
+                liveMatchState.timeouts.push(extraTime2Timeout);
+            }
+            
             // Check for special pauses - only for actual game minutes, not penalty shootouts
             let additionalPause = 0;
             if (minute === 45 && minute <= 120) {
                 // Half-time pause
                 const halfTimeTimeout = setTimeout(() => {
                     if (!liveMatchState.isPlaying) return;
+                    document.getElementById('matchStatus').textContent = 'Half Time';
+                    document.getElementById('matchStatus').className = 'badge bg-info';
                     showSpecialMessage(`Half Time<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`, 'bg-info');
                 }, totalElapsedTime + eventDelay);
                 liveMatchState.timeouts.push(halfTimeTimeout);
@@ -763,10 +844,38 @@ async function playMatchLive(matchResult, fixture) {
                 // Full-time pause before extra time
                 const fullTimeTimeout = setTimeout(() => {
                     if (!liveMatchState.isPlaying) return;
+                    document.getElementById('matchStatus').textContent = 'Full Time';
+                    document.getElementById('matchStatus').className = 'badge bg-info';
                     showSpecialMessage(`Full Time - Going to Extra Time<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`, 'bg-warning');
                 }, totalElapsedTime + eventDelay);
                 liveMatchState.timeouts.push(fullTimeTimeout);
                 additionalPause = 5000; // 5 second pause at full-time
+            } else if (minute === 90 && !hasExtraTime) {
+                // Match ending at full time (no extra time)
+                const fullTimeEndTimeout = setTimeout(() => {
+                    if (!liveMatchState.isPlaying) return;
+                    document.getElementById('matchStatus').textContent = 'Full Time';
+                    document.getElementById('matchStatus').className = 'badge bg-info';
+                }, totalElapsedTime + eventDelay);
+                liveMatchState.timeouts.push(fullTimeEndTimeout);
+            } else if (minute === 105 && hasExtraTime) {
+                // Extra time half-time pause
+                const etHalfTimeout = setTimeout(() => {
+                    if (!liveMatchState.isPlaying) return;
+                    document.getElementById('matchStatus').textContent = 'ET Half Time';
+                    document.getElementById('matchStatus').className = 'badge bg-info';
+                    showSpecialMessage(`Extra Time Half Time<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`, 'bg-info');
+                }, totalElapsedTime + eventDelay);
+                liveMatchState.timeouts.push(etHalfTimeout);
+                additionalPause = 3000; // 3 second pause at ET half-time
+            } else if (minute === 120 && hasExtraTime) {
+                // End of extra time
+                const etEndTimeout = setTimeout(() => {
+                    if (!liveMatchState.isPlaying) return;
+                    document.getElementById('matchStatus').textContent = 'End of Extra Time';
+                    document.getElementById('matchStatus').className = 'badge bg-info';
+                }, totalElapsedTime + eventDelay);
+                liveMatchState.timeouts.push(etEndTimeout);
             }
             
             // Total time for this minute
@@ -787,8 +896,21 @@ async function playMatchLive(matchResult, fixture) {
             
             document.getElementById('matchStatus').textContent = 'Penalty Shootout';
             document.getElementById('matchStatus').className = 'badge bg-warning';
+            document.getElementById('liveMinute').textContent = "120' (Penalties)";
+            
+            // Show penalty shootout starting message
+            const startTimeout = setTimeout(() => {
+                if (!liveMatchState.isPlaying) return;
+                showSpecialMessage(
+                    `Penalty Shootout<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`,
+                    'bg-warning'
+                );
+            }, totalElapsedTime);
+            liveMatchState.timeouts.push(startTimeout);
+            totalElapsedTime += 2000; // 2 second pause before first penalty
             
             let shootoutIndex = 0;
+            let isSuddenDeath = false;
             
             function playNextPenalty() {
                 if (!liveMatchState.isPlaying || shootoutIndex >= penaltyShootoutHighlights.length) {
@@ -796,19 +918,13 @@ async function playMatchLive(matchResult, fixture) {
                     const timeout = setTimeout(() => {
                         if (!liveMatchState.isPlaying) return;
                         
-                        // Keep showing the draw score with penalty scores in brackets
-                        document.getElementById('liveTeam1Score').textContent = 
-                            `${currentScore[team1Name]}(${penaltyScore[team1Name]})`;
-                        document.getElementById('liveTeam2Score').textContent = 
-                            `${currentScore[team2Name]}(${penaltyScore[team2Name]})`;
-                        
                         // Show final result message
                         const winner = penaltyScore[team1Name] > penaltyScore[team2Name] ? team1Name : team2Name;
                         const winnerPenScore = Math.max(penaltyScore[team1Name], penaltyScore[team2Name]);
                         const loserPenScore = Math.min(penaltyScore[team1Name], penaltyScore[team2Name]);
                         
                         showSpecialMessage(
-                            `Match Complete<br>${winner} wins ${winnerPenScore}-${loserPenScore} on penalties<br>Final Score: ${currentScore[team1Name]}-${currentScore[team2Name]} (Draw)`,
+                            `Match Complete<br>${winner} wins ${winnerPenScore}-${loserPenScore} on penalties`,
                             'bg-secondary'
                         );
                         
@@ -822,43 +938,87 @@ async function playMatchLive(matchResult, fixture) {
                 
                 const highlight = penaltyShootoutHighlights[shootoutIndex];
                 
-                // Display penalty highlight
+                // Check if this is sudden death announcement
+                if (highlight.roundType === 'sudden_death_start') {
+                    const suddenDeathTimeout = setTimeout(() => {
+                        if (!liveMatchState.isPlaying) return;
+                        showSpecialMessage(highlight.description, 'bg-danger');
+                        document.getElementById('matchStatus').textContent = 'Sudden Death!';
+                        document.getElementById('matchStatus').className = 'badge bg-danger';
+                        isSuddenDeath = true;
+                    }, totalElapsedTime);
+                    liveMatchState.timeouts.push(suddenDeathTimeout);
+                    totalElapsedTime += 3000; // 3 second pause for sudden death announcement
+                    shootoutIndex++;
+                    
+                    const nextTimeout = setTimeout(playNextPenalty, 3000);
+                    liveMatchState.timeouts.push(nextTimeout);
+                    return;
+                }
+                
+                // Check if this is a setup (stepping up) or outcome
+                if (highlight.step === 'setup') {
+                    // Show team stepping up
+                    const setupTimeout = setTimeout(() => {
+                        if (!liveMatchState.isPlaying) return;
+                        addHighlightToFeed(highlight, team1Name, team2Name);
+                    }, totalElapsedTime);
+                    liveMatchState.timeouts.push(setupTimeout);
+                    totalElapsedTime += 2000; // 2 second suspense
+                    shootoutIndex++;
+                    
+                    const nextTimeout = setTimeout(playNextPenalty, 2000);
+                    liveMatchState.timeouts.push(nextTimeout);
+                    return;
+                }
+                
+                // This is an outcome
+                if (highlight.step === 'outcome') {
+                    const outcomeTimeout = setTimeout(() => {
+                        if (!liveMatchState.isPlaying) return;
+                        
+                        addHighlightToFeed(highlight, team1Name, team2Name);
+                        
+                        // Update penalty scores from highlight metadata
+                        if (highlight.scoreAfter) {
+                            penaltyScore[team1Name] = highlight.scoreAfter[team1Name] || 0;
+                            penaltyScore[team2Name] = highlight.scoreAfter[team2Name] || 0;
+                            
+                            // Update display with bracketed penalty scores
+                            document.getElementById('liveTeam1Score').textContent = 
+                                `${currentScore[team1Name]}(${penaltyScore[team1Name]})`;
+                            document.getElementById('liveTeam1Score').classList.add('score-updated');
+                            setTimeout(() => {
+                                document.getElementById('liveTeam1Score').classList.remove('score-updated');
+                            }, 500);
+                            
+                            document.getElementById('liveTeam2Score').textContent = 
+                                `${currentScore[team2Name]}(${penaltyScore[team2Name]})`;
+                            document.getElementById('liveTeam2Score').classList.add('score-updated');
+                            setTimeout(() => {
+                                document.getElementById('liveTeam2Score').classList.remove('score-updated');
+                            }, 500);
+                        }
+                    }, totalElapsedTime);
+                    liveMatchState.timeouts.push(outcomeTimeout);
+                    totalElapsedTime += 2000; // 2 second pause after outcome
+                    shootoutIndex++;
+                    
+                    const nextTimeout = setTimeout(playNextPenalty, 2000);
+                    liveMatchState.timeouts.push(nextTimeout);
+                    return;
+                }
+                
+                // Fallback for old format (shouldn't happen with new backend)
                 const timeout = setTimeout(() => {
                     if (!liveMatchState.isPlaying) return;
-                    
                     addHighlightToFeed(highlight, team1Name, team2Name);
-                    
-                    // Check if this is a scored penalty in shootout
-                    if (highlight.description.includes('score') || highlight.description.includes('GOAL')) {
-                        // Determine which team scored
-                        if (highlight.description.includes(team1Name)) {
-                            penaltyScore[team1Name]++;
-                        } else if (highlight.description.includes(team2Name)) {
-                            penaltyScore[team2Name]++;
-                        }
-                        
-                        // Update display with bracketed penalty scores - KEEP the draw score
-                        document.getElementById('liveTeam1Score').textContent = 
-                            `${currentScore[team1Name]}(${penaltyScore[team1Name]})`;
-                        document.getElementById('liveTeam1Score').classList.add('score-updated');
-                        setTimeout(() => {
-                            document.getElementById('liveTeam1Score').classList.remove('score-updated');
-                        }, 500);
-                        
-                        document.getElementById('liveTeam2Score').textContent = 
-                            `${currentScore[team2Name]}(${penaltyScore[team2Name]})`;
-                        document.getElementById('liveTeam2Score').classList.add('score-updated');
-                        setTimeout(() => {
-                            document.getElementById('liveTeam2Score').classList.remove('score-updated');
-                        }, 500);
-                    }
                 }, totalElapsedTime);
                 liveMatchState.timeouts.push(timeout);
                 
                 shootoutIndex++;
-                totalElapsedTime += 1500; // 1.5 seconds per penalty
+                totalElapsedTime += 1500;
                 
-                // Schedule next penalty
                 const nextTimeout = setTimeout(playNextPenalty, 1500);
                 liveMatchState.timeouts.push(nextTimeout);
             }

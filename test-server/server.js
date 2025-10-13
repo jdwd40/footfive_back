@@ -247,6 +247,69 @@ app.post('/api/championship/simulate-match', async (req, res) => {
         // Check if all matches in the round are complete
         const isRoundComplete = championship.isRoundComplete();
         
+        // Check if this is the final and championship is complete
+        let championshipComplete = false;
+        let championshipWinner = null;
+        let championshipRunner = null;
+        
+        if (isRoundComplete) {
+            // Get current round matches to determine if this is the final
+            const currentRoundMatches = championship.fixtures[championship.currentRound];
+            const currentTeamCount = currentRoundMatches.length * 2;
+            
+            // If there are only 2 teams (1 match), this is the final
+            if (currentTeamCount === 2) {
+                // This was the final - collect all winners from this round
+                const winners = [];
+                const completedInRound = championship.completedMatches[championship.currentRound];
+                
+                for (let i = 0; i < currentRoundMatches.length; i++) {
+                    if (completedInRound[i]) {
+                        winners.push(completedInRound[i].winner);
+                    }
+                }
+                
+                // There should be exactly 1 winner (the champion)
+                if (winners.length === 1) {
+                    championshipComplete = true;
+                    championshipWinner = winners[0];
+                    
+                    // Determine runner-up from the final match
+                    const finalMatch = currentRoundMatches[0];
+                    championshipRunner = finalMatch.team1.id === championshipWinner.id ? finalMatch.team2 : finalMatch.team1;
+                    
+                    // Update database with championship results
+                    await Team.addJCupsWon(championshipWinner.id);
+                    await Team.addRunnerUp(championshipRunner.id);
+                    
+                    // Update highest round for winner and runner-up
+                    await Team.updateHighestRound(championshipWinner.id, 'Winner');
+                    await Team.updateHighestRound(championshipRunner.id, 'Runner-up');
+                    
+                    // Advance round to mark championship as complete
+                    championship.currentRound++;
+                    
+                    console.log('Championship complete! Winner:', championshipWinner.name, 'Runner-up:', championshipRunner.name);
+                }
+            } else {
+                // Not the final - generate next round fixtures
+                const winners = [];
+                const completedInRound = championship.completedMatches[championship.currentRound];
+                
+                for (let i = 0; i < currentRoundMatches.length; i++) {
+                    if (completedInRound[i]) {
+                        winners.push(completedInRound[i].winner);
+                    }
+                }
+                
+                // Advance to next round
+                championship.currentRound++;
+                championship.generateFixtures(winners);
+                
+                console.log('Round complete. Advancing to next round:', championship.currentRound);
+            }
+        }
+        
         res.json({
             success: true,
             message: 'Match simulated successfully',
@@ -254,10 +317,13 @@ app.post('/api/championship/simulate-match', async (req, res) => {
             result: result.matchResult,
             winner: result.winner,
             isRoundComplete: isRoundComplete,
+            championshipComplete: championshipComplete,
+            championshipWinner: championshipWinner,
+            championshipRunner: championshipRunner,
             championship: {
                 currentRound: championship.currentRound,
                 totalRounds: championship.fixtures.length,
-                completedMatches: championship.completedMatches[championship.currentRound] || {}
+                completedMatches: championship.completedMatches[championship.currentRound - (championshipComplete ? 1 : 0)] || {}
             }
         });
     } catch (error) {
