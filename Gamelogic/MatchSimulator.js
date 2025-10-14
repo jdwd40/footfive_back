@@ -82,13 +82,7 @@ class MatchSimulator {
 
             // Check if still a draw after extra time
             if (this.score[this.team1.name] === this.score[this.team2.name]) {
-                this.highlights.push({
-                    minute: 120,
-                    type: HIGHLIGHT_TYPES.PENALTY_SHOOTOUT,
-                    description: "Extra time ended in a draw. Starting penalty shootout.",
-                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
-                });
-
+                // Penalty shootout will be announced by frontend with proper timing
                 this.handlePenaltyShootout();
             }
         }
@@ -338,76 +332,130 @@ class MatchSimulator {
     handlePenaltyShootout() {
         let team1Score = 0;
         let team2Score = 0;
+        let penaltyNumber = 1;
+        
+        // Initial 5 penalties for each team
         for (let i = 0; i < 5; i++) {
-            team1Score += this.takePenalty(this.team1);
-            team2Score += this.takePenalty(this.team2);
+            team1Score += this.takePenalty(this.team1, penaltyNumber, 'initial', team1Score, team2Score);
+            penaltyNumber++;
+            team2Score += this.takePenalty(this.team2, penaltyNumber, 'initial', team1Score, team2Score);
+            penaltyNumber++;
         }
-        while (team1Score === team2Score) {
-            team1Score += this.takePenalty(this.team1);
-            team2Score += this.takePenalty(this.team2);
+        
+        // If still tied after 5 penalties each, go to sudden death
+        if (team1Score === team2Score) {
+            // Add sudden death announcement
+            this.highlights.push({
+                minute: 120,
+                type: HIGHLIGHT_TYPES.PENALTY_SHOOTOUT,
+                team: null,
+                penaltyNumber: 0,
+                roundType: 'sudden_death_start',
+                description: `Sudden Death! Scores tied ${team1Score}-${team2Score} after 5 penalties each.`,
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            });
+            
+            // Continue with sudden death
+            while (team1Score === team2Score) {
+                team1Score += this.takePenalty(this.team1, penaltyNumber, 'sudden_death', team1Score, team2Score);
+                penaltyNumber++;
+                team2Score += this.takePenalty(this.team2, penaltyNumber, 'sudden_death', team1Score, team2Score);
+                penaltyNumber++;
+            }
         }
+        
         this.penaltyScore[this.team1.name] = team1Score;
         this.penaltyScore[this.team2.name] = team2Score;
         this.updateShootoutScore(team1Score, team2Score);
     }
 
-    takePenalty(team) {
+    takePenalty(team, penaltyNumber, roundType, currentTeam1Score, currentTeam2Score) {
         const defendingTeam = team.name === this.team1.name ? this.team2 : this.team1;
         
-        // Stage 1: Penalty setup (optional - commented out to avoid too many highlights in shootout)
-        // Uncomment if you want more dramatic shootout commentary
-        /*
+        // Stage 1: Penalty setup - team stepping up
         this.highlights.push({
-            minute: 90,
+            minute: 120,
             type: HIGHLIGHT_TYPES.PENALTY_SHOOTOUT,
             team: team.name,
-            description: `Penalty Shootout: ${team.name} step up...`,
+            penaltyNumber: penaltyNumber,
+            roundType: roundType,
+            step: 'setup',
+            takingTeam: team.name,
+            defendingTeam: defendingTeam.name,
+            description: `${team.name} steps up to take penalty #${Math.ceil(penaltyNumber / 2)}`,
             score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
         });
-        */
         
         // Determine outcome using similar logic to regular penalties
         const outcome = this.determinePenaltyShootoutOutcome(defendingTeam);
         
+        // Calculate score after this penalty
+        const isTeam1 = team.name === this.team1.name;
+        const scoreAfter = {
+            [this.team1.name]: currentTeam1Score + (isTeam1 && outcome === 'scored' ? 1 : 0),
+            [this.team2.name]: currentTeam2Score + (!isTeam1 && outcome === 'scored' ? 1 : 0)
+        };
+        
         // Stage 2: Result
         if (outcome === 'scored') {
             const scoreDescriptions = [
-                `Penalty Shootout: ${team.name} score!`,
-                `Penalty Shootout: GOAL! ${team.name} convert!`,
-                `Penalty Shootout: ${team.name} find the net!`
+                `GOAL! ${team.name} score!`,
+                `It's in! ${team.name} convert!`,
+                `${team.name} find the net!`
             ];
             this.highlights.push({
-                minute: 90,
+                minute: 120,
                 type: HIGHLIGHT_TYPES.PENALTY_SHOOTOUT,
                 team: team.name,
+                penaltyNumber: penaltyNumber,
+                roundType: roundType,
+                step: 'outcome',
+                outcome: 'scored',
+                takingTeam: team.name,
+                defendingTeam: defendingTeam.name,
+                scoreAfter: scoreAfter,
                 description: scoreDescriptions[Math.floor(Math.random() * scoreDescriptions.length)],
                 score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
             });
             return 1;
         } else if (outcome === 'saved') {
             const saveDescriptions = [
-                `Penalty Shootout: SAVED! ${defendingTeam.name}'s keeper denies ${team.name}!`,
-                `Penalty Shootout: The keeper saves from ${team.name}!`,
-                `Penalty Shootout: ${defendingTeam.name}'s goalkeeper stops it!`
+                `SAVED! ${defendingTeam.name}'s keeper denies ${team.name}!`,
+                `The keeper saves it!`,
+                `${defendingTeam.name}'s goalkeeper stops it!`
             ];
             this.highlights.push({
-                minute: 90,
+                minute: 120,
                 type: HIGHLIGHT_TYPES.PENALTY_SHOOTOUT,
                 team: team.name,
+                penaltyNumber: penaltyNumber,
+                roundType: roundType,
+                step: 'outcome',
+                outcome: 'saved',
+                takingTeam: team.name,
+                defendingTeam: defendingTeam.name,
+                scoreAfter: scoreAfter,
                 description: saveDescriptions[Math.floor(Math.random() * saveDescriptions.length)],
                 score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
             });
             return 0;
         } else { // missed
             const missDescriptions = [
-                `Penalty Shootout: ${team.name} miss!`,
-                `Penalty Shootout: WIDE! ${team.name} miss the target!`,
-                `Penalty Shootout: ${team.name} blast it over the bar!`
+                `MISSED! ${team.name} miss!`,
+                `WIDE! ${team.name} miss the target!`,
+                `${team.name} blast it over the bar!`
             ];
             this.highlights.push({
-                minute: 90,
+                minute: 120,
                 type: HIGHLIGHT_TYPES.PENALTY_SHOOTOUT,
                 team: team.name,
+                penaltyNumber: penaltyNumber,
+                roundType: roundType,
+                step: 'outcome',
+                outcome: 'missed',
+                takingTeam: team.name,
+                defendingTeam: defendingTeam.name,
+                scoreAfter: scoreAfter,
                 description: missDescriptions[Math.floor(Math.random() * missDescriptions.length)],
                 score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
             });

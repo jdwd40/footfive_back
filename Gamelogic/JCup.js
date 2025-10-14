@@ -81,7 +81,7 @@ class JCup {
                 match.team2 = await Team.getRatingByTeamName(match.team2.name);
             }
             const result = new MatchSimulator(match.team1, match.team2).simulate();
-            const winner = result.score[match.team1.name] > result.score[match.team2.name] ? match.team1 : match.team2;
+            const winner = this.determineWinner(result, match.team1, match.team2);
             const loser = winner.id === match.team1.id ? match.team2 : match.team1;
             
             // Get scores for each team
@@ -174,6 +174,21 @@ class JCup {
         if (teamCount === 32) return 'Round of 32';
         return `Round of ${teamCount}`;
     }
+
+    // Helper method to determine winner considering penalty shootouts
+    determineWinner(result, team1, team2) {
+        // Check if there was a penalty shootout (both penalty scores > 0 or tie in regular score)
+        const team1PenaltyScore = result.penaltyScore[team1.name] || 0;
+        const team2PenaltyScore = result.penaltyScore[team2.name] || 0;
+        
+        // If penalty shootout occurred, use penalty scores
+        if (team1PenaltyScore > 0 || team2PenaltyScore > 0) {
+            return team1PenaltyScore > team2PenaltyScore ? team1 : team2;
+        }
+        
+        // Otherwise, use regular scores
+        return result.score[team1.name] > result.score[team2.name] ? team1 : team2;
+    }
     async simulateSingleMatch(matchIndex) {
         if (this.currentRound >= this.fixtures.length) {
             throw new Error("No active round to simulate.");
@@ -225,7 +240,7 @@ class JCup {
 
         // Simulate the match
         const result = new MatchSimulator(match.team1, match.team2).simulate();
-        const winner = result.score[match.team1.name] > result.score[match.team2.name] ? match.team1 : match.team2;
+        const winner = this.determineWinner(result, match.team1, match.team2);
         
         // Get scores for each team
         const team1Goals = result.score[match.team1.name];
