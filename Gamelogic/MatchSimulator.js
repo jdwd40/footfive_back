@@ -9,7 +9,8 @@ const HIGHLIGHT_TYPES = {
     PRESSURE: 'pressure',
     EXTRA_TIME_START: 'extraTimeStart',
     EXTRA_TIME_HALF: 'extraTimeHalf',
-    EXTRA_TIME_END: 'extraTimeEnd'
+    EXTRA_TIME_END: 'extraTimeEnd',
+    KICK_OFF: 'kickOff'
 };
 
 class MatchSimulator {
@@ -22,9 +23,18 @@ class MatchSimulator {
         this.minute = 0;
         this.homeTeam = team1.name;
         this.awayTeam = team2.name;
+        this.usedMinutes = new Set(); // Track which minutes already have events
     }
 
     simulate() {
+        // Add kick-off message for first half
+        this.highlights.push({
+            minute: 1,
+            type: HIGHLIGHT_TYPES.KICK_OFF,
+            description: "⚽ Kick-off! First Half begins!",
+            score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+        });
+
         // Regular time: minutes 1-90
         for (this.minute = 1; this.minute <= 90; this.minute++) {
             this.simulateMinute();
@@ -36,6 +46,14 @@ class MatchSimulator {
                     score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
                 });
 
+            }
+            if (this.minute === 46) {
+                this.highlights.push({
+                    minute: this.minute,
+                    type: HIGHLIGHT_TYPES.KICK_OFF,
+                    description: "⚽ Kick-off! Second Half begins!",
+                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                });
             }
             if (this.minute === 90) {
                 this.highlights.push({
@@ -96,51 +114,23 @@ class MatchSimulator {
     }
 
     simulateMinute() {
+        // Check if this minute already has an event - ensure only one event per minute
+        if (this.usedMinutes.has(this.minute)) {
+            return;
+        }
+
         // Simulate minute by minute game logic
         if (this.chanceOfAttack(this.team1)) {
             this.handleAttack(this.team1, this.team2);
-        }
-
-        if (this.chanceOfAttack(this.team2)) {
+            this.usedMinutes.add(this.minute); // Mark this minute as used
+        } else if (this.chanceOfAttack(this.team2)) {
             this.handleAttack(this.team2, this.team1);
+            this.usedMinutes.add(this.minute); // Mark this minute as used
         }
     }
 
     chanceOfAttack(team) {
         return Math.random() < team.attackRating / 200;
-    }
-
-    calculatePressure(attackingTeam, defendingTeam) {
-        const ratingDifference = attackingTeam.attackRating - defendingTeam.defenseRating;
-        
-        if (ratingDifference >= 15) {
-            return 'high';
-        } else if (ratingDifference >= 5) {
-            return 'medium';
-        } else {
-            return 'low';
-        }
-    }
-
-    generatePressureNarrative(attackingTeam, defendingTeam, pressureLevel) {
-        const highPressureNarratives = [
-            `${this.minute}': ${attackingTeam.name} are deep in ${defendingTeam.name}'s half and putting immense pressure on the defence`,
-            `${this.minute}': ${attackingTeam.name} are dominating possession and ${defendingTeam.name} can't get out of their own half`,
-            `${this.minute}': ${attackingTeam.name} are relentless! ${defendingTeam.name} are pinned back and struggling`,
-            `${this.minute}': ${attackingTeam.name} are all over ${defendingTeam.name} here! The pressure is intense`,
-            `${this.minute}': ${defendingTeam.name} are under siege! ${attackingTeam.name} are dominating`
-        ];
-
-        const mediumPressureNarratives = [
-            `${this.minute}': ${attackingTeam.name} push forward and are giving ${defendingTeam.name} a hard time`,
-            `${this.minute}': ${attackingTeam.name} are building momentum and pressing ${defendingTeam.name}`,
-            `${this.minute}': ${attackingTeam.name} are on the attack and ${defendingTeam.name} need to stay focused`,
-            `${this.minute}': ${attackingTeam.name} are looking dangerous going forward`,
-            `${this.minute}': ${attackingTeam.name} are pressing high and ${defendingTeam.name} are feeling the heat`
-        ];
-
-        const narratives = pressureLevel === 'high' ? highPressureNarratives : mediumPressureNarratives;
-        return narratives[Math.floor(Math.random() * narratives.length)];
     }
 
     handleAttack(attackingTeam, defendingTeam) {
@@ -171,7 +161,7 @@ class MatchSimulator {
                 minute: this.minute,
                 type: HIGHLIGHT_TYPES.BLOCKED,
                 team: attackingTeam.name,
-                description: `${this.minute}': Attack by ${attackingTeam.name} blocked by ${defendingTeam.name}`,
+                description: `${this.minute}': ${attackingTeam.name} are on the attack but ${defendingTeam.name} shut them down`,
                 score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
             });
         }
@@ -327,7 +317,41 @@ class MatchSimulator {
         }
         return 'missed';
     }
-// ------------------------------ pen shoot out --------------------
+
+    calculatePressure(attackingTeam, defendingTeam) {
+        const ratingDifference = attackingTeam.attackRating - defendingTeam.defenseRating;
+        
+        if (ratingDifference >= 15) {
+            return 'high';
+        } else if (ratingDifference >= 5) {
+            return 'medium';
+        } else {
+            return 'low';
+        }
+    }
+
+    generatePressureNarrative(attackingTeam, defendingTeam, pressureLevel) {
+        const highPressureNarratives = [
+            `${this.minute}': ${attackingTeam.name} are deep in ${defendingTeam.name}'s half and putting immense pressure on the defence`,
+            `${this.minute}': ${attackingTeam.name} are dominating possession and ${defendingTeam.name} can't get out of their own half`,
+            `${this.minute}': ${attackingTeam.name} are relentless! ${defendingTeam.name} are pinned back and struggling`,
+            `${this.minute}': ${attackingTeam.name} are all over ${defendingTeam.name} here! The pressure is intense`,
+            `${this.minute}': ${defendingTeam.name} are under siege! ${attackingTeam.name} are dominating`
+        ];
+
+        const mediumPressureNarratives = [
+            `${this.minute}': ${attackingTeam.name} push forward and are giving ${defendingTeam.name} a hard time`,
+            `${this.minute}': ${attackingTeam.name} are building momentum and pressing ${defendingTeam.name}`,
+            `${this.minute}': ${attackingTeam.name} are on the attack and ${defendingTeam.name} need to stay focused`,
+            `${this.minute}': ${attackingTeam.name} are looking dangerous going forward`,
+            `${this.minute}': ${attackingTeam.name} are pressing high and ${defendingTeam.name} are feeling the heat`
+        ];
+
+        const narratives = pressureLevel === 'high' ? highPressureNarratives : mediumPressureNarratives;
+        return narratives[Math.floor(Math.random() * narratives.length)];
+    }
+
+    // ------------------------------ pen shoot out --------------------
 
     handlePenaltyShootout() {
         let team1Score = 0;
@@ -511,4 +535,3 @@ class MatchSimulator {
 }
 
 module.exports = MatchSimulator;
-

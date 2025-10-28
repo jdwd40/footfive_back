@@ -719,9 +719,21 @@ async function playMatchLive(matchResult, fixture) {
         const minutes = Object.keys(highlightsByMinute).map(Number).sort((a, b) => a - b);
         let currentMinuteIndex = 0;
         let totalElapsedTime = 0; // Track total elapsed time
+        // Game clock is now updated when processing highlights
         
         // Check if match has extra time
         const hasExtraTime = regularHighlights.some(h => h.type === 'extraTimeStart');
+        
+        // Update game clock based on current minute
+        function updateGameClock(minute) {
+            if (minute <= 90) {
+                document.getElementById('liveMinute').textContent = `${minute}'`;
+            } else if (minute <= 120) {
+                document.getElementById('liveMinute').textContent = `${minute}' (ET)`;
+            } else {
+                document.getElementById('liveMinute').textContent = "120' (Penalties)";
+            }
+        }
         
         // Play highlights minute by minute
         function playNextMinute() {
@@ -738,6 +750,7 @@ async function playMatchLive(matchResult, fixture) {
                     // Match complete
                     document.getElementById('matchStatus').textContent = 'Match Complete';
                     document.getElementById('matchStatus').className = 'badge bg-secondary';
+                    // Game clock updates are handled by highlight processing
                     resolve();
                 }
                 return;
@@ -746,13 +759,8 @@ async function playMatchLive(matchResult, fixture) {
             const minute = minutes[currentMinuteIndex];
             const minuteHighlights = highlightsByMinute[minute];
             
-            // Update minute display at the START of this minute - only show actual game minutes (not penalty shootout time)
-            const displayMinute = minute > 120 ? 120 : minute; // Cap display at 120 for penalty shootouts
-            const updateMinuteTimeout = setTimeout(() => {
-                if (!liveMatchState.isPlaying) return;
-                document.getElementById('liveMinute').textContent = `${displayMinute}'`;
-            }, totalElapsedTime);
-            liveMatchState.timeouts.push(updateMinuteTimeout);
+            // Update game clock to show current minute
+            updateGameClock(minute);
             
             let eventDelay = 500; // Start events 0.5 seconds into the minute
             
@@ -791,9 +799,9 @@ async function playMatchLive(matchResult, fixture) {
                 
                 // Add pause after goals and penalties
                 if (highlight.type === 'goal' || highlight.type === 'penalty') {
-                    eventDelay += 1500; // 1.5 second pause
+                    eventDelay += 2000; // 2 second pause
                 } else {
-                    eventDelay += 500; // 0.5 second between regular events in same minute
+                    eventDelay += 2000; // 2 second between regular events in same minute
                 }
             });
             
@@ -1067,6 +1075,9 @@ function addHighlightToFeed(highlight, team1Name, team2Name) {
     // Check if this is a regular goal (not from penalty)
     const isRegularGoal = highlight.type === 'goal';
     
+    // Check if this is a kick-off message
+    const isKickOff = highlight.type === 'kickOff';
+    
     // Determine highlight type class
     let typeClass = '';
     if (isRegularGoal || isPenaltyScored) {
@@ -1076,9 +1087,20 @@ function addHighlightToFeed(highlight, team1Name, team2Name) {
     else if (highlight.type === 'shot') typeClass = 'shot';
     else if (highlight.type === 'blocked') typeClass = 'blocked';
     else if (highlight.type === 'pressure') typeClass = 'pressure';
+    else if (highlight.type === 'kickOff') typeClass = 'kickoff';
     
     highlightItem.className = `highlight-item-live ${typeClass}`;
     
+    // Special display for kick-off
+    if (isKickOff) {
+        highlightItem.classList.add('kickoff-announcement');
+        highlightItem.innerHTML = `
+            <div class="kickoff-announcement">
+                <div class="kickoff-icon">⚽</div>
+                <div class="kickoff-text">${highlight.description}</div>
+            </div>
+        `;
+    }
     // Special display for penalty awarded
     if (isPenaltyAwarded) {
         highlightItem.classList.add('penalty-awarded');
@@ -1131,9 +1153,29 @@ function addHighlightToFeed(highlight, team1Name, team2Name) {
     } 
     // Regular highlight display
     else {
+        // Get appropriate icon for highlight type
+        let icon = '';
+        switch(highlight.type) {
+            case 'blocked':
+                icon = '🛡️';
+                break;
+            case 'shot':
+                icon = '⭕';
+                break;
+            case 'pressure':
+                icon = '⚡';
+                break;
+            case 'kickOff':
+                icon = '⚽';
+                break;
+            default:
+                icon = '📋';
+        }
+        
         highlightItem.innerHTML = `
             <div class="d-flex align-items-start">
                 <span class="minute-badge">${highlight.minute}'</span>
+                <span class="highlight-icon me-2">${icon}</span>
                 <span class="highlight-text flex-fill">${highlight.description}</span>
             </div>
         `;
@@ -1161,6 +1203,8 @@ function stopLiveMatch() {
     liveMatchState.isPlaying = false;
     liveMatchState.timeouts.forEach(timeout => clearTimeout(timeout));
     liveMatchState.timeouts = [];
+    
+    // Game clock updates are handled by highlight processing
 }
 
 // Reset championship

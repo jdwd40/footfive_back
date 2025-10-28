@@ -1,4 +1,4 @@
-// Global state
+// Global state - Version 2.0 (Live Score Sync Fix)
 let teamsData = [];
 let selectedTeam1 = null;
 let selectedTeam2 = null;
@@ -275,6 +275,7 @@ function getEventBadge(type) {
         extraTimeStart: '<span class="badge bg-warning text-dark"><i class="bi bi-play-circle"></i> Extra Time Start</span>',
         extraTimeHalf: '<span class="badge bg-warning text-dark"><i class="bi bi-pause-circle"></i> Extra Time Half</span>',
         extraTimeEnd: '<span class="badge bg-warning text-dark"><i class="bi bi-stop-circle"></i> Extra Time End</span>',
+        kickOff: '<span class="badge bg-success"><i class="bi bi-flag-fill"></i> Kick-off</span>',
         // Legacy support for old naming
         extraTimeFull: '<span class="badge bg-warning text-dark"><i class="bi bi-stop-circle"></i> Extra Time End</span>'
     };
@@ -341,6 +342,7 @@ async function simulateMatchSlow() {
         slowSimState.currentScore = { team1: 0, team2: 0 };
         slowSimState.team1Name = team1Data.name;
         slowSimState.team2Name = team2Data.name;
+        // Game clock is now updated when processing highlights
 
         // Send simulation request to get all highlights
         const response = await fetch('/api/simulate', {
@@ -360,6 +362,8 @@ async function simulateMatchSlow() {
             
             // Initialize live feed
             initializeLiveFeed(team1Data.name, team2Data.name);
+            
+            // Clock will be updated when processing highlights
             
             // Scroll to live feed
             setTimeout(() => {
@@ -394,20 +398,27 @@ function initializeLiveFeed(team1Name, team2Name) {
     document.getElementById('liveFeed').innerHTML = '';
 }
 
-// Process highlights with proper timing
+
+// Process highlights with proper timing (FIXED VERSION)
 function processHighlightsWithTiming(highlights, fullResult) {
+    console.log('FIXED SYSTEM: processHighlightsWithTiming called with', highlights.length, 'highlights');
+    
     let cumulativeDelay = 0;
     let lastMinute = 0;
     let pendingPenaltyOutcome = null;
     
     highlights.forEach((highlight, index) => {
-        const currentMinute = highlight.minute || 90;
+        const highlightMinute = highlight.minute || 90;
         
-        // Calculate base delay (1 second per game minute)
-        if (currentMinute > lastMinute) {
-            cumulativeDelay += (currentMinute - lastMinute) * 1000;
+        // Calculate base delay (1 second per game minute) - NO MORE 2-SECOND DELAYS
+        if (highlightMinute > lastMinute) {
+            cumulativeDelay += (highlightMinute - lastMinute) * 1000;
         }
-        lastMinute = currentMinute;
+        
+        lastMinute = highlightMinute;
+        
+        // Update game clock when processing each highlight
+        updateGameClock(highlightMinute);
         
         // Check for penalties - split into awarded and outcome
         if (highlight.type === 'penalty') {
@@ -458,20 +469,30 @@ function scheduleHighlightDisplay(highlight, delay) {
     slowSimState.timeouts.push(timeoutId);
 }
 
+// Update game clock based on current minute
+function updateGameClock(minute) {
+    if (minute <= 90) {
+        document.getElementById('liveMinuteDisplay').textContent = `${minute}'`;
+    } else if (minute <= 120) {
+        document.getElementById('liveMinuteDisplay').textContent = `${minute}' (ET)`;
+    } else {
+        document.getElementById('liveMinuteDisplay').textContent = "120' (Penalties)";
+    }
+}
+
 // Display a single highlight in the live feed
 function displayLiveFeedHighlight(highlight) {
     const liveFeed = document.getElementById('liveFeed');
     const badge = getEventBadge(highlight.type);
     const minute = highlight.minute || '90';
     
-    // Update minute display
+    // Format minute display
     let minuteText = `${minute}'`;
     if (minute > 90 && minute <= 120) {
-        minuteText = `${minute}' (ET)`;
-    } else if (highlight.type === 'penaltyShootout') {
-        minuteText = 'Penalties';
+        minuteText = `${minute - 90}' (ET)`;
+    } else if (minute > 120) {
+        minuteText = "120' (Penalties)";
     }
-    document.getElementById('liveMinuteDisplay').textContent = minuteText;
     
     // Update score if it's a goal
     if (highlight.type === 'goal' || (highlight.type === 'penalty' && highlight.description.toLowerCase().includes('goal'))) {
