@@ -705,194 +705,181 @@ async function playMatchLive(matchResult, fixture) {
             }
         });
         
-        // Group regular highlights by minute
-        const highlightsByMinute = {};
-        regularHighlights.forEach(highlight => {
-            const minute = highlight.minute;
-            if (!highlightsByMinute[minute]) {
-                highlightsByMinute[minute] = [];
-            }
-            highlightsByMinute[minute].push(highlight);
+        // Sort highlights by gameTime (if available) or minute
+        regularHighlights.sort((a, b) => {
+            const timeA = a.clock?.gameTime ?? a.minute ?? 0;
+            const timeB = b.clock?.gameTime ?? b.minute ?? 0;
+            return timeA - timeB;
         });
-        
-        // Get all unique minutes in order
-        const minutes = Object.keys(highlightsByMinute).map(Number).sort((a, b) => a - b);
-        let currentMinuteIndex = 0;
-        let totalElapsedTime = 0; // Track total elapsed time
         // Game clock is now updated when processing highlights
         
         // Check if match has extra time
         const hasExtraTime = regularHighlights.some(h => h.type === 'extraTimeStart');
         
-        // Update game clock based on current minute
-        function updateGameClock(minute) {
-            if (minute <= 90) {
-                document.getElementById('liveMinute').textContent = `${minute}'`;
-            } else if (minute <= 120) {
-                document.getElementById('liveMinute').textContent = `${minute}' (ET)`;
+        // Continuous clock that counts up - this is the master timer
+        let currentGameTime = 1; // Start at minute 1
+        let clockIntervalId = null;
+        const displayedHighlights = new Set(); // Track which highlights have been displayed
+        
+        function updateClockDisplay() {
+            // Display only minutes (rounded down)
+            const displayMinute = Math.floor(currentGameTime);
+            let clockDisplay;
+            
+            if (displayMinute <= 90) {
+                clockDisplay = `${displayMinute}'`;
+            } else if (displayMinute <= 120) {
+                clockDisplay = `${displayMinute}' (ET)`;
             } else {
-                document.getElementById('liveMinute').textContent = "120' (Penalties)";
+                clockDisplay = "120' (Penalties)";
+            }
+            
+            document.getElementById('liveMinute').textContent = clockDisplay;
+        }
+        
+        // Start continuous clock counting
+        function startClockCountUp() {
+            // Clear any existing interval
+            if (clockIntervalId) {
+                clearInterval(clockIntervalId);
+            }
+            
+            // Clock increments: 1.5s real time = 1 game minute
+            // So 1 real second = 1/1.5 = ~0.667 game minutes
+            const gameTimeIncrementPerSecond = 1 / 1.5; // ~0.667 minutes per real second
+            
+            clockIntervalId = setInterval(() => {
+                if (!liveMatchState.isPlaying) {
+                    if (clockIntervalId) {
+                        clearInterval(clockIntervalId);
+                        clockIntervalId = null;
+                    }
+                    return;
+                }
+                
+                // Increment game time
+                currentGameTime += gameTimeIncrementPerSecond;
+                    updateClockDisplay();
+                    
+                    // Check if any highlights should be displayed now
+                    regularHighlights.forEach((highlight, index) => {
+                        if (displayedHighlights.has(index)) return; // Already displayed
+                        
+                        const highlightGameTime = highlight.clock?.gameTime ?? highlight.minute ?? 0;
+                        
+                        // Display highlight when clock reaches its game time
+                        if (currentGameTime >= highlightGameTime) {
+                            displayedHighlights.add(index);
+                            displayHighlight(highlight);
+                            checkMatchComplete();
+                        }
+                    });
+            }, 1000); // Update every second
+            
+            liveMatchState.intervals = liveMatchState.intervals || [];
+            liveMatchState.intervals.push(clockIntervalId);
+        }
+        
+        // Stop clock counting
+        function stopClockCountUp() {
+            if (clockIntervalId) {
+                clearInterval(clockIntervalId);
+                clockIntervalId = null;
             }
         }
         
-        // Play highlights minute by minute
-        function playNextMinute() {
-            if (!liveMatchState.isPlaying) {
-                resolve();
-                return;
+        // Display a highlight when clock reaches its time
+        function displayHighlight(highlight) {
+            if (!liveMatchState.isPlaying) return;
+            
+            addHighlightToFeed(highlight, team1Name, team2Name);
+            
+            const currentMinute = highlight.clock?.minute ?? highlight.minute ?? 90;
+            
+            // Update status badge based on game phase
+            if (currentMinute === 46) {
+                document.getElementById('matchStatus').textContent = 'Second Half';
+                document.getElementById('matchStatus').className = 'badge bg-success';
+            } else if (currentMinute === 91 && hasExtraTime) {
+                document.getElementById('matchStatus').textContent = 'Extra Time - First Half';
+                document.getElementById('matchStatus').className = 'badge bg-warning';
+            } else if (currentMinute === 106 && hasExtraTime) {
+                document.getElementById('matchStatus').textContent = 'Extra Time - Second Half';
+                document.getElementById('matchStatus').className = 'badge bg-warning';
             }
             
-            if (currentMinuteIndex >= minutes.length) {
-                // Regular time and extra time complete - check for penalty shootout
+            // Check for special pauses
+            if (currentMinute === 45 && currentMinute <= 120) {
+                // Stop clock during half-time pause
+                stopClockCountUp();
+                document.getElementById('matchStatus').textContent = 'Half Time';
+                document.getElementById('matchStatus').className = 'badge bg-info';
+                showSpecialMessage(`Half Time<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`, 'bg-info');
+                
+                // Resume clock after 4 seconds
+                setTimeout(() => {
+                    if (liveMatchState.isPlaying) {
+                        startClockCountUp();
+                    }
+                }, 4000);
+            } else if (currentMinute === 90 && hasExtraTime) {
+                document.getElementById('matchStatus').textContent = 'Full Time';
+                document.getElementById('matchStatus').className = 'badge bg-info';
+                showSpecialMessage(`Full Time - Going to Extra Time<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`, 'bg-warning');
+            } else if (currentMinute === 90 && !hasExtraTime) {
+                document.getElementById('matchStatus').textContent = 'Full Time';
+                document.getElementById('matchStatus').className = 'badge bg-info';
+            } else if (currentMinute === 105 && hasExtraTime) {
+                document.getElementById('matchStatus').textContent = 'ET Half Time';
+                document.getElementById('matchStatus').className = 'badge bg-info';
+                showSpecialMessage(`Extra Time Half Time<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`, 'bg-info');
+            } else if (currentMinute === 120 && hasExtraTime) {
+                document.getElementById('matchStatus').textContent = 'End of Extra Time';
+                document.getElementById('matchStatus').className = 'badge bg-info';
+            }
+            
+            // Update score if it's a goal OR a scored penalty
+            const isGoalScored = highlight.type === 'goal' || 
+                               (highlight.type === 'penalty' && 
+                                (highlight.description.includes('GOAL') || 
+                                 highlight.description.includes('score')));
+            
+            if (isGoalScored) {
+                if (highlight.description.includes(team1Name)) {
+                    currentScore[team1Name]++;
+                    document.getElementById('liveTeam1Score').textContent = currentScore[team1Name];
+                    document.getElementById('liveTeam1Score').classList.add('score-updated');
+                    setTimeout(() => {
+                        document.getElementById('liveTeam1Score').classList.remove('score-updated');
+                    }, 500);
+                } else {
+                    currentScore[team2Name]++;
+                    document.getElementById('liveTeam2Score').textContent = currentScore[team2Name];
+                    document.getElementById('liveTeam2Score').classList.add('score-updated');
+                    setTimeout(() => {
+                        document.getElementById('liveTeam2Score').classList.remove('score-updated');
+                    }, 500);
+                }
+            }
+        }
+
+        // Check when all regular highlights are complete
+        function checkMatchComplete() {
+            const allDisplayed = regularHighlights.every((_, index) => displayedHighlights.has(index));
+            
+            if (allDisplayed && liveMatchState.isPlaying) {
+                stopClockCountUp();
+                
+                // Check for penalty shootout
                 if (penaltyShootoutHighlights.length > 0) {
                     playPenaltyShootout();
                 } else {
                     // Match complete
                     document.getElementById('matchStatus').textContent = 'Match Complete';
                     document.getElementById('matchStatus').className = 'badge bg-secondary';
-                    // Game clock updates are handled by highlight processing
                     resolve();
                 }
-                return;
             }
-            
-            const minute = minutes[currentMinuteIndex];
-            const minuteHighlights = highlightsByMinute[minute];
-            
-            // Update game clock to show current minute
-            updateGameClock(minute);
-            
-            let eventDelay = 500; // Start events 0.5 seconds into the minute
-            
-            // Display all highlights for this minute with staggered delays
-            minuteHighlights.forEach((highlight, index) => {
-                const timeout = setTimeout(() => {
-                    if (!liveMatchState.isPlaying) return;
-                    
-                    addHighlightToFeed(highlight, team1Name, team2Name);
-                    
-                    // Update score if it's a goal OR a scored penalty
-                    const isGoalScored = highlight.type === 'goal' || 
-                                       (highlight.type === 'penalty' && 
-                                        (highlight.description.includes('GOAL') || 
-                                         highlight.description.includes('score')));
-                    
-                    if (isGoalScored) {
-                        if (highlight.description.includes(team1Name)) {
-                            currentScore[team1Name]++;
-                            document.getElementById('liveTeam1Score').textContent = currentScore[team1Name];
-                            document.getElementById('liveTeam1Score').classList.add('score-updated');
-                            setTimeout(() => {
-                                document.getElementById('liveTeam1Score').classList.remove('score-updated');
-                            }, 500);
-                        } else {
-                            currentScore[team2Name]++;
-                            document.getElementById('liveTeam2Score').textContent = currentScore[team2Name];
-                            document.getElementById('liveTeam2Score').classList.add('score-updated');
-                            setTimeout(() => {
-                                document.getElementById('liveTeam2Score').classList.remove('score-updated');
-                            }, 500);
-                        }
-                    }
-                }, totalElapsedTime + eventDelay);
-                liveMatchState.timeouts.push(timeout);
-                
-                // Add pause after goals and penalties
-                if (highlight.type === 'goal' || highlight.type === 'penalty') {
-                    eventDelay += 2000; // 2 second pause
-                } else {
-                    eventDelay += 2000; // 2 second between regular events in same minute
-                }
-            });
-            
-            // Ensure minimum time per minute
-            if (eventDelay < 2500) {
-                eventDelay = 2500; // Minimum 2.5 seconds per minute
-            }
-            
-            currentMinuteIndex++;
-            
-            // Update status badge based on game phase
-            if (minute === 46) {
-                const secondHalfTimeout = setTimeout(() => {
-                    if (!liveMatchState.isPlaying) return;
-                    document.getElementById('matchStatus').textContent = 'Second Half';
-                    document.getElementById('matchStatus').className = 'badge bg-success';
-                }, totalElapsedTime);
-                liveMatchState.timeouts.push(secondHalfTimeout);
-            } else if (minute === 91 && hasExtraTime) {
-                const extraTimeTimeout = setTimeout(() => {
-                    if (!liveMatchState.isPlaying) return;
-                    document.getElementById('matchStatus').textContent = 'Extra Time - First Half';
-                    document.getElementById('matchStatus').className = 'badge bg-warning';
-                }, totalElapsedTime);
-                liveMatchState.timeouts.push(extraTimeTimeout);
-            } else if (minute === 106 && hasExtraTime) {
-                const extraTime2Timeout = setTimeout(() => {
-                    if (!liveMatchState.isPlaying) return;
-                    document.getElementById('matchStatus').textContent = 'Extra Time - Second Half';
-                    document.getElementById('matchStatus').className = 'badge bg-warning';
-                }, totalElapsedTime);
-                liveMatchState.timeouts.push(extraTime2Timeout);
-            }
-            
-            // Check for special pauses - only for actual game minutes, not penalty shootouts
-            let additionalPause = 0;
-            if (minute === 45 && minute <= 120) {
-                // Half-time pause
-                const halfTimeTimeout = setTimeout(() => {
-                    if (!liveMatchState.isPlaying) return;
-                    document.getElementById('matchStatus').textContent = 'Half Time';
-                    document.getElementById('matchStatus').className = 'badge bg-info';
-                    showSpecialMessage(`Half Time<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`, 'bg-info');
-                }, totalElapsedTime + eventDelay);
-                liveMatchState.timeouts.push(halfTimeTimeout);
-                additionalPause = 5000; // 5 second pause at half-time
-            } else if (minute === 90 && hasExtraTime) {
-                // Full-time pause before extra time
-                const fullTimeTimeout = setTimeout(() => {
-                    if (!liveMatchState.isPlaying) return;
-                    document.getElementById('matchStatus').textContent = 'Full Time';
-                    document.getElementById('matchStatus').className = 'badge bg-info';
-                    showSpecialMessage(`Full Time - Going to Extra Time<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`, 'bg-warning');
-                }, totalElapsedTime + eventDelay);
-                liveMatchState.timeouts.push(fullTimeTimeout);
-                additionalPause = 5000; // 5 second pause at full-time
-            } else if (minute === 90 && !hasExtraTime) {
-                // Match ending at full time (no extra time)
-                const fullTimeEndTimeout = setTimeout(() => {
-                    if (!liveMatchState.isPlaying) return;
-                    document.getElementById('matchStatus').textContent = 'Full Time';
-                    document.getElementById('matchStatus').className = 'badge bg-info';
-                }, totalElapsedTime + eventDelay);
-                liveMatchState.timeouts.push(fullTimeEndTimeout);
-            } else if (minute === 105 && hasExtraTime) {
-                // Extra time half-time pause
-                const etHalfTimeout = setTimeout(() => {
-                    if (!liveMatchState.isPlaying) return;
-                    document.getElementById('matchStatus').textContent = 'ET Half Time';
-                    document.getElementById('matchStatus').className = 'badge bg-info';
-                    showSpecialMessage(`Extra Time Half Time<br>${team1Name} ${currentScore[team1Name]} - ${currentScore[team2Name]} ${team2Name}`, 'bg-info');
-                }, totalElapsedTime + eventDelay);
-                liveMatchState.timeouts.push(etHalfTimeout);
-                additionalPause = 3000; // 3 second pause at ET half-time
-            } else if (minute === 120 && hasExtraTime) {
-                // End of extra time
-                const etEndTimeout = setTimeout(() => {
-                    if (!liveMatchState.isPlaying) return;
-                    document.getElementById('matchStatus').textContent = 'End of Extra Time';
-                    document.getElementById('matchStatus').className = 'badge bg-info';
-                }, totalElapsedTime + eventDelay);
-                liveMatchState.timeouts.push(etEndTimeout);
-            }
-            
-            // Total time for this minute
-            const totalMinuteTime = eventDelay + additionalPause;
-            totalElapsedTime += totalMinuteTime;
-            
-            // Schedule next minute
-            const nextTimeout = setTimeout(playNextMinute, totalMinuteTime);
-            liveMatchState.timeouts.push(nextTimeout);
         }
         
         // Play penalty shootout with special timing
@@ -1035,8 +1022,12 @@ async function playMatchLive(matchResult, fixture) {
             playNextPenalty();
         }
         
-        // Start playing
-        playNextMinute();
+        // Initialize clock display
+        updateClockDisplay();
+        
+        // Start continuous clock counting - this is the master timer
+        // Highlights will display when clock reaches their game time
+        startClockCountUp();
     });
 }
 
@@ -1090,6 +1081,16 @@ function addHighlightToFeed(highlight, team1Name, team2Name) {
     else if (highlight.type === 'kickOff') typeClass = 'kickoff';
     
     highlightItem.className = `highlight-item-live ${typeClass}`;
+    
+    // Bundle recognition logic
+    if (highlight.bundleId) {
+        highlightItem.setAttribute('data-bundle-id', highlight.bundleId);
+        highlightItem.setAttribute('data-bundle-step', highlight.bundleStep || 1);
+        highlightItem.classList.add('bundled-event');
+        
+        // Log bundle info for debugging
+        console.log(`Bundled event: ${highlight.bundleId}, step ${highlight.bundleStep || 1}`, highlight);
+    }
     
     // Special display for kick-off
     if (isKickOff) {
@@ -1203,6 +1204,12 @@ function stopLiveMatch() {
     liveMatchState.isPlaying = false;
     liveMatchState.timeouts.forEach(timeout => clearTimeout(timeout));
     liveMatchState.timeouts = [];
+    
+    // Clear clock intervals
+    if (liveMatchState.intervals) {
+        liveMatchState.intervals.forEach(interval => clearInterval(interval));
+        liveMatchState.intervals = [];
+    }
     
     // Game clock updates are handled by highlight processing
 }

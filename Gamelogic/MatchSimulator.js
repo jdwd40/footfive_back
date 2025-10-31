@@ -24,43 +24,69 @@ class MatchSimulator {
         this.homeTeam = team1.name;
         this.awayTeam = team2.name;
         this.usedMinutes = new Set(); // Track which minutes already have events
+        this.bundleCounter = 0; // Track bundle counter for bundleId generation
+    }
+
+    generateClockData(minute, secondOverride = null) {
+        const second = secondOverride !== null ? secondOverride : Math.floor(Math.random() * 60);
+        const gameTime = minute + (second / 60);
+        
+        return {
+            minute: minute,
+            second: second,
+            gameTime: parseFloat(gameTime.toFixed(3)),
+            addedTime: null // Will be set if in injury time
+        };
+    }
+
+    generateBundleId(eventType, minute) {
+        this.bundleCounter++;
+        return `${eventType}_${minute}_${this.bundleCounter}`;
     }
 
     simulate() {
         // Add kick-off message for first half
+        const kickOffClock1 = this.generateClockData(1, 0);
         this.highlights.push({
             minute: 1,
             type: HIGHLIGHT_TYPES.KICK_OFF,
             description: "⚽ Kick-off! First Half begins!",
-            score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+            clock: kickOffClock1
         });
 
         // Regular time: minutes 1-90
         for (this.minute = 1; this.minute <= 90; this.minute++) {
             this.simulateMinute();
             if (this.minute === 45 ) {
+                const halfTimeClock = this.generateClockData(45, 0);
                 this.highlights.push({
                     minute: this.minute,
                     type: HIGHLIGHT_TYPES.HALF_TIME,
                     description: "Half time: The score is " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name,
-                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                    clock: halfTimeClock
                 });
 
             }
             if (this.minute === 46) {
+                const kickOffClock2 = this.generateClockData(46, 0);
                 this.highlights.push({
                     minute: this.minute,
                     type: HIGHLIGHT_TYPES.KICK_OFF,
                     description: "⚽ Kick-off! Second Half begins!",
-                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                    clock: kickOffClock2
                 });
             }
             if (this.minute === 90) {
+                const fullTimeClock = this.generateClockData(90, 0);
                 this.highlights.push({
                     minute: this.minute,
                     type: HIGHLIGHT_TYPES.FULL_TIME,
                     description: "Full time: The score is " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name,
-                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                    clock: fullTimeClock
                 });
 
             }
@@ -69,31 +95,37 @@ class MatchSimulator {
         // Check if match is a draw after regular time
         if (this.score[this.team1.name] === this.score[this.team2.name]) {
             // Extra time: minutes 91-120
+            const extraTimeStartClock = this.generateClockData(90, 0);
             this.highlights.push({
                 minute: 90,
                 type: HIGHLIGHT_TYPES.EXTRA_TIME_START,
                 description: "The match is a draw. Extra time begins!",
-                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                clock: extraTimeStartClock
             });
 
             for (this.minute = 91; this.minute <= 120; this.minute++) {
                 this.simulateMinute();
                 
                 if (this.minute === 105) {
+                    const extraTimeHalfClock = this.generateClockData(105, 0);
                     this.highlights.push({
                         minute: this.minute,
                         type: HIGHLIGHT_TYPES.EXTRA_TIME_HALF,
                         description: "Extra time half: The score is " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name,
-                        score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                        score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                        clock: extraTimeHalfClock
                     });
                 }
                 
                 if (this.minute === 120) {
+                    const extraTimeEndClock = this.generateClockData(120, 0);
                     this.highlights.push({
                         minute: this.minute,
                         type: HIGHLIGHT_TYPES.EXTRA_TIME_END,
                         description: "End of extra time: The score is " + this.team1.name + " " + this.score[this.team1.name] + "-" + this.score[this.team2.name] + " " + this.team2.name,
-                        score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                        score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                        clock: extraTimeEndClock
                     });
                 }
             }
@@ -136,6 +168,13 @@ class MatchSimulator {
     handleAttack(attackingTeam, defendingTeam) {
         const pressureLevel = this.calculatePressure(attackingTeam, defendingTeam);
         
+        // Generate bundleId for this attack sequence
+        const bundleId = this.generateBundleId('attack', this.minute);
+        let bundleStep = 1;
+        
+        // Generate clock data for this attack
+        const clockData = this.generateClockData(this.minute);
+        
         // Generate pressure narrative for medium/high pressure
         if (pressureLevel === 'medium' || pressureLevel === 'high') {
             this.highlights.push({
@@ -143,7 +182,10 @@ class MatchSimulator {
                 type: HIGHLIGHT_TYPES.PRESSURE,
                 team: attackingTeam.name,
                 description: this.generatePressureNarrative(attackingTeam, defendingTeam, pressureLevel),
-                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                clock: clockData,
+                bundleId: bundleId,
+                bundleStep: bundleStep++
             });
         }
         
@@ -152,9 +194,9 @@ class MatchSimulator {
             const penaltyChance = pressureLevel === 'high' ? 0.08 : 0.04;
             
             if (Math.random() < penaltyChance) {
-                this.handlePenalty(attackingTeam);
+                this.handlePenalty(attackingTeam, bundleId, bundleStep);
             } else {
-                this.handleShot(attackingTeam, defendingTeam);
+                this.handleShot(attackingTeam, defendingTeam, bundleId, bundleStep);
             }
         } else {
             this.highlights.push({
@@ -162,7 +204,10 @@ class MatchSimulator {
                 type: HIGHLIGHT_TYPES.BLOCKED,
                 team: attackingTeam.name,
                 description: `${this.minute}': ${attackingTeam.name} are on the attack but ${defendingTeam.name} shut them down`,
-                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                clock: clockData,
+                bundleId: bundleId,
+                bundleStep: bundleStep
             });
         }
     }
@@ -171,7 +216,10 @@ class MatchSimulator {
         return Math.random() < defendingTeam.defenseRating / 110;
     }
 
-    handleShot(attackingTeam, defendingTeam) {
+    handleShot(attackingTeam, defendingTeam, bundleId = null, bundleStep = null) {
+        // Generate clock data for this shot event
+        const clockData = this.generateClockData(this.minute);
+        
         if (Math.random() < 0.6) { // Chance of being on target
             if (!this.goalkeeperSaves(defendingTeam)) {
                 this.score[attackingTeam.name]++;
@@ -184,13 +232,19 @@ class MatchSimulator {
                     `${this.minute}': GOAL! ${attackingTeam.name} break through! Score is now ${this.score[attackingTeam.name]}-${this.score[defendingTeam.name]}`
                 ];
                 
-                this.highlights.push({
+                const highlight = {
                     minute: this.minute,
                     type: HIGHLIGHT_TYPES.GOAL,
                     team: attackingTeam.name,
                     description: goalDescriptions[Math.floor(Math.random() * goalDescriptions.length)],
-                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
-                });
+                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                    clock: clockData
+                };
+                if (bundleId) {
+                    highlight.bundleId = bundleId;
+                    highlight.bundleStep = bundleStep;
+                }
+                this.highlights.push(highlight);
 
             } else {
                 const saveDescriptions = [
@@ -201,13 +255,19 @@ class MatchSimulator {
                     `${this.minute}': ${attackingTeam.name} on target but ${defendingTeam.name}'s keeper makes a great stop!`
                 ];
                 
-                this.highlights.push({
+                const highlight = {
                     minute: this.minute,
                     type: HIGHLIGHT_TYPES.SHOT,
                     team: attackingTeam.name,
                     description: saveDescriptions[Math.floor(Math.random() * saveDescriptions.length)],
-                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
-                });
+                    score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                    clock: clockData
+                };
+                if (bundleId) {
+                    highlight.bundleId = bundleId;
+                    highlight.bundleStep = bundleStep;
+                }
+                this.highlights.push(highlight);
 
             }
         } else {
@@ -219,13 +279,19 @@ class MatchSimulator {
                 `${this.minute}': Shot by ${attackingTeam.name} flies over the bar!`
             ];
             
-            this.highlights.push({
+            const highlight = {
                 minute: this.minute,
                 type: HIGHLIGHT_TYPES.SHOT,
                 team: attackingTeam.name,
                 description: missDescriptions[Math.floor(Math.random() * missDescriptions.length)],
-                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
-            });
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                clock: clockData
+            };
+            if (bundleId) {
+                highlight.bundleId = bundleId;
+                highlight.bundleStep = bundleStep;
+            }
+            this.highlights.push(highlight);
         }
     }
 
@@ -233,8 +299,19 @@ class MatchSimulator {
         return Math.random() < defendingTeam.goalkeeperRating / 90;
     }
 
-    handlePenalty(attackingTeam) {
+    handlePenalty(attackingTeam, bundleId = null, bundleStep = null) {
         const defendingTeam = attackingTeam.name === this.team1.name ? this.team2 : this.team1;
+        
+        // Generate bundleId if not provided (standalone penalty)
+        const penaltyBundleId = bundleId || this.generateBundleId('penalty', this.minute);
+        
+        // Generate clock data for penalty awarded (base second)
+        const clockDataAwarded = this.generateClockData(this.minute);
+        
+        // Generate clock data for penalty outcome (staggered by 5-15 seconds)
+        const outcomeSecondOffset = Math.floor(Math.random() * 11) + 5; // 5-15 seconds
+        const outcomeSecond = Math.min(59, clockDataAwarded.second + outcomeSecondOffset);
+        const clockDataOutcome = this.generateClockData(this.minute, outcomeSecond);
         
         // Stage 1: Penalty Awarded
         const awardDescriptions = [
@@ -250,13 +327,17 @@ class MatchSimulator {
             type: HIGHLIGHT_TYPES.PENALTY,
             team: attackingTeam.name,
             description: awardDescriptions[Math.floor(Math.random() * awardDescriptions.length)],
-            score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+            score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+            clock: clockDataAwarded,
+            bundleId: penaltyBundleId,
+            bundleStep: bundleStep || 1
         });
         
         // Stage 2: Determine outcome (scored, saved, or missed)
         const outcome = this.determinePenaltyOutcome(defendingTeam);
         
         // Stage 3: Result highlight
+        const outcomeBundleStep = bundleStep ? bundleStep + 1 : 2;
         if (outcome === 'scored') {
             this.score[attackingTeam.name]++;
             const scoreDescriptions = [
@@ -271,7 +352,10 @@ class MatchSimulator {
                 type: HIGHLIGHT_TYPES.PENALTY,
                 team: attackingTeam.name,
                 description: scoreDescriptions[Math.floor(Math.random() * scoreDescriptions.length)],
-                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                clock: clockDataOutcome,
+                bundleId: penaltyBundleId,
+                bundleStep: outcomeBundleStep
             });
         } else if (outcome === 'saved') {
             const saveDescriptions = [
@@ -286,7 +370,10 @@ class MatchSimulator {
                 type: HIGHLIGHT_TYPES.PENALTY,
                 team: attackingTeam.name,
                 description: saveDescriptions[Math.floor(Math.random() * saveDescriptions.length)],
-                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                clock: clockDataOutcome,
+                bundleId: penaltyBundleId,
+                bundleStep: outcomeBundleStep
             });
         } else { // missed
             const missDescriptions = [
@@ -301,7 +388,10 @@ class MatchSimulator {
                 type: HIGHLIGHT_TYPES.PENALTY,
                 team: attackingTeam.name,
                 description: missDescriptions[Math.floor(Math.random() * missDescriptions.length)],
-                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] }
+                score: { home: this.score[this.homeTeam], away: this.score[this.awayTeam] },
+                clock: clockDataOutcome,
+                bundleId: penaltyBundleId,
+                bundleStep: outcomeBundleStep
             });
         }
     }

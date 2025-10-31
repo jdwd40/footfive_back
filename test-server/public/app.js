@@ -399,53 +399,48 @@ function initializeLiveFeed(team1Name, team2Name) {
 }
 
 
+// Calculate timing delta between two events in milliseconds
+function calculateTimingDelta(previousEvent, currentEvent) {
+    const prevTime = previousEvent?.clock?.gameTime ?? previousEvent?.minute ?? 0;
+    const currTime = currentEvent?.clock?.gameTime ?? currentEvent?.minute ?? 0;
+    const deltaMinutes = currTime - prevTime;
+    
+    // Convert to milliseconds (base rate: 1.5s per game minute = 1500ms)
+    return Math.max(0, deltaMinutes * 1500);
+}
+
 // Process highlights with proper timing (FIXED VERSION)
 function processHighlightsWithTiming(highlights, fullResult) {
     console.log('FIXED SYSTEM: processHighlightsWithTiming called with', highlights.length, 'highlights');
     
+    // Sort highlights by gameTime (if available) or minute
+    highlights.sort((a, b) => {
+        const timeA = a.clock?.gameTime ?? a.minute ?? 0;
+        const timeB = b.clock?.gameTime ?? b.minute ?? 0;
+        return timeA - timeB;
+    });
+    
     let cumulativeDelay = 0;
-    let lastMinute = 0;
-    let pendingPenaltyOutcome = null;
+    let previousHighlight = null;
     
     highlights.forEach((highlight, index) => {
-        const highlightMinute = highlight.minute || 90;
+        // Calculate delay based on gameTime delta
+        const delay = previousHighlight 
+            ? calculateTimingDelta(previousHighlight, highlight)
+            : 500; // Initial delay for first highlight
         
-        // Calculate base delay (1 second per game minute) - NO MORE 2-SECOND DELAYS
-        if (highlightMinute > lastMinute) {
-            cumulativeDelay += (highlightMinute - lastMinute) * 1000;
-        }
+        cumulativeDelay += delay;
         
-        lastMinute = highlightMinute;
+        // Determine pause after highlight (for goals and penalties)
+        const pauseAfterMs = (highlight.type === 'goal' || highlight.type === 'penalty') 
+            ? 2000 
+            : (highlight.timing?.pauseAfterMs ?? 0);
         
-        // Update game clock when processing each highlight
-        updateGameClock(highlightMinute);
+        // Schedule highlight with synchronized clock update
+        scheduleHighlightDisplay(highlight, cumulativeDelay);
         
-        // Check for penalties - split into awarded and outcome
-        if (highlight.type === 'penalty') {
-            if (highlight.description.toLowerCase().includes('awarded') || 
-                highlight.description.toLowerCase().includes('points to the spot')) {
-                // This is the penalty awarded message
-                scheduleHighlightDisplay(highlight, cumulativeDelay);
-                pendingPenaltyOutcome = index;
-                cumulativeDelay += 2000; // 2 second delay before outcome
-            } else if (pendingPenaltyOutcome !== null && index === pendingPenaltyOutcome + 1) {
-                // This is the penalty outcome (next highlight after awarded)
-                scheduleHighlightDisplay(highlight, cumulativeDelay);
-                pendingPenaltyOutcome = null;
-            } else {
-                // Single penalty highlight (shouldn't happen with current logic)
-                scheduleHighlightDisplay(highlight, cumulativeDelay);
-            }
-        }
-        // Check for half-time
-        else if (highlight.type === 'halfTime') {
-            scheduleHighlightDisplay(highlight, cumulativeDelay);
-            cumulativeDelay += 3000; // 3 second delay after half-time
-        }
-        // All other highlights
-        else {
-            scheduleHighlightDisplay(highlight, cumulativeDelay);
-        }
+        cumulativeDelay += pauseAfterMs;
+        previousHighlight = highlight;
     });
     
     // Schedule final results display
@@ -458,10 +453,18 @@ function processHighlightsWithTiming(highlights, fullResult) {
     slowSimState.timeouts.push(finalTimeout);
 }
 
-// Schedule a highlight to be displayed after a delay
+// Schedule a highlight to be displayed after a delay with synchronized clock update
 function scheduleHighlightDisplay(highlight, delay) {
     const timeoutId = setTimeout(() => {
         if (slowSimState.isRunning) {
+            // Update clock and display highlight simultaneously
+            if (highlight.clock?.minute !== undefined) {
+                const second = highlight.clock.second || 0;
+                updateGameClock(highlight.clock.minute, second);
+            } else {
+                // Fallback for backward compatibility
+                updateGameClock(highlight.minute || 90, null);
+            }
             displayLiveFeedHighlight(highlight);
         }
     }, delay);
@@ -469,15 +472,32 @@ function scheduleHighlightDisplay(highlight, delay) {
     slowSimState.timeouts.push(timeoutId);
 }
 
-// Update game clock based on current minute
-function updateGameClock(minute) {
-    if (minute <= 90) {
-        document.getElementById('liveMinuteDisplay').textContent = `${minute}'`;
-    } else if (minute <= 120) {
-        document.getElementById('liveMinuteDisplay').textContent = `${minute}' (ET)`;
+// Update game clock based on current minute (and optionally second)
+function updateGameClock(minute, second = null) {
+    let clockDisplay;
+    
+    if (second !== null && second !== undefined) {
+        // Format with sub-minute precision: MM:SS
+        const secondStr = second.toString().padStart(2, '0');
+        if (minute <= 90) {
+            clockDisplay = `${minute}:${secondStr}'`;
+        } else if (minute <= 120) {
+            clockDisplay = `${minute}:${secondStr}' (ET)`;
+        } else {
+            clockDisplay = "120' (Penalties)";
+        }
     } else {
-        document.getElementById('liveMinuteDisplay').textContent = "120' (Penalties)";
+        // Fallback to minute-only format
+        if (minute <= 90) {
+            clockDisplay = `${minute}'`;
+        } else if (minute <= 120) {
+            clockDisplay = `${minute}' (ET)`;
+        } else {
+            clockDisplay = "120' (Penalties)";
+        }
     }
+    
+    document.getElementById('liveMinuteDisplay').textContent = clockDisplay;
 }
 
 // Display a single highlight in the live feed
@@ -499,23 +519,38 @@ function displayLiveFeedHighlight(highlight) {
         updateLiveScore(highlight);
     }
     
+    // Check if this is a kick-off message
+    const isKickOff = highlight.type === 'kickOff';
+    
     // Create highlight element
     const highlightElement = document.createElement('div');
     highlightElement.className = 'live-feed-item';
-    highlightElement.innerHTML = `
-        <div class="d-flex align-items-start p-3 border-bottom">
-            <div class="minute-indicator me-3">
-                <span class="badge bg-dark">${minuteText}</span>
+    
+    // Special display for kick-off
+    if (isKickOff) {
+        highlightElement.classList.add('kickoff-announcement');
+        highlightElement.innerHTML = `
+            <div class="kickoff-announcement">
+                <div class="kickoff-icon">⚽</div>
+                <div class="kickoff-text">${highlight.description}</div>
             </div>
-            <div class="flex-grow-1">
-                <div class="mb-1">
-                    ${badge}
-                    ${highlight.team ? `<span class="text-primary fw-bold">${highlight.team}</span>` : ''}
+        `;
+    } else {
+        highlightElement.innerHTML = `
+            <div class="d-flex align-items-start p-3 border-bottom">
+                <div class="minute-indicator me-3">
+                    <span class="badge bg-dark">${minuteText}</span>
                 </div>
-                <p class="mb-0 highlight-text">${highlight.description}</p>
+                <div class="flex-grow-1">
+                    <div class="mb-1">
+                        ${badge}
+                        ${highlight.team ? `<span class="text-primary fw-bold">${highlight.team}</span>` : ''}
+                    </div>
+                    <p class="mb-0 highlight-text">${highlight.description}</p>
+                </div>
             </div>
-        </div>
-    `;
+        `;
+    }
     
     // Add animation class
     highlightElement.style.opacity = '0';

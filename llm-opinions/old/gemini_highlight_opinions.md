@@ -1,14 +1,14 @@
 ### Analysis of the Current System
 
-1.  **Core Problem:** The `highlights_problem.md` document is correct; the clock synchronization issue is fundamental. The frontend's `app.js` updates the clock immediately when it *processes* a highlight but displays the highlight after a calculated delay. This guarantees they will be out of sync.
+1.  **Core Design Limitation:** The primary challenge is that the current highlight system was not designed for a live, real-time experience. The perceived "clock sync issue" is a symptom of this limitation. The system uses an intentional 2-second delay for events within the same minute, which, while functional for a post-match summary, breaks the illusion of a live game.
 
-2.  **Unrealistic Simulation:** In `MatchSimulator.js`, the `usedMinutes` set, while a pragmatic fix for a timing bug, forces an unrealistic "one event per minute" rule. Real matches have ebbs and flows, with periods of sustained pressure and multiple events happening in quick succession. The current system models a penalty as two distinct events in the same minute, which the frontend then has to apply special logic to handle.
+2.  **Inflexibility for Live Scores:** The current architecture, which generates a complete list of highlights before displaying them, is fundamentally unsuited for a live score environment where events must be processed and displayed as they happen.
 
-3.  **Lack of Narrative:** The highlights are disconnected events. A "pressure" event is generated, but it's just a piece of text; it doesn't guarantee a shot or any other logical follow-up action. There's no story to the match.
+3.  **Lack of Narrative Flow:** The simulation logic creates disconnected, atomic events. This makes it difficult to build a compelling, moment-to-moment narrative that mirrors the flow of a real match (e.g., buildup -> shot -> goal). This is a key requirement for an engaging live experience.
 
 ### Proposal for a New Highlight and Event System
 
-I propose a move away from a simple list of highlights to a more robust, event-driven architecture. This will solve the synchronization problem and create a more realistic and scalable simulation.
+To enable a true live score experience, I propose moving from a simple list of highlights to a more robust, event-driven architecture. This will address the core design limitations and provide a scalable foundation for a more realistic and engaging simulation.
 
 #### 1. A Richer, Structured Event Model
 
@@ -64,4 +64,4 @@ We should introduce new event types to create a logical and narrative flow. Inst
 
 This event-based architecture is inherently scalable. A live game feed would simply be another source of events, and the frontend would not need to distinguish between a simulated event and a real one. The flexible JSON structure of the events can be easily extended with more data in the future, such as player coordinates for a 2D visualization.
 
-By implementing these changes, we will not only fix the clock synchronization bug but also create a foundation for a much more realistic, engaging, and feature-rich soccer simulation.
+By implementing these changes, we will create a foundation for a much more realistic, engaging, and feature-rich live soccer simulation, moving beyond the limitations of the current post-match replay system.

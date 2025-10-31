@@ -66,7 +66,6 @@ class JCup {
                 winners.push(completedResult.winner);
                 continue;
             }
-            console.log(match);
             if (match.team2 === null) {  // Check for a bye
                 winners.push(match.team1);
                 // Update highest round for team with bye
@@ -124,12 +123,12 @@ class JCup {
             const winner = winners[0];
             
             // Determine runner-up from the final match
-            const finalMatchTeam1 = matches[0].team1.name;
-            const finalMatchTeam2 = matches[0].team2.name;
+            const finalMatchTeam1 = roundResults[0].matchMetadata.homeTeam;
+            const finalMatchTeam2 = roundResults[0].matchMetadata.awayTeam;
             const runnerUpName = finalMatchTeam1 === winner.name ? finalMatchTeam2 : finalMatchTeam1;
             
             // Get runner-up team object
-            const runnerUp = matches[0].team1.name === runnerUpName ? matches[0].team1 : matches[0].team2;
+            const runnerUp = this.teams.find(team => team.name === runnerUpName);
             
             // Update championship winner and runner-up statistics
             await Team.addJCupsWon(winner.id);
