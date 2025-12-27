@@ -1,102 +1,340 @@
 const Team = require('../models/TeamModel');
-const MatchSimulator = require('./MatchSimulator');
+const Fixture = require('../models/FixtureModel');
+const MatchEvent = require('../models/MatchEventModel');
+const MatchReport = require('../models/MatchReportModel');
+const SimulationEngine = require('./SimulationEngine');
+const OddsEngine = require('./OddsEngine');
+const MatchSimulator = require('./MatchSimulator'); // Keep for legacy support
+
+const oddsEngine = new OddsEngine(0.05);
 
 class JCup {
     constructor() {
         this.teams = [];
         this.currentRound = 0;
         this.fixtures = []; // Array of rounds, each containing pairs of matches
+        this.fixtureIds = []; // Track DB fixture IDs per round
         this.results = [];
-        this.completedMatches = {}; // Track completed matches by round: { roundIndex: { matchIndex: result } }
+        this.completedMatches = {};
+        this.tournamentId = null;
+        this.useNewSimulation = true; // Toggle for new vs legacy simulation
     }
 
     async loadTeams() {
         this.resetJCup();
         this.teams = await Team.getAll();
-        this.generateFixtures();
+        this.tournamentId = Date.now() % 1000000000; // Keep within INT range
+        await this.generateFixtures();
     }
 
-    generateFixtures(teams = this.teams) {
+    async generateFixtures(teams = this.teams) {
         let roundFixtures = [];
         let formattedRound = [];
+        let dbFixtures = [];
+
+        const roundName = this.getRoundName(teams.length);
+
         // Shuffle and pair teams for the current round
         let shuffledTeams = this.shuffleTeams(teams);
         while (shuffledTeams.length > 1) {
             let team1 = shuffledTeams.shift();
             let team2 = shuffledTeams.shift();
             roundFixtures.push({ team1, team2 });
-            formattedRound.push(`Round ${this.currentRound + 1}: ${team1.name} Vs ${team2.name}`);
+            formattedRound.push(`${roundName}: ${team1.name} vs ${team2.name}`);
+
+            // Create fixture in DB
+            if (this.useNewSimulation) {
+                dbFixtures.push({
+                    homeTeamId: team1.id,
+                    awayTeamId: team2.id,
+                    tournamentId: this.tournamentId,
+                    round: roundName
+                });
+            }
         }
 
-        // Handle an odd number of teams by giving the last team a bye if necessary
+        // Handle bye
         if (shuffledTeams.length === 1) {
-            formattedRound.push(`Round ${this.currentRound + 1}: ${shuffledTeams[0].name} has a bye`);
-            roundFixtures.push({ team1: shuffledTeams[0], team2: null });
+            formattedRound.push(`${roundName}: ${shuffledTeams[0].name} has a bye`);
+            roundFixtures.push({ team1: shuffledTeams[0], team2: null, isBye: true });
         }
 
         this.fixtures.push(roundFixtures);
+
+        // Create fixtures in DB and calculate odds
+        if (this.useNewSimulation && dbFixtures.length > 0) {
+            const createdFixtures = await Fixture.createBatch(dbFixtures);
+            const fixtureIdsForRound = [];
+
+            for (let i = 0; i < createdFixtures.length; i++) {
+                const fixture = createdFixtures[i];
+                const match = roundFixtures[i];
+
+                // Calculate odds
+                const homeTeam = await Team.getRatingById(fixture.homeTeamId);
+                const awayTeam = await Team.getRatingById(fixture.awayTeamId);
+                const odds = await oddsEngine.calculateAndSaveOdds(fixture.fixtureId, homeTeam, awayTeam);
+
+                // Store fixture ID and odds in match object
+                match.fixtureId = fixture.fixtureId;
+                match.odds = {
+                    homeWin: odds.homeWinOdds,
+                    awayWin: odds.awayWinOdds,
+                    homeProb: odds.homeWinProb,
+                    awayProb: odds.awayWinProb
+                };
+
+                fixtureIdsForRound.push(fixture.fixtureId);
+            }
+
+            this.fixtureIds.push(fixtureIdsForRound);
+        }
+
         return formattedRound;
     }
 
     async simulateRound() {
         if (this.currentRound >= this.fixtures.length) {
-            return { error: "No more rounds to play.", fixtures: this.generateFixtures() };
+            return { error: "No more rounds to play.", fixtures: await this.generateFixtures() };
         }
 
         const matches = this.fixtures[this.currentRound];
         const roundResults = [];
         const winners = [];
 
-        // Determine the current round name (before matches are played)
-        const currentTeamCount = matches.length * 2; // Each match has 2 teams
+        const currentTeamCount = matches.filter(m => !m.isBye).length * 2;
         const currentRoundName = this.getRoundName(currentTeamCount);
 
-        // Initialize completed matches for this round if not exists
         if (!this.completedMatches[this.currentRound]) {
             this.completedMatches[this.currentRound] = {};
         }
 
         for (let i = 0; i < matches.length; i++) {
             const match = matches[i];
-            
-            // Skip if match already completed
+
+            // Skip if already completed
             if (this.completedMatches[this.currentRound][i]) {
                 const completedResult = this.completedMatches[this.currentRound][i];
                 roundResults.push(completedResult.matchResult);
                 winners.push(completedResult.winner);
                 continue;
             }
-            if (match.team2 === null) {  // Check for a bye
+
+            // Handle bye
+            if (match.team2 === null || match.isBye) {
                 winners.push(match.team1);
-                // Update highest round for team with bye
                 await Team.updateHighestRound(match.team1.id, currentRoundName);
                 continue;
             }
-            // Only fetch from database if teams don't already have ratings
-            if (!match.team1.attackRating || !match.team1.defenseRating || !match.team1.goalkeeperRating) {
+
+            // Ensure teams have ratings
+            if (!match.team1.attackRating) {
                 match.team1 = await Team.getRatingByTeamName(match.team1.name);
             }
-            if (!match.team2.attackRating || !match.team2.defenseRating || !match.team2.goalkeeperRating) {
+            if (!match.team2.attackRating) {
                 match.team2 = await Team.getRatingByTeamName(match.team2.name);
             }
-            const result = new MatchSimulator(match.team1, match.team2).simulate();
-            const winner = this.determineWinner(result, match.team1, match.team2);
-            const loser = winner.id === match.team1.id ? match.team2 : match.team1;
-            
-            // Get scores for each team
-            const team1Goals = result.score[match.team1.name];
-            const team2Goals = result.score[match.team2.name];
-            
-            // Update match statistics for both teams
-            await Team.updateMatchStats(match.team1.id, winner.id === match.team1.id, team1Goals, team2Goals);
-            await Team.updateMatchStats(match.team2.id, winner.id === match.team2.id, team2Goals, team1Goals);
-            
-            // Update highest round reached for both teams (winner will advance, so they reach this round)
+
+            let result, winner, matchResult;
+
+            if (this.useNewSimulation && match.fixtureId) {
+                // Use new SimulationEngine
+                const engine = new SimulationEngine(match.fixtureId, match.team1, match.team2);
+                const simResult = await engine.simulate();
+
+                winner = simResult.score.home > simResult.score.away ? match.team1 :
+                         simResult.score.away > simResult.score.home ? match.team2 :
+                         simResult.penaltyScore && simResult.penaltyScore.home > simResult.penaltyScore.away ? match.team1 : match.team2;
+
+                // Get events for highlights (summary only - first few and goals)
+                const events = await MatchEvent.getByFixtureId(match.fixtureId, { includePlayerNames: true });
+                const highlights = events.map(e => ({
+                    minute: e.minute,
+                    type: e.eventType,
+                    team: e.teamName,
+                    player: e.playerName,
+                    description: e.description,
+                    score: { home: simResult.score.home, away: simResult.score.away }
+                }));
+
+                matchResult = {
+                    fixtureId: match.fixtureId,
+                    score: { [match.team1.name]: simResult.score.home, [match.team2.name]: simResult.score.away },
+                    penaltyScore: simResult.penaltyScore ? { [match.team1.name]: simResult.penaltyScore.home, [match.team2.name]: simResult.penaltyScore.away } : {},
+                    highlights,
+                    finalResult: simResult.finalResult,
+                    stats: simResult.stats,
+                    matchMetadata: {
+                        homeTeam: match.team1.name,
+                        awayTeam: match.team2.name,
+                        date: new Date().toISOString(),
+                        round: currentRoundName,
+                        odds: match.odds
+                    }
+                };
+            } else {
+                // Legacy MatchSimulator
+                result = new MatchSimulator(match.team1, match.team2).simulate();
+                winner = this.determineWinner(result, match.team1, match.team2);
+
+                const team1Goals = result.score[match.team1.name];
+                const team2Goals = result.score[match.team2.name];
+
+                await Team.updateMatchStats(match.team1.id, winner.id === match.team1.id, team1Goals, team2Goals);
+                await Team.updateMatchStats(match.team2.id, winner.id === match.team2.id, team2Goals, team1Goals);
+
+                matchResult = {
+                    score: result.score,
+                    penaltyScore: result.penaltyScore,
+                    highlights: result.highlights,
+                    finalResult: result.finalResult,
+                    matchMetadata: {
+                        homeTeam: match.team1.name,
+                        awayTeam: match.team2.name,
+                        date: new Date().toISOString(),
+                        round: currentRoundName
+                    }
+                };
+            }
+
+            // Update highest round
             await Team.updateHighestRound(match.team1.id, currentRoundName);
             await Team.updateHighestRound(match.team2.id, currentRoundName);
-            
+
             winners.push(winner);
-            const matchResult = {
+            roundResults.push(matchResult);
+
+            this.completedMatches[this.currentRound][i] = { matchResult, winner };
+        }
+
+        this.results.push({ roundResults });
+        this.currentRound++;
+
+        if (winners.length > 1) {
+            await this.generateFixtures(winners);
+        } else {
+            // Tournament finished
+            const winner = winners[0];
+            const finalMatch = roundResults[0];
+            const runnerUpName = finalMatch.matchMetadata.homeTeam === winner.name
+                ? finalMatch.matchMetadata.awayTeam
+                : finalMatch.matchMetadata.homeTeam;
+            const runnerUp = this.teams.find(t => t.name === runnerUpName);
+
+            await Team.addJCupsWon(winner.id);
+            await Team.addRunnerUp(runnerUp.id);
+            await Team.updateHighestRound(winner.id, 'Winner');
+            await Team.updateHighestRound(runnerUp.id, 'Runner-up');
+
+            this.teams = winners;
+            this.currentRound = 4;
+
+            return {
+                roundResults,
+                nextRoundFixtures: "Tournament finished.",
+                winner: { id: winner.id, name: winner.name },
+                runner: { id: runnerUp.id, name: runnerUp.name }
+            };
+        }
+
+        // Format next fixtures for response
+        const nextFixtures = this.fixtures[this.currentRound]?.map(m => ({
+            homeTeam: m.team1.name,
+            awayTeam: m.team2?.name || 'BYE',
+            fixtureId: m.fixtureId,
+            odds: m.odds
+        })) || [];
+
+        return {
+            roundResults,
+            nextRoundFixtures: nextFixtures
+        };
+    }
+
+    async simulateSingleMatch(matchIndex) {
+        if (this.currentRound >= this.fixtures.length) {
+            throw new Error("No active round to simulate.");
+        }
+
+        const matches = this.fixtures[this.currentRound];
+
+        if (matchIndex < 0 || matchIndex >= matches.length) {
+            throw new Error(`Invalid match index. Must be between 0 and ${matches.length - 1}`);
+        }
+
+        const match = matches[matchIndex];
+
+        if (!this.completedMatches[this.currentRound]) {
+            this.completedMatches[this.currentRound] = {};
+        }
+
+        if (this.completedMatches[this.currentRound][matchIndex]) {
+            return this.completedMatches[this.currentRound][matchIndex];
+        }
+
+        const currentTeamCount = matches.filter(m => !m.isBye).length * 2;
+        const currentRoundName = this.getRoundName(currentTeamCount);
+
+        // Handle bye
+        if (match.team2 === null || match.isBye) {
+            await Team.updateHighestRound(match.team1.id, currentRoundName);
+            const result = {
+                matchResult: { isBye: true, team: match.team1.name },
+                winner: match.team1
+            };
+            this.completedMatches[this.currentRound][matchIndex] = result;
+            return result;
+        }
+
+        // Ensure ratings
+        if (!match.team1.attackRating) {
+            match.team1 = await Team.getRatingByTeamName(match.team1.name);
+        }
+        if (!match.team2.attackRating) {
+            match.team2 = await Team.getRatingByTeamName(match.team2.name);
+        }
+
+        let matchResult, winner;
+
+        if (this.useNewSimulation && match.fixtureId) {
+            const engine = new SimulationEngine(match.fixtureId, match.team1, match.team2);
+            const simResult = await engine.simulate();
+
+            winner = simResult.score.home > simResult.score.away ? match.team1 :
+                     simResult.score.away > simResult.score.home ? match.team2 :
+                     simResult.penaltyScore && simResult.penaltyScore.home > simResult.penaltyScore.away ? match.team1 : match.team2;
+
+            const events = await MatchEvent.getByFixtureId(match.fixtureId, { includePlayerNames: true });
+
+            matchResult = {
+                fixtureId: match.fixtureId,
+                score: { [match.team1.name]: simResult.score.home, [match.team2.name]: simResult.score.away },
+                penaltyScore: simResult.penaltyScore ? { [match.team1.name]: simResult.penaltyScore.home, [match.team2.name]: simResult.penaltyScore.away } : {},
+                highlights: events.map(e => ({
+                    minute: e.minute,
+                    type: e.eventType,
+                    team: e.teamName,
+                    description: e.description
+                })),
+                finalResult: simResult.finalResult,
+                stats: simResult.stats,
+                matchMetadata: {
+                    homeTeam: match.team1.name,
+                    awayTeam: match.team2.name,
+                    date: new Date().toISOString(),
+                    round: currentRoundName,
+                    odds: match.odds
+                }
+            };
+        } else {
+            // Legacy
+            const result = new MatchSimulator(match.team1, match.team2).simulate();
+            winner = this.determineWinner(result, match.team1, match.team2);
+
+            await Team.updateMatchStats(match.team1.id, winner.id === match.team1.id, result.score[match.team1.name], result.score[match.team2.name]);
+            await Team.updateMatchStats(match.team2.id, winner.id === match.team2.id, result.score[match.team2.name], result.score[match.team1.name]);
+
+            matchResult = {
                 score: result.score,
                 penaltyScore: result.penaltyScore,
                 highlights: result.highlights,
@@ -104,55 +342,17 @@ class JCup {
                 matchMetadata: {
                     homeTeam: match.team1.name,
                     awayTeam: match.team2.name,
-                    venue: "Stadium Name", // This could be made dynamic in the future
                     date: new Date().toISOString(),
-                    round: `Round ${this.currentRound + 1}`
+                    round: currentRoundName
                 }
             };
-            roundResults.push(matchResult);
         }
 
-        this.results.push({ roundResults });
-        this.currentRound++;
+        await Team.updateHighestRound(match.team1.id, currentRoundName);
+        await Team.updateHighestRound(match.team2.id, currentRoundName);
 
-        if (winners.length > 1) {
-            this.generateFixtures(winners);
-        } else {
-            // Tournament finished - determine winner and runner-up from final match
-            const finalMatch = roundResults[0]; // The last match is the final
-            const winner = winners[0];
-            
-            // Determine runner-up from the final match
-            const finalMatchTeam1 = roundResults[0].matchMetadata.homeTeam;
-            const finalMatchTeam2 = roundResults[0].matchMetadata.awayTeam;
-            const runnerUpName = finalMatchTeam1 === winner.name ? finalMatchTeam2 : finalMatchTeam1;
-            
-            // Get runner-up team object
-            const runnerUp = this.teams.find(team => team.name === runnerUpName);
-            
-            // Update championship winner and runner-up statistics
-            await Team.addJCupsWon(winner.id);
-            await Team.addRunnerUp(runnerUp.id);
-            
-            // Update highest round for winner and runner-up
-            await Team.updateHighestRound(winner.id, 'Winner');
-            await Team.updateHighestRound(runnerUp.id, 'Runner-up');
-            
-            this.teams = winners;
-            this.currentRound = 4;
-            
-            return {
-                roundResults,
-                nextRoundFixtures: this.fixtures[this.currentRound] || "Tournament finished, initializing new tournament.",
-                winner,
-                runner: runnerUp
-            };
-        }
-
-        return {
-            roundResults,
-            nextRoundFixtures: this.fixtures[this.currentRound] || "Tournament finished, initializing new tournament."
-        };
+        this.completedMatches[this.currentRound][matchIndex] = { matchResult, winner };
+        return { matchResult, winner };
     }
 
     shuffleTeams(teams) {
@@ -164,7 +364,6 @@ class JCup {
         return shuffled;
     }
 
-    // Get round name based on number of teams
     getRoundName(teamCount) {
         if (teamCount === 2) return 'Final';
         if (teamCount === 4) return 'Semi-finals';
@@ -174,126 +373,34 @@ class JCup {
         return `Round of ${teamCount}`;
     }
 
-    // Helper method to determine winner considering penalty shootouts
     determineWinner(result, team1, team2) {
-        // Check if there was a penalty shootout (both penalty scores > 0 or tie in regular score)
         const team1PenaltyScore = result.penaltyScore[team1.name] || 0;
         const team2PenaltyScore = result.penaltyScore[team2.name] || 0;
-        
-        // If penalty shootout occurred, use penalty scores
+
         if (team1PenaltyScore > 0 || team2PenaltyScore > 0) {
             return team1PenaltyScore > team2PenaltyScore ? team1 : team2;
         }
-        
-        // Otherwise, use regular scores
+
         return result.score[team1.name] > result.score[team2.name] ? team1 : team2;
-    }
-    async simulateSingleMatch(matchIndex) {
-        if (this.currentRound >= this.fixtures.length) {
-            throw new Error("No active round to simulate.");
-        }
-
-        const matches = this.fixtures[this.currentRound];
-        
-        if (matchIndex < 0 || matchIndex >= matches.length) {
-            throw new Error(`Invalid match index. Must be between 0 and ${matches.length - 1}`);
-        }
-
-        const match = matches[matchIndex];
-
-        // Initialize completed matches for this round if not exists
-        if (!this.completedMatches[this.currentRound]) {
-            this.completedMatches[this.currentRound] = {};
-        }
-
-        // Check if already completed
-        if (this.completedMatches[this.currentRound][matchIndex]) {
-            return this.completedMatches[this.currentRound][matchIndex];
-        }
-
-        // Determine the current round name
-        const currentTeamCount = matches.length * 2;
-        const currentRoundName = this.getRoundName(currentTeamCount);
-
-        // Handle bye
-        if (match.team2 === null) {
-            await Team.updateHighestRound(match.team1.id, currentRoundName);
-            const result = {
-                matchResult: {
-                    isBye: true,
-                    team: match.team1.name
-                },
-                winner: match.team1
-            };
-            this.completedMatches[this.currentRound][matchIndex] = result;
-            return result;
-        }
-
-        // Fetch ratings if needed
-        if (!match.team1.attackRating || !match.team1.defenseRating || !match.team1.goalkeeperRating) {
-            match.team1 = await Team.getRatingByTeamName(match.team1.name);
-        }
-        if (!match.team2.attackRating || !match.team2.defenseRating || !match.team2.goalkeeperRating) {
-            match.team2 = await Team.getRatingByTeamName(match.team2.name);
-        }
-
-        // Simulate the match
-        const result = new MatchSimulator(match.team1, match.team2).simulate();
-        const winner = this.determineWinner(result, match.team1, match.team2);
-        
-        // Get scores for each team
-        const team1Goals = result.score[match.team1.name];
-        const team2Goals = result.score[match.team2.name];
-        
-        // Update match statistics for both teams
-        await Team.updateMatchStats(match.team1.id, winner.id === match.team1.id, team1Goals, team2Goals);
-        await Team.updateMatchStats(match.team2.id, winner.id === match.team2.id, team2Goals, team1Goals);
-        
-        // Update highest round reached for both teams
-        await Team.updateHighestRound(match.team1.id, currentRoundName);
-        await Team.updateHighestRound(match.team2.id, currentRoundName);
-
-        const matchResult = {
-            score: result.score,
-            penaltyScore: result.penaltyScore,
-            highlights: result.highlights,
-            finalResult: result.finalResult,
-            matchMetadata: {
-                homeTeam: match.team1.name,
-                awayTeam: match.team2.name,
-                venue: "Stadium Name",
-                date: new Date().toISOString(),
-                round: `Round ${this.currentRound + 1}`
-            }
-        };
-
-        // Store the completed match
-        this.completedMatches[this.currentRound][matchIndex] = {
-            matchResult,
-            winner
-        };
-
-        return { matchResult, winner };
     }
 
     isRoundComplete() {
-        if (this.currentRound >= this.fixtures.length) {
-            return true;
-        }
+        if (this.currentRound >= this.fixtures.length) return true;
 
         const matches = this.fixtures[this.currentRound];
         const completedInRound = this.completedMatches[this.currentRound] || {};
-        
+
         return matches.length === Object.keys(completedInRound).length;
     }
 
     resetJCup() {
         this.currentRound = 0;
-        this.fixtures = [];  // Clear fixtures
+        this.fixtures = [];
+        this.fixtureIds = [];
         this.results = [];
         this.completedMatches = {};
-        // Optionally clear teams if they are supposed to be reloaded each tournament
         this.teams = [];
+        this.tournamentId = null;
     }
 
     async jCupWon(winner_id, runner_id) {
@@ -303,7 +410,11 @@ class JCup {
         }
         return { msg: "updated" };
     }
-    
+
+    // Get fixture IDs for current round
+    getCurrentRoundFixtureIds() {
+        return this.fixtureIds[this.currentRound] || [];
+    }
 }
 
 module.exports = JCup;

@@ -4,6 +4,7 @@
   "description": "backend for footfive",
   "main": "index.js",
   "scripts": {
+    "migrate": "node ./db/migrations/run-migration.js",
     "seed": "node ./db/run-seed.js",
     "test": "jest",
     "test:watch": "jest --watch",
