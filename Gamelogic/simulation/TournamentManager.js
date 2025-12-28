@@ -106,6 +106,9 @@ class TournamentManager extends EventEmitter {
    * Handle tick in force mode - advance rounds when all matches complete
    */
   async _checkForceModeTick() {
+    // Prevent re-entry during async transitions
+    if (this._transitioning) return;
+
     // Check if we're in a playing round and all matches are complete
     const playingRounds = [
       TOURNAMENT_STATES.ROUND_OF_16,
@@ -128,21 +131,25 @@ class TournamentManager extends EventEmitter {
     }[this.state];
 
     if (nextState) {
-      // Collect winners first
-      await this._collectWinners();
-      this.emit('round_complete', {
-        tournamentId: this.tournamentId,
-        round: this.currentRoundName,
-        winners: this.roundWinners.map(t => ({ id: t.id, name: t.name }))
-      });
+      this._transitioning = true;
+      try {
+        // Collect winners first
+        await this._collectWinners();
+        this.emit('round_complete', {
+          tournamentId: this.tournamentId,
+          round: this.currentRoundName,
+          winners: this.roundWinners.map(t => ({ id: t.id, name: t.name }))
+        });
 
-      const prevState = this.state;
-      this.state = nextState;
+        this.state = nextState;
 
-      if (nextState === TOURNAMENT_STATES.RESULTS) {
-        await this._handleResults();
-      } else {
-        await this._startRound(nextState, Date.now());
+        if (nextState === TOURNAMENT_STATES.RESULTS) {
+          await this._handleResults();
+        } else {
+          await this._startRound(nextState, Date.now());
+        }
+      } finally {
+        this._transitioning = false;
       }
     }
   }
