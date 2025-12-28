@@ -105,7 +105,7 @@ class TournamentManager extends EventEmitter {
   /**
    * Handle tick in force mode - advance rounds when all matches complete
    */
-  _checkForceModeTick() {
+  async _checkForceModeTick() {
     // Check if we're in a playing round and all matches are complete
     const playingRounds = [
       TOURNAMENT_STATES.ROUND_OF_16,
@@ -129,7 +129,7 @@ class TournamentManager extends EventEmitter {
 
     if (nextState) {
       // Collect winners first
-      this._collectWinners();
+      await this._collectWinners();
       this.emit('round_complete', {
         tournamentId: this.tournamentId,
         round: this.currentRoundName,
@@ -140,9 +140,9 @@ class TournamentManager extends EventEmitter {
       this.state = nextState;
 
       if (nextState === TOURNAMENT_STATES.RESULTS) {
-        this._handleResults();
+        await this._handleResults();
       } else {
-        this._startRound(nextState, Date.now());
+        await this._startRound(nextState, Date.now());
       }
     }
   }
@@ -232,7 +232,7 @@ class TournamentManager extends EventEmitter {
       case TOURNAMENT_STATES.QF_BREAK:
       case TOURNAMENT_STATES.SF_BREAK:
       case TOURNAMENT_STATES.FINAL_BREAK:
-        this._handleBreak(fromState);
+        await this._handleBreak(fromState);
         break;
 
       case TOURNAMENT_STATES.RESULTS:
@@ -384,9 +384,9 @@ class TournamentManager extends EventEmitter {
   /**
    * Handle break between rounds
    */
-  _handleBreak(fromState) {
+  async _handleBreak(fromState) {
     // Collect winners from completed matches
-    this._collectWinners();
+    await this._collectWinners();
 
     this.emit('round_complete', {
       tournamentId: this.tournamentId,
@@ -398,9 +398,9 @@ class TournamentManager extends EventEmitter {
   }
 
   /**
-   * Collect winners from current round
+   * Collect winners from current round and update team stats
    */
-  _collectWinners() {
+  async _collectWinners() {
     const winners = [];
 
     for (const fixture of this.fixtures) {
@@ -420,7 +420,33 @@ class TournamentManager extends EventEmitter {
 
       const winnerId = match.getWinnerId();
       const winner = winnerId === fixture.home.id ? fixture.home : fixture.away;
+      const loser = winnerId === fixture.home.id ? fixture.away : fixture.home;
       winners.push(winner);
+
+      const score = match.getScore();
+
+      // Update team stats in DB
+      try {
+        // Winner stats
+        await Team.updateMatchStats(
+          fixture.home.id,
+          winnerId === fixture.home.id, // won
+          score.home,
+          score.away
+        );
+        // Away team stats
+        await Team.updateMatchStats(
+          fixture.away.id,
+          winnerId === fixture.away.id, // won
+          score.away,
+          score.home
+        );
+
+        // Update highest round reached for loser (they're eliminated here)
+        await Team.updateHighestRound(loser.id, this.currentRoundName);
+      } catch (err) {
+        console.error('[TournamentManager] Failed to update team stats:', err.message);
+      }
 
       this.completedResults.push({
         fixtureId: fixture.fixtureId,
@@ -440,7 +466,7 @@ class TournamentManager extends EventEmitter {
    * Handle tournament results
    */
   async _handleResults() {
-    this._collectWinners();
+    await this._collectWinners();
 
     if (this.roundWinners.length === 1) {
       this.winner = this.roundWinners[0];
