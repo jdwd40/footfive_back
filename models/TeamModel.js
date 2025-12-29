@@ -165,10 +165,10 @@ class Team {
     // Get all team statistics
     static async getAllStats() {
         const result = await db.query(`
-            SELECT team_id, name, wins, losses, goals_for, goals_against, 
-                   jcups_won, runner_ups, highest_round_reached
+            SELECT team_id, name, wins, losses, goals_for, goals_against,
+                   goal_diff, jcups_won, runner_ups, highest_round_reached, recent_form
             FROM teams
-            ORDER BY jcups_won DESC, wins DESC, name ASC
+            ORDER BY jcups_won DESC, wins DESC, goal_diff DESC, name ASC
         `);
 
         return result.rows;

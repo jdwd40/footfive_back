@@ -766,26 +766,9 @@ class LiveMatch {
       penaltiesPlayed: this.penaltyScore.home > 0 || this.penaltyScore.away > 0
     });
 
-    // Update team stats
-    await this._updateTeamStats(winnerId);
-  }
-
-  async _updateTeamStats(winnerId) {
-    const homeWon = winnerId === this.homeTeam.id;
-
-    await Team.updateMatchStats(this.homeTeam.id, homeWon, this.score.home, this.score.away);
-    await Team.updateMatchStats(this.awayTeam.id, !homeWon, this.score.away, this.score.home);
-
-    // Update form
-    const updateForm = async (teamId, won) => {
-      const result = await db.query('SELECT recent_form FROM teams WHERE team_id = $1', [teamId]);
-      let form = result.rows[0]?.recent_form || '';
-      form = (won ? 'W' : 'L') + form.slice(0, 9);
-      await db.query('UPDATE teams SET recent_form = $1 WHERE team_id = $2', [form, teamId]);
-    };
-
-    await updateForm(this.homeTeam.id, homeWon);
-    await updateForm(this.awayTeam.id, !homeWon);
+    // NOTE: Team stats (wins, losses, goals, highest_round, etc.) are updated
+    // by TournamentManager._collectWinners() after each round completes.
+    // This prevents duplicate stat updates.
   }
 
   // === Public API ===

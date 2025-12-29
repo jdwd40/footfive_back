@@ -30,3 +30,18 @@ exports.getTop3JCupWinners = async (req, res) => {
         });
     }
 }
+
+exports.getAllStats = async (req, res) => {
+    try {
+        const stats = await Team.getAllStats();
+        return res.status(200).json({
+            message: "Team stats fetched successfully",
+            stats: stats
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: "Failed to fetch team stats",
+            error: error.message
+        });
+    }
+}

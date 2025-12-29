@@ -2,6 +2,7 @@ const EventEmitter = require('events');
 const Team = require('../../models/TeamModel');
 const Fixture = require('../../models/FixtureModel');
 const { LiveMatch, DEFAULT_RULES } = require('./LiveMatch');
+const db = require('../../db/connection');
 
 const TOURNAMENT_STATES = {
   IDLE: 'IDLE',
@@ -133,19 +134,21 @@ class TournamentManager extends EventEmitter {
     if (nextState) {
       this._transitioning = true;
       try {
-        // Collect winners first
-        await this._collectWinners();
-        this.emit('round_complete', {
-          tournamentId: this.tournamentId,
-          round: this.currentRoundName,
-          winners: this.roundWinners.map(t => ({ id: t.id, name: t.name }))
-        });
-
-        this.state = nextState;
-
+        // For RESULTS state, _handleResults will call _collectWinners itself
+        // For other states, we need to collect winners before starting next round
         if (nextState === TOURNAMENT_STATES.RESULTS) {
+          this.state = nextState;
           await this._handleResults();
         } else {
+          // Collect winners first for non-final rounds
+          await this._collectWinners();
+          this.emit('round_complete', {
+            tournamentId: this.tournamentId,
+            round: this.currentRoundName,
+            winners: this.roundWinners.map(t => ({ id: t.id, name: t.name }))
+          });
+
+          this.state = nextState;
           await this._startRound(nextState, Date.now());
         }
       } finally {
@@ -434,25 +437,33 @@ class TournamentManager extends EventEmitter {
 
       // Update team stats in DB
       try {
-        // Winner stats
+        const homeWon = winnerId === fixture.home.id;
+
+        // Home team stats
         await Team.updateMatchStats(
           fixture.home.id,
-          winnerId === fixture.home.id, // won
+          homeWon,
           score.home,
           score.away
         );
         // Away team stats
         await Team.updateMatchStats(
           fixture.away.id,
-          winnerId === fixture.away.id, // won
+          !homeWon,
           score.away,
           score.home
         );
 
+        // Update recent_form for both teams
+        await this._updateRecentForm(fixture.home.id, homeWon);
+        await this._updateRecentForm(fixture.away.id, !homeWon);
+
         // Update highest round reached for loser (they're eliminated here)
         await Team.updateHighestRound(loser.id, this.currentRoundName);
+
+        console.log(`[TournamentManager] Updated stats: ${winner.name} beat ${loser.name} ${score.home}-${score.away}, loser highest_round=${this.currentRoundName}`);
       } catch (err) {
-        console.error('[TournamentManager] Failed to update team stats:', err.message);
+        console.error('[TournamentManager] Failed to update team stats:', err.message, err.stack);
       }
 
       this.completedResults.push({
@@ -475,6 +486,13 @@ class TournamentManager extends EventEmitter {
   async _handleResults() {
     await this._collectWinners();
 
+    // Emit round_complete for the final
+    this.emit('round_complete', {
+      tournamentId: this.tournamentId,
+      round: this.currentRoundName,
+      winners: this.roundWinners.map(t => ({ id: t.id, name: t.name }))
+    });
+
     if (this.roundWinners.length === 1) {
       this.winner = this.roundWinners[0];
 
@@ -486,14 +504,25 @@ class TournamentManager extends EventEmitter {
           : finalResult.home;
       }
 
-      // Update team stats
-      if (this.winner) {
-        await Team.addJCupsWon(this.winner.id);
-        await Team.updateHighestRound(this.winner.id, 'Winner');
+      // Update team stats for winner and runner-up
+      try {
+        if (this.winner) {
+          await Team.addJCupsWon(this.winner.id);
+          await Team.updateHighestRound(this.winner.id, 'Winner');
+          console.log(`[TournamentManager] Updated winner stats: ${this.winner.name} (ID: ${this.winner.id})`);
+        }
+      } catch (err) {
+        console.error(`[TournamentManager] Failed to update winner stats:`, err.message);
       }
-      if (this.runnerUp) {
-        await Team.addRunnerUp(this.runnerUp.id);
-        await Team.updateHighestRound(this.runnerUp.id, 'Runner-up');
+
+      try {
+        if (this.runnerUp) {
+          await Team.addRunnerUp(this.runnerUp.id);
+          await Team.updateHighestRound(this.runnerUp.id, 'Runner-up');
+          console.log(`[TournamentManager] Updated runner-up stats: ${this.runnerUp.name} (ID: ${this.runnerUp.id})`);
+        }
+      } catch (err) {
+        console.error(`[TournamentManager] Failed to update runner-up stats:`, err.message);
       }
 
       this.emit('tournament_end', {
@@ -706,6 +735,20 @@ class TournamentManager extends EventEmitter {
   }
 
   // === Utility ===
+
+  /**
+   * Update a team's recent form (last 10 results as W/L string)
+   */
+  async _updateRecentForm(teamId, won) {
+    try {
+      const result = await db.query('SELECT recent_form FROM teams WHERE team_id = $1', [teamId]);
+      let form = result.rows[0]?.recent_form || '';
+      form = (won ? 'W' : 'L') + form.slice(0, 9);
+      await db.query('UPDATE teams SET recent_form = $1 WHERE team_id = $2', [form, teamId]);
+    } catch (err) {
+      console.error(`[TournamentManager] Failed to update recent_form for team ${teamId}:`, err.message);
+    }
+  }
 
   _shuffleTeams(teams) {
     const shuffled = [...teams];
