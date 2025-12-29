@@ -439,20 +439,8 @@ class TournamentManager extends EventEmitter {
       try {
         const homeWon = winnerId === fixture.home.id;
 
-        // Home team stats
-        await Team.updateMatchStats(
-          fixture.home.id,
-          homeWon,
-          score.home,
-          score.away
-        );
-        // Away team stats
-        await Team.updateMatchStats(
-          fixture.away.id,
-          !homeWon,
-          score.away,
-          score.home
-        );
+        // Stats moved to LiveMatch.js for immediate update
+
 
         // Update recent_form for both teams
         await this._updateRecentForm(fixture.home.id, homeWon);

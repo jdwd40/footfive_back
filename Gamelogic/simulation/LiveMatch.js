@@ -766,9 +766,37 @@ class LiveMatch {
       penaltiesPlayed: this.penaltyScore.home > 0 || this.penaltyScore.away > 0
     });
 
-    // NOTE: Team stats (wins, losses, goals, highest_round, etc.) are updated
-    // by TournamentManager._collectWinners() after each round completes.
-    // This prevents duplicate stat updates.
+    // NOTE: Team stats (wins, losses, goals) are now updated here immediately
+    // TournamentManager should NOT update these stats again
+    try {
+      const homeWon = winnerId === this.homeTeam.id;
+
+      // Update stats for home team
+      await Team.updateMatchStats(
+        this.homeTeam.id,
+        homeWon,
+        this.score.home,
+        this.score.away
+      );
+
+      // Update stats for away team
+      await Team.updateMatchStats(
+        this.awayTeam.id,
+        !homeWon,
+        this.score.away,
+        this.score.home
+      );
+
+      // We don't update recent_form here because it might depend on tournament context? 
+      // Actually TournamentManager uses `_updateRecentForm`. 
+      // Let's check if we can access `Team` model helper for that? 
+      // TournamentManager does it manually or calls `_updateRecentForm` (private method).
+      // TeamModel doesn't have `updateRecentForm`.
+      // The requirement was "wins, losses, goals for and against".
+      // I will stick to that.
+    } catch (err) {
+      console.error('[LiveMatch] Failed to update team stats:', err);
+    }
   }
 
   // === Public API ===
