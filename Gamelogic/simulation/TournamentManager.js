@@ -21,15 +21,15 @@ const TOURNAMENT_STATES = {
 // Schedule: minute of hour -> state
 // Matches start at: :00 (R16), :15 (QF), :30 (SF), :45 (Final)
 const SCHEDULE = {
-  SETUP:          { startMinute: 55, endMinute: 60 },  // :55-:00 (wraps)
-  ROUND_OF_16:    { startMinute: 0,  endMinute: 9 },
-  QF_BREAK:       { startMinute: 9,  endMinute: 15 },
+  SETUP: { startMinute: 55, endMinute: 60 },  // :55-:00 (wraps)
+  ROUND_OF_16: { startMinute: 0, endMinute: 9 },
+  QF_BREAK: { startMinute: 9, endMinute: 15 },
   QUARTER_FINALS: { startMinute: 15, endMinute: 24 },
-  SF_BREAK:       { startMinute: 24, endMinute: 30 },
-  SEMI_FINALS:    { startMinute: 30, endMinute: 39 },
-  FINAL_BREAK:    { startMinute: 39, endMinute: 45 },
-  FINAL:          { startMinute: 45, endMinute: 54 },
-  RESULTS:        { startMinute: 54, endMinute: 55 }
+  SF_BREAK: { startMinute: 24, endMinute: 30 },
+  SEMI_FINALS: { startMinute: 30, endMinute: 39 },
+  FINAL_BREAK: { startMinute: 39, endMinute: 45 },
+  FINAL: { startMinute: 45, endMinute: 54 },
+  RESULTS: { startMinute: 54, endMinute: 55 }
 };
 
 const ROUND_NAMES = {
@@ -578,72 +578,273 @@ class TournamentManager extends EventEmitter {
   /**
    * Recovery - restore tournament state from DB
    */
+  /**
+   * Recovery - restore tournament state from DB
+   * Searches for most recent active tournament in last 3 hours
+   */
   async recover() {
-    // Check for any live fixtures
-    const liveFixtures = await Fixture.getAll({ status: 'live' });
+    console.log('[TournamentManager] Checking for recovery...');
 
-    if (liveFixtures.length === 0) {
+    // 1. Find most recent tournament from last 3 hours
+    const recentResult = await db.query(`
+      SELECT tournament_id 
+      FROM fixtures 
+      WHERE created_at > NOW() - INTERVAL '3 hours' 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `);
+
+    if (recentResult.rows.length === 0) {
+      console.log('[TournamentManager] No recent tournament found');
       return false;
     }
 
-    console.log(`[TournamentManager] Found ${liveFixtures.length} live fixtures to recover`);
+    const tournamentId = recentResult.rows[0].tournament_id;
+    console.log(`[TournamentManager] Found recent tournament ${tournamentId}`);
 
-    // Get tournament ID from first fixture
-    const tournamentId = liveFixtures[0].tournamentId;
-    if (!tournamentId) {
+    // 2. Load ALL fixtures for this tournament
+    const allFixtures = await Fixture.getAll({ tournamentId, limit: 1000 });
+
+    if (allFixtures.length === 0) {
       return false;
     }
 
     this.tournamentId = tournamentId;
 
-    // Determine current round from fixture data
-    const roundName = liveFixtures[0].round;
-    this.currentRoundName = roundName;
+    // 3. Reconstruct State
+    // Sort fixtures by creation time/round order to replay history
+    // Round order: Round of 16 -> Quarter-finals -> Semi-finals -> Final
+    const roundOrder = ['Round of 16', 'Quarter-finals', 'Semi-finals', 'Final'];
 
-    // Map round name to state
-    const roundStateMap = {
-      'Round of 16': TOURNAMENT_STATES.ROUND_OF_16,
-      'Quarter-finals': TOURNAMENT_STATES.QUARTER_FINALS,
-      'Semi-finals': TOURNAMENT_STATES.SEMI_FINALS,
-      'Final': TOURNAMENT_STATES.FINAL
-    };
+    // Group fixtures by round
+    const byRound = {};
+    for (const f of allFixtures) {
+      if (!byRound[f.round]) byRound[f.round] = [];
+      byRound[f.round].push(f);
+    }
 
-    this.state = roundStateMap[roundName] || TOURNAMENT_STATES.IDLE;
+    // Determine current/latest round
+    let latestRound = null;
+    for (const round of roundOrder) {
+      if (byRound[round] && byRound[round].length > 0) {
+        latestRound = round;
+      }
+    }
 
-    // Recover LiveMatch instances
-    this.liveMatches = [];
+    if (!latestRound) {
+      console.log('[TournamentManager] Could not determine latest round');
+      return false;
+    }
+
+    this.currentRoundName = latestRound;
+    console.log(`[TournamentManager] Reconstructing state at ${latestRound}`);
+
+    // Flatten all fixtures to reconstruct 'completedResults' and 'teams'
+    // We need to reload all teams to populate `this.teams`
+    this.teams = await Team.getAll(); // Needed for random access if needed, or at least initialization
+
+    // Reconstruct roundWinners for the current round
+    // If we are in QF, roundWinners should be the teams in QF
+    // Actually, `roundWinners` tracks the teams *competing* in the *current* round (or winners of previous). 
+    // Wait, the logic in `_startRound` uses `this.roundWinners` to create pairings.
+    // So if we are mid-round, `roundWinners` is actually the participants of this round.
+
+    // Let's identify the participants of the current round from the fixtures
+    const currentFixtures = byRound[latestRound];
+    const participants = [];
+
+    // Also reconstruct `completedResults` from ALL completed fixtures in previous rounds
+    this.completedResults = [];
+    for (const round of roundOrder) {
+      if (round === latestRound) break; // Don't include current round in completed results yet (unless finished)
+      // Actually strictly previous rounds
+      if (byRound[round]) {
+        for (const f of byRound[round]) {
+          if (f.status === 'completed') {
+            // We need the match object for stats, but we can just use the DB result
+            // SimulationLoop expects `completedResults` to have specific structure
+            // But mostly it's used for records.
+
+            // For recovery of `completedResults`, we might just push basic info
+            // but `_handleResults` uses it.
+            this.completedResults.push({
+              fixtureId: f.fixtureId,
+              round: f.round,
+              home: { id: f.homeTeamId, name: f.homeTeamName },
+              away: { id: f.awayTeamId, name: f.awayTeamName },
+              score: { home: f.homeScore, away: f.awayScore },
+              penaltyScore: { home: f.homePenaltyScore, away: f.awayPenaltyScore },
+              winnerId: f.winnerTeamId
+            });
+          }
+        }
+      }
+    }
+
+    // Now handle current round state
     this.fixtures = [];
+    this.liveMatches = [];
+    const participantsSet = new Set();
 
-    for (const fixture of liveFixtures) {
+    let allCurrentComplete = true;
+    let anyLive = false;
+
+    // Load LiveMatch for any non-completed match, or completed if we want to show it?
+    // Actually `recover` logic for LiveMatch handles active ones.
+
+    for (const fixture of currentFixtures) {
+      // Re-populate fixtures array
       const homeTeam = await Team.getRatingById(fixture.homeTeamId);
       const awayTeam = await Team.getRatingById(fixture.awayTeamId);
 
-      // Calculate start time from match state
-      // Assume match started at round start time (approximate)
-      const roundSchedule = SCHEDULE[Object.keys(ROUND_NAMES).find(k => ROUND_NAMES[k] === roundName)];
-      const now = new Date();
-      const startTime = new Date(now);
-      startTime.setMinutes(roundSchedule?.startMinute || 0);
-      startTime.setSeconds(0);
-      startTime.setMilliseconds(0);
+      participantsSet.add(fixture.homeTeamId);
+      participantsSet.add(fixture.awayTeamId);
 
-      const match = await LiveMatch.recover(
-        fixture.fixtureId,
-        startTime.getTime(),
-        this.rules
-      );
+      let match = null;
 
-      this.liveMatches.push(match);
+      if (fixture.status === 'live' || fixture.status === 'assigned') { // 'assigned' is default DB status? check schema. FixtureModel uses COALESCE(..., NOW()) but doesn't set status. DB default probably 'scheduled' or something.
+        // Check FixtureModel create... it inserts but doesn't specify status. DB schema dependent.
+        // Assuming 'scheduled' is default.
+
+        allCurrentComplete = false;
+        anyLive = true;
+
+        // Recover match state
+        const roundSchedule = SCHEDULE[Object.keys(ROUND_NAMES).find(k => ROUND_NAMES[k] === this.currentRoundName)];
+        const now = new Date();
+        const startTime = new Date(now);
+        startTime.setMinutes(roundSchedule?.startMinute || 0);
+        startTime.setSeconds(0);
+        startTime.setMilliseconds(0);
+
+        // Determine if we should be live based on time matching schedule?
+        // For now, if it's not completed, we treat it as potentially live or needing start
+
+        match = await LiveMatch.recover(
+          fixture.fixtureId,
+          startTime.getTime(),
+          this.rules
+        );
+
+        this.liveMatches.push(match);
+      } else if (fixture.status === 'completed') {
+        // It's done
+      } else {
+        // Scheduled but not live? Treat as live for recovery if we are in that time window?
+        // Or if we are recovering, we should arguably 'resume' them if they aren't marked finished.
+        // The issue is if status was never updated to 'live'.
+        // LiveMatches update status to 'live' on first tick.
+
+        // If status is NOT completed, we should probably recover it as a LiveMatch
+        allCurrentComplete = false;
+        anyLive = true;
+
+        const roundSchedule = SCHEDULE[Object.keys(ROUND_NAMES).find(k => ROUND_NAMES[k] === this.currentRoundName)];
+        const now = new Date();
+        const startTime = new Date(now);
+        startTime.setMinutes(roundSchedule?.startMinute || 0);
+        startTime.setSeconds(0);
+        startTime.setMilliseconds(0);
+
+        match = await LiveMatch.recover(
+          fixture.fixtureId,
+          startTime.getTime(),
+          this.rules
+        );
+        this.liveMatches.push(match);
+      }
+
       this.fixtures.push({
         home: homeTeam,
         away: awayTeam,
         isBye: false,
         fixtureId: fixture.fixtureId,
-        match
+        match: match,
+        completed: fixture.status === 'completed'
       });
     }
 
-    console.log(`[TournamentManager] Recovered ${this.liveMatches.length} matches`);
+    // Add dummy objects for Byes if any?
+    // Byes are not in compiled fixtures usually?
+    // In `_startRound`, byes are not created in DB.
+    // So we might miss them in `this.fixtures` but `roundWinners` is key.
+
+    // Reconstruct roundWinners (participants for this round)
+    this.roundWinners = [];
+    // We need to find the Team objects for all participants
+    // We have homeTeam/awayTeam from fixtures
+
+    // This part is tricky because we need the array of teams to be in pairing order if we were to restart,
+    // but here we just need them to exist for the NEXT round generation.
+    // `roundWinners` is essentially "Teams currently in the tournament"
+
+    // Better strategy:
+    // If round is complete, `roundWinners` should be the winners of this round.
+    // If round is in progress, `roundWinners` should be the participants.
+
+    // Actually `roundWinners` is cleared and repopulated in `_collectWinners` at end of round.
+    // At start of round (`_startRound`), `roundWinners` comes from previous round winners.
+    // So `this.roundWinners` should reflect the input to the NEXT round if current is done?
+    // Or the input to CURRENT round if in progress?
+
+    // `_startRound` consumes `this.roundWinners`.
+    // So if we are IN `ROUND_OF_16`, `roundWinners` was used to create fixtures.
+    // If we recover, we assume fixtures exist.
+    // When round completes, `_collectWinners` populates `roundWinners` for next round.
+
+    // Case 1: All fixtures in current round COMPLETE.
+    // We are likely in BREAK.
+    // We need to populate `roundWinners` with the winners of this complete round.
+
+    // Case 2: Round IN PROGRESS.
+    // We don't strictly need `roundWinners` populated right now, 
+    // BUT `_collectWinners` iterates `this.fixtures`.
+    // So as long as `this.fixtures` is populated (which we did), `_collectWinners` will work.
+
+    if (allCurrentComplete) {
+      console.log('[TournamentManager] All matches in round complete. Recovering to BREAK state.');
+
+      // Populate roundWinners from completed fixtures manually to avoid re-triggering stats updates
+      this.roundWinners = [];
+      for (const fixture of currentFixtures) {
+        // Find the winner
+        if (fixture.winnerTeamId) {
+          const winnerId = fixture.winnerTeamId;
+          // We need full team object for next round
+          const winner = await Team.getRatingById(winnerId);
+          this.roundWinners.push(winner);
+        }
+      }
+
+      // Map round name to BREAK state
+      const breakMap = {
+        'Round of 16': TOURNAMENT_STATES.QF_BREAK,
+        'Quarter-finals': TOURNAMENT_STATES.SF_BREAK,
+        'Semi-finals': TOURNAMENT_STATES.FINAL_BREAK,
+        'Final': TOURNAMENT_STATES.RESULTS
+      };
+      this.state = breakMap[latestRound] || TOURNAMENT_STATES.IDLE;
+
+      if (latestRound === 'Final') {
+        // Special handling for results?
+        // _handleResults calls _collectWinners then sets COMPLETE.
+        // If we are recovered after final, effectively we are in RESULTS or COMPLETE.
+        this.state = TOURNAMENT_STATES.RESULTS; // Trigger results processing next tick
+      }
+
+    } else {
+      console.log(`[TournamentManager] Matches in progress (Live: ${anyLive}). Recovering to ${latestRound} state.`);
+      // Map round name to PLAYING state
+      const stateMap = {
+        'Round of 16': TOURNAMENT_STATES.ROUND_OF_16,
+        'Quarter-finals': TOURNAMENT_STATES.QUARTER_FINALS,
+        'Semi-finals': TOURNAMENT_STATES.SEMI_FINALS,
+        'Final': TOURNAMENT_STATES.FINAL
+      };
+      this.state = stateMap[latestRound] || TOURNAMENT_STATES.IDLE;
+    }
+
+    console.log(`[TournamentManager] Recovered tournament ${this.tournamentId} in state ${this.state}`);
     return true;
   }
 
