@@ -1,5 +1,6 @@
 const { getEventBus } = require('../Gamelogic/simulation/EventBus');
 const { getSimulationLoop } = require('../Gamelogic/simulation/SimulationLoop');
+const Fixture = require('../models/FixtureModel');
 
 /**
  * SSE endpoint for live match events
@@ -140,11 +141,93 @@ const getStatus = (req, res) => {
   });
 };
 
+/**
+ * Get all fixtures for current tournament with live state
+ * GET /api/live/fixtures
+ *
+ * Returns all fixtures (scheduled, live, completed) for the current tournament,
+ * enriched with real-time state for active matches.
+ */
+const getLiveFixtures = async (req, res) => {
+  try {
+    const loop = getSimulationLoop();
+
+    if (!loop.tournamentManager) {
+      return res.status(503).json({ error: 'Simulation not initialized' });
+    }
+
+    const tournamentId = loop.tournamentManager.tournamentId;
+    const tournamentState = loop.tournamentManager.getState();
+
+    if (!tournamentId) {
+      return res.status(404).json({ error: 'No active tournament' });
+    }
+
+    // Fetch all fixtures for current tournament from database
+    const dbFixtures = await Fixture.getAll({ tournamentId, limit: 100 });
+
+    // Build response with live state enrichment
+    const fixtures = dbFixtures.map(fixture => {
+      const fixtureId = fixture.fixtureId;
+      const liveMatch = loop.matches.get(fixtureId);
+
+      // Base fixture data from database
+      const result = {
+        fixtureId,
+        round: fixture.round,
+        homeTeam: { id: fixture.homeTeamId, name: fixture.homeTeamName },
+        awayTeam: { id: fixture.awayTeamId, name: fixture.awayTeamName }
+      };
+
+      if (liveMatch) {
+        // Active match - use live state
+        result.state = liveMatch.state;
+        result.isFinished = liveMatch.isFinished();
+        result.minute = liveMatch.getMatchMinute();
+        result.score = liveMatch.getScore();
+        result.penaltyScore = liveMatch.getPenaltyScore();
+        result.winnerId = liveMatch.isFinished() ? liveMatch.getWinnerId() : null;
+      } else if (fixture.status === 'completed') {
+        // Completed match - use database state
+        result.state = 'FINISHED';
+        result.isFinished = true;
+        result.minute = null;
+        result.score = { home: fixture.homeScore, away: fixture.awayScore };
+        result.penaltyScore = {
+          home: fixture.homePenaltyScore || 0,
+          away: fixture.awayPenaltyScore || 0
+        };
+        result.winnerId = fixture.winnerTeamId;
+      } else {
+        // Scheduled match - not yet started
+        result.state = 'SCHEDULED';
+        result.isFinished = false;
+        result.minute = null;
+        result.score = { home: 0, away: 0 };
+        result.penaltyScore = { home: 0, away: 0 };
+        result.winnerId = null;
+      }
+
+      return result;
+    });
+
+    res.json({
+      tournamentId,
+      currentRound: tournamentState.currentRound,
+      fixtures
+    });
+  } catch (error) {
+    console.error('Error fetching live fixtures:', error);
+    res.status(500).json({ error: 'Failed to fetch fixtures' });
+  }
+};
+
 module.exports = {
   streamEvents,
   getTournamentState,
   getActiveMatches,
   getMatchState,
   getRecentEvents,
-  getStatus
+  getStatus,
+  getLiveFixtures
 };
