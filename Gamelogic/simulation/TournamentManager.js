@@ -66,6 +66,7 @@ class TournamentManager extends EventEmitter {
     this.fixtures = [];        // Current round fixture data
     this.liveMatches = [];     // LiveMatch instances
     this.completedResults = [];
+    this.scheduledFixtureIds = null; // Pre-created fixture IDs for next round
 
     // Timing
     this.roundStartTime = null;
@@ -270,6 +271,7 @@ class TournamentManager extends EventEmitter {
     this.runnerUp = null;
     this.liveMatches = [];
     this.fixtures = [];
+    this.scheduledFixtureIds = null;
 
     // Load teams
     this.teams = await Team.getAll();
@@ -313,19 +315,30 @@ class TournamentManager extends EventEmitter {
       }
     }
 
-    // Create fixtures in DB
-    const dbFixtures = pairings
-      .filter(p => !p.isBye)
-      .map(p => ({
-        homeTeamId: p.home.id,
-        awayTeamId: p.away.id,
-        tournamentId: this.tournamentId,
-        round: roundName
-      }));
-
+    // Check if fixtures were pre-created during break
     let createdFixtures = [];
-    if (dbFixtures.length > 0) {
-      createdFixtures = await Fixture.createBatch(dbFixtures);
+    if (this.scheduledFixtureIds && this.scheduledFixtureIds.length > 0) {
+      // Load pre-created fixtures
+      console.log(`[TournamentManager] Using ${this.scheduledFixtureIds.length} pre-created fixtures`);
+      for (const fixtureId of this.scheduledFixtureIds) {
+        const fixture = await Fixture.getById(fixtureId);
+        createdFixtures.push(fixture);
+      }
+      this.scheduledFixtureIds = null; // Clear for next round
+    } else {
+      // Create fixtures now (for R16 or force-start scenarios)
+      const dbFixtures = pairings
+        .filter(p => !p.isBye)
+        .map(p => ({
+          homeTeamId: p.home.id,
+          awayTeamId: p.away.id,
+          tournamentId: this.tournamentId,
+          round: roundName
+        }));
+
+      if (dbFixtures.length > 0) {
+        createdFixtures = await Fixture.createBatch(dbFixtures);
+      }
     }
 
     // Create LiveMatch instances
@@ -405,6 +418,62 @@ class TournamentManager extends EventEmitter {
     });
 
     console.log(`[TournamentManager] Round complete. ${this.roundWinners.length} teams advance.`);
+
+    // Generate next round fixtures immediately so frontend can show "Coming Up"
+    const nextRoundKey = {
+      [TOURNAMENT_STATES.QF_BREAK]: 'QUARTER_FINALS',
+      [TOURNAMENT_STATES.SF_BREAK]: 'SEMI_FINALS',
+      [TOURNAMENT_STATES.FINAL_BREAK]: 'FINAL'
+    }[this.state];
+
+    if (nextRoundKey && this.roundWinners.length > 1) {
+      await this._createScheduledFixtures(nextRoundKey);
+    }
+  }
+
+  /**
+   * Create scheduled fixtures for upcoming round (without starting matches)
+   * Called during break to make fixtures visible in "Coming Up" section
+   */
+  async _createScheduledFixtures(roundKey) {
+    const roundName = ROUND_NAMES[roundKey];
+    console.log(`[TournamentManager] Pre-creating ${roundName} fixtures for ${this.roundWinners.length} teams`);
+
+    const teams = this.roundWinners;
+    const dbFixtures = [];
+
+    for (let i = 0; i < teams.length; i += 2) {
+      if (i + 1 < teams.length) {
+        dbFixtures.push({
+          homeTeamId: teams[i].id,
+          awayTeamId: teams[i + 1].id,
+          tournamentId: this.tournamentId,
+          round: roundName
+        });
+      }
+      // Byes not stored in DB
+    }
+
+    if (dbFixtures.length > 0) {
+      const created = await Fixture.createBatch(dbFixtures);
+
+      // Store fixture IDs for _startRound to find them
+      this.scheduledFixtureIds = created.map(f => f.fixtureId);
+
+      console.log(`[TournamentManager] Pre-created ${created.length} ${roundName} fixtures: [${this.scheduledFixtureIds.join(', ')}]`);
+
+      // Emit event for frontend to update "Coming Up"
+      this.emit('fixtures_scheduled', {
+        tournamentId: this.tournamentId,
+        round: roundName,
+        fixtures: created.map(f => ({
+          fixtureId: f.fixtureId,
+          home: { id: f.homeTeamId, name: teams.find(t => t.id === f.homeTeamId)?.name },
+          away: { id: f.awayTeamId, name: teams.find(t => t.id === f.awayTeamId)?.name },
+          status: 'scheduled'
+        }))
+      });
+    }
   }
 
   /**
