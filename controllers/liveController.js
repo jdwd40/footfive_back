@@ -216,6 +216,17 @@ const getLiveFixtures = async (req, res) => {
           away: fixture.awayPenaltyScore || 0
         };
         result.winnerId = fixture.winnerTeamId;
+      } else if (fixture.status === 'live' && fixture.homeScore != null && fixture.awayScore != null) {
+        // Match was live but finalization pending (race condition) - treat as finished
+        result.state = 'FINISHED';
+        result.isFinished = true;
+        result.minute = 90;
+        result.score = { home: fixture.homeScore, away: fixture.awayScore };
+        result.penaltyScore = {
+          home: fixture.homePenaltyScore || 0,
+          away: fixture.awayPenaltyScore || 0
+        };
+        result.winnerId = fixture.winnerTeamId;
       } else {
         // Scheduled match - not yet started
         result.state = 'SCHEDULED';

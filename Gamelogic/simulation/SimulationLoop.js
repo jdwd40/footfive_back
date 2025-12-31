@@ -54,8 +54,8 @@ class SimulationLoop extends EventEmitter {
         this.registerMatches(matches);
       });
 
-      this.tournamentManager.on('round_complete', () => {
-        this.clearFinishedMatches();
+      this.tournamentManager.on('round_complete', async () => {
+        await this.clearFinishedMatches();
       });
     }
 
@@ -220,13 +220,21 @@ class SimulationLoop extends EventEmitter {
   }
 
   /**
-   * Clear all finished matches
+   * Clear all finished matches (waits for DB finalization first)
    */
-  clearFinishedMatches() {
+  async clearFinishedMatches() {
+    const finishedMatches = [];
     for (const [fixtureId, match] of this.matches) {
       if (match.isFinished()) {
-        this.matches.delete(fixtureId);
+        finishedMatches.push({ fixtureId, match });
       }
+    }
+
+    // Wait for all finalization to complete before removing
+    await Promise.all(finishedMatches.map(({ match }) => match.awaitFinalization()));
+
+    for (const { fixtureId } of finishedMatches) {
+      this.matches.delete(fixtureId);
     }
   }
 

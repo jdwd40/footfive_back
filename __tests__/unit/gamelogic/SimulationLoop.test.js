@@ -144,15 +144,15 @@ describe('SimulationLoop', () => {
       expect(loop.matches.size).toBe(3);
     });
 
-    it('should clear finished matches', () => {
+    it('should clear finished matches', async () => {
       const matches = [
-        { fixtureId: 1, isFinished: () => false },
-        { fixtureId: 2, isFinished: () => true },
-        { fixtureId: 3, isFinished: () => false }
+        { fixtureId: 1, isFinished: () => false, awaitFinalization: async () => {} },
+        { fixtureId: 2, isFinished: () => true, awaitFinalization: async () => {} },
+        { fixtureId: 3, isFinished: () => false, awaitFinalization: async () => {} }
       ];
 
       loop.registerMatches(matches);
-      loop.clearFinishedMatches();
+      await loop.clearFinishedMatches();
 
       expect(loop.matches.size).toBe(2);
       expect(loop.getMatch(2)).toBeUndefined();

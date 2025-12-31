@@ -148,6 +148,9 @@ class LiveMatch {
     // Penalty shootout state
     this.shootoutRound = 0;
     this.shootoutScores = { home: 0, away: 0 };
+
+    // Finalization tracking (for race condition prevention)
+    this._finalizationPromise = null;
     this.shootoutTaken = { home: 0, away: 0 };
     this.currentShooter = 'home';
 
@@ -402,8 +405,10 @@ class LiveMatch {
       penaltyScore: this.penaltyScore.home > 0 ? { ...this.penaltyScore } : null
     }));
 
-    // Finalize in DB (async, don't block)
-    this._finalizeMatch().catch(err => console.error('[LiveMatch] Finalize error:', err));
+    // Finalize in DB (async, but tracked for race condition prevention)
+    this._finalizationPromise = this._finalizeMatch().catch(err => {
+      console.error('[LiveMatch] Finalize error:', err);
+    });
 
     return events;
   }
@@ -906,6 +911,15 @@ class LiveMatch {
 
   getState() {
     return this.state;
+  }
+
+  /**
+   * Wait for DB finalization to complete (prevents race condition)
+   */
+  async awaitFinalization() {
+    if (this._finalizationPromise) {
+      await this._finalizationPromise;
+    }
   }
 
   // === Admin Controls ===
