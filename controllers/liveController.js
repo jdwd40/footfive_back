@@ -123,10 +123,12 @@ const getRecentEvents = (req, res) => {
 /**
  * Get simulation loop status
  * GET /api/live/status
+ * Includes lastCompleted from previous tournament if available
  */
 const getStatus = (req, res) => {
   const loop = getSimulationLoop();
   const eventBus = getEventBus();
+  const tournamentState = loop.tournamentManager?.getState() ?? null;
 
   res.json({
     simulation: {
@@ -137,7 +139,9 @@ const getStatus = (req, res) => {
       activeMatches: loop.matches.size
     },
     eventBus: eventBus.getStats(),
-    tournament: loop.tournamentManager?.getState() ?? null
+    tournament: tournamentState,
+    // Convenience: lastCompleted extracted from tournament state
+    lastCompleted: tournamentState?.lastCompleted ?? null
   });
 };
 
@@ -147,6 +151,7 @@ const getStatus = (req, res) => {
  *
  * Returns all fixtures (scheduled, live, completed) for the current tournament,
  * enriched with real-time state for active matches.
+ * Includes upcomingFixtures for next round and bracket positioning.
  */
 const getLiveFixtures = async (req, res) => {
   try {
@@ -166,24 +171,37 @@ const getLiveFixtures = async (req, res) => {
     // Fetch all fixtures for current tournament from database
     const dbFixtures = await Fixture.getAll({ tournamentId, limit: 100 });
 
+    // Round progression for determining nextRound
+    const roundOrder = ['Round of 16', 'Quarter-finals', 'Semi-finals', 'Final'];
+    const currentRoundIndex = roundOrder.indexOf(tournamentState.currentRound);
+    const nextRound = currentRoundIndex >= 0 && currentRoundIndex < roundOrder.length - 1
+      ? roundOrder[currentRoundIndex + 1]
+      : null;
+
     // Build response with live state enrichment
     const fixtures = dbFixtures.map(fixture => {
       const fixtureId = fixture.fixtureId;
       const liveMatch = loop.matches.get(fixtureId);
 
-      // Base fixture data from database
+      // Base fixture data from database (including bracket fields)
       const result = {
         fixtureId,
         round: fixture.round,
-        homeTeam: { id: fixture.homeTeamId, name: fixture.homeTeamName },
-        awayTeam: { id: fixture.awayTeamId, name: fixture.awayTeamName }
+        bracketSlot: fixture.bracketSlot,
+        feedsInto: fixture.feedsInto,
+        homeTeam: fixture.homeTeamId
+          ? { id: fixture.homeTeamId, name: fixture.homeTeamName }
+          : null, // TBD team
+        awayTeam: fixture.awayTeamId
+          ? { id: fixture.awayTeamId, name: fixture.awayTeamName }
+          : null  // TBD team
       };
 
       if (liveMatch) {
         // Active match - use live state
         result.state = liveMatch.state;
         result.isFinished = liveMatch.isFinished();
-        result.minute = liveMatch.getMatchMinute();
+        result.minute = liveMatch.getMatchMinute() ?? 0; // Always include minute
         result.score = liveMatch.getScore();
         result.penaltyScore = liveMatch.getPenaltyScore();
         result.winnerId = liveMatch.isFinished() ? liveMatch.getWinnerId() : null;
@@ -191,7 +209,7 @@ const getLiveFixtures = async (req, res) => {
         // Completed match - use database state
         result.state = 'FINISHED';
         result.isFinished = true;
-        result.minute = null;
+        result.minute = 90; // Completed matches show 90'
         result.score = { home: fixture.homeScore, away: fixture.awayScore };
         result.penaltyScore = {
           home: fixture.homePenaltyScore || 0,
@@ -202,7 +220,7 @@ const getLiveFixtures = async (req, res) => {
         // Scheduled match - not yet started
         result.state = 'SCHEDULED';
         result.isFinished = false;
-        result.minute = null;
+        result.minute = 0; // Always include minute
         result.score = { home: 0, away: 0 };
         result.penaltyScore = { home: 0, away: 0 };
         result.winnerId = null;
@@ -211,10 +229,19 @@ const getLiveFixtures = async (req, res) => {
       return result;
     });
 
+    // Filter upcoming fixtures (next round, scheduled, both teams assigned)
+    const upcomingFixtures = fixtures.filter(f =>
+      f.round === nextRound &&
+      f.state === 'SCHEDULED' &&
+      f.homeTeam && f.awayTeam
+    );
+
     res.json({
       tournamentId,
       currentRound: tournamentState.currentRound,
-      fixtures
+      nextRound,
+      fixtures,
+      upcomingFixtures
     });
   } catch (error) {
     console.error('Error fetching live fixtures:', error);

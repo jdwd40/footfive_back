@@ -33,6 +33,17 @@ jest.mock('../../../models/TeamModel', () => ({
   updateHighestRound: jest.fn().mockResolvedValue(true)
 }));
 
+// Helper to get feedsInto for a bracket slot
+const getFeedsInto = (slot) => {
+  const map = {
+    'R16_1': 'QF1', 'R16_2': 'QF1', 'R16_3': 'QF2', 'R16_4': 'QF2',
+    'R16_5': 'QF3', 'R16_6': 'QF3', 'R16_7': 'QF4', 'R16_8': 'QF4',
+    'QF1': 'SF1', 'QF2': 'SF1', 'QF3': 'SF2', 'QF4': 'SF2',
+    'SF1': 'FINAL', 'SF2': 'FINAL', 'FINAL': null
+  };
+  return map[slot] || null;
+};
+
 jest.mock('../../../models/FixtureModel', () => ({
   createBatch: jest.fn().mockImplementation(fixtures =>
     Promise.resolve(fixtures.map((f, i) => ({
@@ -41,10 +52,27 @@ jest.mock('../../../models/FixtureModel', () => ({
       awayTeamId: f.awayTeamId,
       tournamentId: f.tournamentId,
       round: f.round,
+      bracketSlot: f.bracketSlot,
+      feedsInto: f.feedsInto,
       status: 'scheduled'
     })))
   ),
-  getAll: jest.fn().mockResolvedValue([])
+  getById: jest.fn().mockImplementation(fixtureId => {
+    const slot = fixtureId < 108 ? `R16_${fixtureId - 99}` : fixtureId < 112 ? `QF${fixtureId - 107}` : fixtureId < 114 ? `SF${fixtureId - 111}` : 'FINAL';
+    return Promise.resolve({
+      fixtureId,
+      homeTeamId: Math.floor((fixtureId - 100) * 2) + 1,
+      awayTeamId: Math.floor((fixtureId - 100) * 2) + 2,
+      tournamentId: 12345,
+      round: fixtureId < 108 ? 'Round of 16' : fixtureId < 112 ? 'Quarter-finals' : fixtureId < 114 ? 'Semi-finals' : 'Final',
+      bracketSlot: slot,
+      feedsInto: getFeedsInto(slot),
+      status: 'scheduled'
+    });
+  }),
+  getAll: jest.fn().mockResolvedValue([]),
+  updateHomeTeam: jest.fn().mockResolvedValue({}),
+  updateAwayTeam: jest.fn().mockResolvedValue({})
 }));
 
 jest.mock('../../../models/PlayerModel', () => ({
@@ -143,7 +171,8 @@ describe('TournamentManager', () => {
 
       expect(setupHandler).toHaveBeenCalledWith({
         tournamentId: expect.any(Number),
-        teamCount: 16
+        teamCount: 16,
+        bracketGenerated: true
       });
     });
 
@@ -195,7 +224,13 @@ describe('TournamentManager', () => {
       expect(roundHandler).toHaveBeenCalledWith({
         tournamentId: expect.any(Number),
         round: 'Round of 16',
-        fixtures: expect.any(Array)
+        fixtures: expect.arrayContaining([
+          expect.objectContaining({
+            fixtureId: expect.any(Number),
+            bracketSlot: expect.any(String),
+            feedsInto: expect.any(String)
+          })
+        ])
       });
     });
 
@@ -230,13 +265,16 @@ describe('TournamentManager', () => {
     });
   });
 
-  describe('_collectWinners', () => {
+  describe('_collectWinnersAndAdvance', () => {
     beforeEach(async () => {
       await manager._handleSetup();
       await manager._startRound('ROUND_OF_16', Date.now());
     });
 
-    it('should collect winners from finished matches', () => {
+    it('should collect winners from finished matches', async () => {
+      // R16 has 8 fixtures
+      expect(manager.fixtures.length).toBe(8);
+
       // Mock all matches as finished with home team winning
       for (const fixture of manager.fixtures) {
         if (fixture.match) {
@@ -245,23 +283,16 @@ describe('TournamentManager', () => {
         }
       }
 
-      manager._collectWinners();
+      await manager._collectWinnersAndAdvance();
 
       expect(manager.roundWinners.length).toBe(8);
       expect(manager.completedResults.length).toBe(8);
     });
 
-    it('should handle bye teams', async () => {
-      // Setup with odd number of teams
-      manager.roundWinners = manager.roundWinners.slice(0, 5); // 5 teams
+    it('should advance winners to next round fixtures', async () => {
+      const Fixture = require('../../../models/FixtureModel');
 
-      await manager._startRound('QUARTER_FINALS', Date.now());
-
-      // Should have 2 matches + 1 bye
-      const byeFixtures = manager.fixtures.filter(f => f.isBye);
-      expect(byeFixtures.length).toBe(1);
-
-      // Mock matches as finished
+      // Mock all matches as finished with home team winning
       for (const fixture of manager.fixtures) {
         if (fixture.match) {
           fixture.match.state = MATCH_STATES.FINISHED;
@@ -269,10 +300,11 @@ describe('TournamentManager', () => {
         }
       }
 
-      manager._collectWinners();
+      await manager._collectWinnersAndAdvance();
 
-      // 2 match winners + 1 bye = 3 winners
-      expect(manager.roundWinners.length).toBe(3);
+      // Should have updated next round fixtures
+      expect(Fixture.updateHomeTeam).toHaveBeenCalled();
+      expect(Fixture.updateAwayTeam).toHaveBeenCalled();
     });
   });
 
@@ -309,7 +341,8 @@ describe('TournamentManager', () => {
         teamsRemaining: 16,
         activeMatches: 0,
         winner: null,
-        runnerUp: null
+        runnerUp: null,
+        lastCompleted: null
       });
     });
 

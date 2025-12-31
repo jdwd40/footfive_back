@@ -39,6 +39,30 @@ const ROUND_NAMES = {
   FINAL: 'Final'
 };
 
+// Bracket slot definitions with feedsInto relationships
+// Format: { slot, round, feedsInto, feedsIntoPosition: 'home'|'away' }
+const BRACKET_STRUCTURE = {
+  // Round of 16 (8 matches)
+  R16_1: { round: 'Round of 16', feedsInto: 'QF1', position: 'home' },
+  R16_2: { round: 'Round of 16', feedsInto: 'QF1', position: 'away' },
+  R16_3: { round: 'Round of 16', feedsInto: 'QF2', position: 'home' },
+  R16_4: { round: 'Round of 16', feedsInto: 'QF2', position: 'away' },
+  R16_5: { round: 'Round of 16', feedsInto: 'QF3', position: 'home' },
+  R16_6: { round: 'Round of 16', feedsInto: 'QF3', position: 'away' },
+  R16_7: { round: 'Round of 16', feedsInto: 'QF4', position: 'home' },
+  R16_8: { round: 'Round of 16', feedsInto: 'QF4', position: 'away' },
+  // Quarter-finals (4 matches)
+  QF1: { round: 'Quarter-finals', feedsInto: 'SF1', position: 'home' },
+  QF2: { round: 'Quarter-finals', feedsInto: 'SF1', position: 'away' },
+  QF3: { round: 'Quarter-finals', feedsInto: 'SF2', position: 'home' },
+  QF4: { round: 'Quarter-finals', feedsInto: 'SF2', position: 'away' },
+  // Semi-finals (2 matches)
+  SF1: { round: 'Semi-finals', feedsInto: 'FINAL', position: 'home' },
+  SF2: { round: 'Semi-finals', feedsInto: 'FINAL', position: 'away' },
+  // Final
+  FINAL: { round: 'Final', feedsInto: null, position: null }
+};
+
 /**
  * TournamentManager - Manages hourly tournament lifecycle
  *
@@ -66,7 +90,8 @@ class TournamentManager extends EventEmitter {
     this.fixtures = [];        // Current round fixture data
     this.liveMatches = [];     // LiveMatch instances
     this.completedResults = [];
-    this.scheduledFixtureIds = null; // Pre-created fixture IDs for next round
+    this.scheduledFixtureIds = null; // Pre-created fixture IDs for next round (legacy, kept for compatibility)
+    this.bracketFixtures = new Map(); // bracketSlot -> fixtureId (all pre-generated fixtures)
 
     // Timing
     this.roundStartTime = null;
@@ -76,6 +101,7 @@ class TournamentManager extends EventEmitter {
     // Results history
     this.winner = null;
     this.runnerUp = null;
+    this.lastCompletedTournament = null; // { tournamentId, winner, runnerUp }
   }
 
   /**
@@ -258,7 +284,7 @@ class TournamentManager extends EventEmitter {
   }
 
   /**
-   * Setup phase - load teams, generate first round
+   * Setup phase - load teams, generate ALL fixtures for entire tournament
    */
   async _handleSetup() {
     console.log('[TournamentManager] Setting up tournament...');
@@ -272,6 +298,7 @@ class TournamentManager extends EventEmitter {
     this.liveMatches = [];
     this.fixtures = [];
     this.scheduledFixtureIds = null;
+    this.bracketFixtures = new Map();
 
     // Load teams
     this.teams = await Team.getAll();
@@ -283,18 +310,94 @@ class TournamentManager extends EventEmitter {
     }
 
     // Shuffle teams for first round
-    this.roundWinners = this._shuffleTeams(this.teams);
+    const shuffledTeams = this._shuffleTeams(this.teams);
+    this.roundWinners = shuffledTeams;
+
+    // Generate ALL fixtures for entire tournament with bracket positions
+    await this._generateAllBracketFixtures(shuffledTeams);
 
     this.emit('tournament_setup', {
       tournamentId: this.tournamentId,
-      teamCount: this.teams.length
+      teamCount: this.teams.length,
+      bracketGenerated: true
     });
 
-    console.log(`[TournamentManager] Tournament ${this.tournamentId} setup with ${this.teams.length} teams`);
+    console.log(`[TournamentManager] Tournament ${this.tournamentId} setup with ${this.teams.length} teams, all bracket fixtures created`);
   }
 
   /**
-   * Start a round - create fixtures and LiveMatch instances
+   * Generate all bracket fixtures at tournament start
+   * R16 fixtures have teams assigned, later rounds are TBD (null teams)
+   */
+  async _generateAllBracketFixtures(shuffledTeams) {
+    const allFixtures = [];
+
+    // R16 slots with teams assigned
+    const r16Slots = ['R16_1', 'R16_2', 'R16_3', 'R16_4', 'R16_5', 'R16_6', 'R16_7', 'R16_8'];
+    for (let i = 0; i < r16Slots.length && i * 2 + 1 < shuffledTeams.length; i++) {
+      const slot = r16Slots[i];
+      const bracket = BRACKET_STRUCTURE[slot];
+      allFixtures.push({
+        homeTeamId: shuffledTeams[i * 2].id,
+        awayTeamId: shuffledTeams[i * 2 + 1].id,
+        tournamentId: this.tournamentId,
+        round: bracket.round,
+        bracketSlot: slot,
+        feedsInto: bracket.feedsInto
+      });
+    }
+
+    // QF slots - TBD teams
+    const qfSlots = ['QF1', 'QF2', 'QF3', 'QF4'];
+    for (const slot of qfSlots) {
+      const bracket = BRACKET_STRUCTURE[slot];
+      allFixtures.push({
+        homeTeamId: null,
+        awayTeamId: null,
+        tournamentId: this.tournamentId,
+        round: bracket.round,
+        bracketSlot: slot,
+        feedsInto: bracket.feedsInto
+      });
+    }
+
+    // SF slots - TBD teams
+    const sfSlots = ['SF1', 'SF2'];
+    for (const slot of sfSlots) {
+      const bracket = BRACKET_STRUCTURE[slot];
+      allFixtures.push({
+        homeTeamId: null,
+        awayTeamId: null,
+        tournamentId: this.tournamentId,
+        round: bracket.round,
+        bracketSlot: slot,
+        feedsInto: bracket.feedsInto
+      });
+    }
+
+    // Final - TBD teams
+    allFixtures.push({
+      homeTeamId: null,
+      awayTeamId: null,
+      tournamentId: this.tournamentId,
+      round: BRACKET_STRUCTURE.FINAL.round,
+      bracketSlot: 'FINAL',
+      feedsInto: null
+    });
+
+    // Batch create all fixtures
+    const created = await Fixture.createBatch(allFixtures);
+
+    // Store bracket slot -> fixtureId mapping
+    for (const fixture of created) {
+      this.bracketFixtures.set(fixture.bracketSlot, fixture.fixtureId);
+    }
+
+    console.log(`[TournamentManager] Created ${created.length} bracket fixtures: ${Array.from(this.bracketFixtures.keys()).join(', ')}`);
+  }
+
+  /**
+   * Start a round - load pre-created fixtures and create LiveMatch instances
    */
   async _startRound(roundKey, now) {
     const roundName = ROUND_NAMES[roundKey];
@@ -302,64 +405,34 @@ class TournamentManager extends EventEmitter {
 
     console.log(`[TournamentManager] Starting ${roundName} with ${this.roundWinners.length} teams`);
 
-    // Pair teams
-    const teams = this.roundWinners;
-    const pairings = [];
+    // Determine bracket slots for this round
+    const roundSlotMap = {
+      'ROUND_OF_16': ['R16_1', 'R16_2', 'R16_3', 'R16_4', 'R16_5', 'R16_6', 'R16_7', 'R16_8'],
+      'QUARTER_FINALS': ['QF1', 'QF2', 'QF3', 'QF4'],
+      'SEMI_FINALS': ['SF1', 'SF2'],
+      'FINAL': ['FINAL']
+    };
 
-    for (let i = 0; i < teams.length; i += 2) {
-      if (i + 1 < teams.length) {
-        pairings.push({ home: teams[i], away: teams[i + 1] });
-      } else {
-        // Bye - team advances automatically
-        pairings.push({ home: teams[i], away: null, isBye: true });
-      }
-    }
+    const slots = roundSlotMap[roundKey] || [];
 
-    // Check if fixtures were pre-created during break
-    let createdFixtures = [];
-    if (this.scheduledFixtureIds && this.scheduledFixtureIds.length > 0) {
-      // Load pre-created fixtures
-      console.log(`[TournamentManager] Using ${this.scheduledFixtureIds.length} pre-created fixtures`);
-      for (const fixtureId of this.scheduledFixtureIds) {
+    // Load fixtures for this round from pre-created bracket fixtures
+    const roundFixtures = [];
+    for (const slot of slots) {
+      const fixtureId = this.bracketFixtures.get(slot);
+      if (fixtureId) {
         const fixture = await Fixture.getById(fixtureId);
-        createdFixtures.push(fixture);
-      }
-      this.scheduledFixtureIds = null; // Clear for next round
-    } else {
-      // Create fixtures now (for R16 or force-start scenarios)
-      const dbFixtures = pairings
-        .filter(p => !p.isBye)
-        .map(p => ({
-          homeTeamId: p.home.id,
-          awayTeamId: p.away.id,
-          tournamentId: this.tournamentId,
-          round: roundName
-        }));
-
-      if (dbFixtures.length > 0) {
-        createdFixtures = await Fixture.createBatch(dbFixtures);
+        // Only include if both teams are assigned (not TBD)
+        if (fixture.homeTeamId && fixture.awayTeamId) {
+          roundFixtures.push(fixture);
+        }
       }
     }
 
     // Create LiveMatch instances
     this.fixtures = [];
     this.liveMatches = [];
-    let fixtureIndex = 0;
 
-    for (const pairing of pairings) {
-      if (pairing.isBye) {
-        // Handle bye
-        this.fixtures.push({
-          home: pairing.home,
-          away: null,
-          isBye: true,
-          fixtureId: null
-        });
-        continue;
-      }
-
-      const fixture = createdFixtures[fixtureIndex++];
-
+    for (const fixture of roundFixtures) {
       // Get full team data with ratings
       const homeTeam = await Team.getRatingById(fixture.homeTeamId);
       const awayTeam = await Team.getRatingById(fixture.awayTeamId);
@@ -381,6 +454,8 @@ class TournamentManager extends EventEmitter {
         away: awayTeam,
         isBye: false,
         fixtureId: fixture.fixtureId,
+        bracketSlot: fixture.bracketSlot,
+        feedsInto: fixture.feedsInto,
         match
       });
     }
@@ -395,6 +470,8 @@ class TournamentManager extends EventEmitter {
       round: roundName,
       fixtures: this.fixtures.map(f => ({
         fixtureId: f.fixtureId,
+        bracketSlot: f.bracketSlot,
+        feedsInto: f.feedsInto,
         home: { id: f.home.id, name: f.home.name },
         away: f.away ? { id: f.away.id, name: f.away.name } : null,
         isBye: f.isBye
@@ -406,10 +483,11 @@ class TournamentManager extends EventEmitter {
 
   /**
    * Handle break between rounds
+   * Winners from completed matches are collected and next round fixtures are updated
    */
   async _handleBreak(fromState) {
-    // Collect winners from completed matches
-    await this._collectWinners();
+    // Collect winners from completed matches and update next round fixtures
+    await this._collectWinnersAndAdvance();
 
     this.emit('round_complete', {
       tournamentId: this.tournamentId,
@@ -419,67 +497,25 @@ class TournamentManager extends EventEmitter {
 
     console.log(`[TournamentManager] Round complete. ${this.roundWinners.length} teams advance.`);
 
-    // Generate next round fixtures immediately so frontend can show "Coming Up"
+    // Emit fixtures_updated event for frontend to refresh bracket
     const nextRoundKey = {
       [TOURNAMENT_STATES.QF_BREAK]: 'QUARTER_FINALS',
       [TOURNAMENT_STATES.SF_BREAK]: 'SEMI_FINALS',
       [TOURNAMENT_STATES.FINAL_BREAK]: 'FINAL'
     }[this.state];
 
-    if (nextRoundKey && this.roundWinners.length > 1) {
-      await this._createScheduledFixtures(nextRoundKey);
-    }
-  }
-
-  /**
-   * Create scheduled fixtures for upcoming round (without starting matches)
-   * Called during break to make fixtures visible in "Coming Up" section
-   */
-  async _createScheduledFixtures(roundKey) {
-    const roundName = ROUND_NAMES[roundKey];
-    console.log(`[TournamentManager] Pre-creating ${roundName} fixtures for ${this.roundWinners.length} teams`);
-
-    const teams = this.roundWinners;
-    const dbFixtures = [];
-
-    for (let i = 0; i < teams.length; i += 2) {
-      if (i + 1 < teams.length) {
-        dbFixtures.push({
-          homeTeamId: teams[i].id,
-          awayTeamId: teams[i + 1].id,
-          tournamentId: this.tournamentId,
-          round: roundName
-        });
-      }
-      // Byes not stored in DB
-    }
-
-    if (dbFixtures.length > 0) {
-      const created = await Fixture.createBatch(dbFixtures);
-
-      // Store fixture IDs for _startRound to find them
-      this.scheduledFixtureIds = created.map(f => f.fixtureId);
-
-      console.log(`[TournamentManager] Pre-created ${created.length} ${roundName} fixtures: [${this.scheduledFixtureIds.join(', ')}]`);
-
-      // Emit event for frontend to update "Coming Up"
-      this.emit('fixtures_scheduled', {
+    if (nextRoundKey) {
+      this.emit('fixtures_updated', {
         tournamentId: this.tournamentId,
-        round: roundName,
-        fixtures: created.map(f => ({
-          fixtureId: f.fixtureId,
-          home: { id: f.homeTeamId, name: teams.find(t => t.id === f.homeTeamId)?.name },
-          away: { id: f.awayTeamId, name: teams.find(t => t.id === f.awayTeamId)?.name },
-          status: 'scheduled'
-        }))
+        nextRound: ROUND_NAMES[nextRoundKey]
       });
     }
   }
 
   /**
-   * Collect winners from current round and update team stats
+   * Collect winners from current round, update team stats, and advance winners to next round fixtures
    */
-  async _collectWinners() {
+  async _collectWinnersAndAdvance() {
     const winners = [];
 
     for (const fixture of this.fixtures) {
@@ -508,9 +544,6 @@ class TournamentManager extends EventEmitter {
       try {
         const homeWon = winnerId === fixture.home.id;
 
-        // Stats moved to LiveMatch.js for immediate update
-
-
         // Update recent_form for both teams
         await this._updateRecentForm(fixture.home.id, homeWon);
         await this._updateRecentForm(fixture.away.id, !homeWon);
@@ -523,8 +556,14 @@ class TournamentManager extends EventEmitter {
         console.error('[TournamentManager] Failed to update team stats:', err.message, err.stack);
       }
 
+      // Advance winner to next round fixture immediately
+      if (fixture.feedsInto) {
+        await this._advanceWinnerToNextRound(winnerId, fixture.bracketSlot, fixture.feedsInto);
+      }
+
       this.completedResults.push({
         fixtureId: fixture.fixtureId,
+        bracketSlot: fixture.bracketSlot,
         round: this.currentRoundName,
         home: fixture.home,
         away: fixture.away,
@@ -535,6 +574,40 @@ class TournamentManager extends EventEmitter {
     }
 
     this.roundWinners = winners;
+  }
+
+  /**
+   * Update next round fixture with winner (fills TBD slot)
+   */
+  async _advanceWinnerToNextRound(winnerId, fromSlot, toSlot) {
+    const nextFixtureId = this.bracketFixtures.get(toSlot);
+    if (!nextFixtureId) {
+      console.warn(`[TournamentManager] No fixture found for bracket slot ${toSlot}`);
+      return;
+    }
+
+    // Determine if winner goes to home or away position based on bracket structure
+    const fromBracket = BRACKET_STRUCTURE[fromSlot];
+    const position = fromBracket?.position; // 'home' or 'away'
+
+    try {
+      if (position === 'home') {
+        await Fixture.updateHomeTeam(nextFixtureId, winnerId);
+      } else if (position === 'away') {
+        await Fixture.updateAwayTeam(nextFixtureId, winnerId);
+      }
+      console.log(`[TournamentManager] Advanced winner ${winnerId} from ${fromSlot} to ${toSlot} (${position})`);
+    } catch (err) {
+      console.error(`[TournamentManager] Failed to advance winner to ${toSlot}:`, err.message);
+    }
+  }
+
+  /**
+   * Legacy method - calls the new combined method
+   * @deprecated Use _collectWinnersAndAdvance instead
+   */
+  async _collectWinners() {
+    await this._collectWinnersAndAdvance();
   }
 
   /**
@@ -581,6 +654,13 @@ class TournamentManager extends EventEmitter {
       } catch (err) {
         console.error(`[TournamentManager] Failed to update runner-up stats:`, err.message);
       }
+
+      // Store as lastCompletedTournament for next tournament's status endpoint
+      this.lastCompletedTournament = {
+        tournamentId: this.tournamentId,
+        winner: this.winner ? { id: this.winner.id, name: this.winner.name } : null,
+        runnerUp: this.runnerUp ? { id: this.runnerUp.id, name: this.runnerUp.name } : null
+      };
 
       this.emit('tournament_end', {
         tournamentId: this.tournamentId,
@@ -916,7 +996,8 @@ class TournamentManager extends EventEmitter {
       teamsRemaining: this.roundWinners.length,
       activeMatches: this.liveMatches.length,
       winner: this.winner ? { id: this.winner.id, name: this.winner.name } : null,
-      runnerUp: this.runnerUp ? { id: this.runnerUp.id, name: this.runnerUp.name } : null
+      runnerUp: this.runnerUp ? { id: this.runnerUp.id, name: this.runnerUp.name } : null,
+      lastCompleted: this.lastCompletedTournament
     };
   }
 
@@ -1022,5 +1103,6 @@ module.exports = {
   TournamentManager,
   TOURNAMENT_STATES,
   SCHEDULE,
-  ROUND_NAMES
+  ROUND_NAMES,
+  BRACKET_STRUCTURE
 };

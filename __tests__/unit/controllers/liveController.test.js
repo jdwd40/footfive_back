@@ -66,7 +66,8 @@ jest.mock('../../../Gamelogic/simulation/SimulationLoop', () => ({
       getState: jest.fn().mockReturnValue({
         state: 'ROUND_OF_16',
         tournamentId: 12345,
-        currentRound: 'Round of 16'
+        currentRound: 'Round of 16',
+        lastCompleted: null
       })
     }
   }))
@@ -124,7 +125,8 @@ describe('liveController', () => {
       expect(mockRes.json).toHaveBeenCalledWith({
         state: 'ROUND_OF_16',
         tournamentId: 12345,
-        currentRound: 'Round of 16'
+        currentRound: 'Round of 16',
+        lastCompleted: null
       });
     });
   });
@@ -213,8 +215,10 @@ describe('liveController', () => {
         tournament: {
           state: 'ROUND_OF_16',
           tournamentId: 12345,
-          currentRound: 'Round of 16'
-        }
+          currentRound: 'Round of 16',
+          lastCompleted: null
+        },
+        lastCompleted: null
       });
     });
   });
