@@ -114,7 +114,7 @@ class Fixture {
         }
 
         params.push(limit);
-        query += ` ORDER BY f.bracket_slot ASC, f.scheduled_at DESC LIMIT $${params.length}`;
+        query += ` ORDER BY f.created_at ASC, f.fixture_id ASC LIMIT $${params.length}`;
 
         const result = await db.query(query, params);
         return result.rows.map(row => new Fixture(row));

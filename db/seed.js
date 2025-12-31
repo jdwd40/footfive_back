@@ -4,7 +4,7 @@ const format = require('pg-format');
 const seed = async (data) => {
     // Handle both direct teams array and data object with teams property
     const teamsData = data && data.teams ? data.teams : require('./data/teams');
-    
+
     // Start by clearing all existing data (in reverse dependency order)
     await db.query('DROP TABLE IF EXISTS fixture_odds CASCADE;');
     await db.query('DROP TABLE IF EXISTS match_events CASCADE;');
@@ -29,7 +29,7 @@ const seed = async (data) => {
         goal_diff INTEGER DEFAULT 0,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    ); 
+    );
     `);
 
     // Recreate the players table
@@ -44,12 +44,15 @@ const seed = async (data) => {
         );
     `);
 
-    // Create fixtures table
+    // Create fixtures table with bracket system support
+    // - Nullable team IDs for TBD fixtures in future rounds
+    // - bracket_slot for position in bracket (R16_1, QF1, SF1, FINAL)
+    // - feeds_into for which fixture winner advances to
     await db.query(`
         CREATE TABLE fixtures (
             fixture_id SERIAL PRIMARY KEY,
-            home_team_id INTEGER NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
-            away_team_id INTEGER NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
+            home_team_id INTEGER REFERENCES teams(team_id) ON DELETE CASCADE,
+            away_team_id INTEGER REFERENCES teams(team_id) ON DELETE CASCADE,
             tournament_id INTEGER DEFAULT NULL,
             round VARCHAR(50),
             scheduled_at TIMESTAMP DEFAULT NOW(),
@@ -61,7 +64,9 @@ const seed = async (data) => {
             winner_team_id INTEGER REFERENCES teams(team_id) ON DELETE SET NULL,
             created_at TIMESTAMP DEFAULT NOW(),
             completed_at TIMESTAMP DEFAULT NULL,
-            CONSTRAINT different_teams CHECK (home_team_id != away_team_id)
+            bracket_slot VARCHAR(20),
+            feeds_into VARCHAR(20),
+            CONSTRAINT different_teams CHECK (home_team_id IS NULL OR away_team_id IS NULL OR home_team_id != away_team_id)
         );
     `);
 
@@ -151,6 +156,8 @@ const seed = async (data) => {
         CREATE INDEX idx_fixtures_away_team ON fixtures(away_team_id);
         CREATE INDEX idx_fixtures_winner ON fixtures(winner_team_id);
         CREATE INDEX idx_fixtures_round ON fixtures(round);
+        CREATE INDEX idx_fixtures_bracket_slot ON fixtures(bracket_slot);
+        CREATE INDEX idx_fixtures_tournament_bracket ON fixtures(tournament_id, bracket_slot);
         CREATE INDEX idx_events_fixture ON match_events(fixture_id);
         CREATE INDEX idx_events_type ON match_events(event_type);
         CREATE INDEX idx_events_minute ON match_events(fixture_id, minute);

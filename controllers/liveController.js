@@ -244,8 +244,8 @@ const getLiveFixtures = async (req, res) => {
       upcomingFixtures
     });
   } catch (error) {
-    console.error('Error fetching live fixtures:', error);
-    res.status(500).json({ error: 'Failed to fetch fixtures' });
+    console.error('Error fetching live fixtures:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch fixtures', details: error.message });
   }
 };
 

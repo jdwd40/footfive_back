@@ -218,13 +218,10 @@ class TournamentManager extends EventEmitter {
   }
 
   _isValidTransition(from, to) {
-    // Allow any transition from IDLE/SETUP
-    if (from === TOURNAMENT_STATES.IDLE || from === TOURNAMENT_STATES.SETUP) {
-      return true;
-    }
-
-    // Define valid transitions
+    // Define valid transitions - IDLE can only go to SETUP
     const validTransitions = {
+      [TOURNAMENT_STATES.IDLE]: [TOURNAMENT_STATES.SETUP],
+      [TOURNAMENT_STATES.SETUP]: [TOURNAMENT_STATES.ROUND_OF_16],
       [TOURNAMENT_STATES.ROUND_OF_16]: [TOURNAMENT_STATES.QF_BREAK],
       [TOURNAMENT_STATES.QF_BREAK]: [TOURNAMENT_STATES.QUARTER_FINALS],
       [TOURNAMENT_STATES.QUARTER_FINALS]: [TOURNAMENT_STATES.SF_BREAK],
