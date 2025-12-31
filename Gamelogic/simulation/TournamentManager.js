@@ -443,6 +443,11 @@ class TournamentManager extends EventEmitter {
         this.rules
       );
 
+      // Set bracket info for immediate winner advancement
+      match.bracketSlot = fixture.bracketSlot;
+      match.feedsInto = fixture.feedsInto;
+      match.tournamentId = this.tournamentId;
+
       await match.loadPlayers();
 
       this.liveMatches.push(match);
@@ -553,10 +558,7 @@ class TournamentManager extends EventEmitter {
         console.error('[TournamentManager] Failed to update team stats:', err.message, err.stack);
       }
 
-      // Advance winner to next round fixture immediately
-      if (fixture.feedsInto) {
-        await this._advanceWinnerToNextRound(winnerId, fixture.bracketSlot, fixture.feedsInto);
-      }
+      // Note: Winner advancement now happens immediately in LiveMatch._finalizeMatch()
 
       this.completedResults.push({
         fixtureId: fixture.fixtureId,

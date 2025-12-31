@@ -86,6 +86,25 @@ const DEFAULT_RULES = {
  * - ET 2nd half:  tick 690-809 -> match min 106-120
  * - Penalties:    tick 810+    -> until resolved
  */
+// Bracket slot definitions with feedsInto relationships
+const BRACKET_STRUCTURE = {
+  R16_1: { round: 'Round of 16', feedsInto: 'QF1', position: 'home' },
+  R16_2: { round: 'Round of 16', feedsInto: 'QF1', position: 'away' },
+  R16_3: { round: 'Round of 16', feedsInto: 'QF2', position: 'home' },
+  R16_4: { round: 'Round of 16', feedsInto: 'QF2', position: 'away' },
+  R16_5: { round: 'Round of 16', feedsInto: 'QF3', position: 'home' },
+  R16_6: { round: 'Round of 16', feedsInto: 'QF3', position: 'away' },
+  R16_7: { round: 'Round of 16', feedsInto: 'QF4', position: 'home' },
+  R16_8: { round: 'Round of 16', feedsInto: 'QF4', position: 'away' },
+  QF1: { round: 'Quarter-finals', feedsInto: 'SF1', position: 'home' },
+  QF2: { round: 'Quarter-finals', feedsInto: 'SF1', position: 'away' },
+  QF3: { round: 'Quarter-finals', feedsInto: 'SF2', position: 'home' },
+  QF4: { round: 'Quarter-finals', feedsInto: 'SF2', position: 'away' },
+  SF1: { round: 'Semi-finals', feedsInto: 'FINAL', position: 'home' },
+  SF2: { round: 'Semi-finals', feedsInto: 'FINAL', position: 'away' },
+  FINAL: { round: 'Final', feedsInto: null, position: null }
+};
+
 class LiveMatch {
   constructor(fixtureId, homeTeam, awayTeam, startTime, rules = {}) {
     this.fixtureId = fixtureId;
@@ -93,6 +112,11 @@ class LiveMatch {
     this.awayTeam = awayTeam;
     this.startTime = startTime; // Wall-clock epoch ms
     this.rules = { ...DEFAULT_RULES, ...rules };
+
+    // Bracket info (set by TournamentManager after construction)
+    this.bracketSlot = null;
+    this.feedsInto = null;
+    this.tournamentId = null;
 
     // State
     this.state = MATCH_STATES.SCHEDULED;
@@ -787,15 +811,40 @@ class LiveMatch {
         this.score.home
       );
 
-      // We don't update recent_form here because it might depend on tournament context? 
-      // Actually TournamentManager uses `_updateRecentForm`. 
-      // Let's check if we can access `Team` model helper for that? 
-      // TournamentManager does it manually or calls `_updateRecentForm` (private method).
-      // TeamModel doesn't have `updateRecentForm`.
-      // The requirement was "wins, losses, goals for and against".
-      // I will stick to that.
     } catch (err) {
       console.error('[LiveMatch] Failed to update team stats:', err);
+    }
+
+    // Advance winner to next round fixture immediately (if bracket match)
+    if (this.bracketSlot && this.feedsInto && this.tournamentId) {
+      await this._advanceWinnerToNextRound(winnerId);
+    }
+  }
+
+  /**
+   * Update next round fixture with winner (fills TBD slot)
+   */
+  async _advanceWinnerToNextRound(winnerId) {
+    const bracketInfo = BRACKET_STRUCTURE[this.bracketSlot];
+    if (!bracketInfo) return;
+
+    const position = bracketInfo.position; // 'home' or 'away'
+
+    try {
+      const nextFixture = await Fixture.getByBracketSlot(this.tournamentId, this.feedsInto);
+      if (!nextFixture) {
+        console.warn(`[LiveMatch] No fixture found for bracket slot ${this.feedsInto}`);
+        return;
+      }
+
+      if (position === 'home') {
+        await Fixture.updateHomeTeam(nextFixture.fixtureId, winnerId);
+      } else if (position === 'away') {
+        await Fixture.updateAwayTeam(nextFixture.fixtureId, winnerId);
+      }
+      console.log(`[LiveMatch] Advanced winner ${winnerId} from ${this.bracketSlot} to ${this.feedsInto} (${position})`);
+    } catch (err) {
+      console.error(`[LiveMatch] Failed to advance winner to ${this.feedsInto}:`, err.message);
     }
   }
 
