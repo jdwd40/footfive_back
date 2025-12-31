@@ -19,12 +19,20 @@ class Team {
     static async getAll() {
         const result = await db.query(`
             SELECT t.team_id, t.name, t.jcups_won, t.runner_ups, t.highest_round_reached,
+                   t.wins, t.losses, t.goals_for, t.goals_against,
                    (SELECT MAX(attack) FROM players WHERE team_id = t.team_id AND is_goalkeeper = false) AS attack_rating,
                    (SELECT MAX(defense) FROM players WHERE team_id = t.team_id AND is_goalkeeper = false) AS defense_rating,
                    (SELECT MAX(defense) FROM players WHERE team_id = t.team_id AND is_goalkeeper = true) AS goalkeeper_rating
             FROM teams t
         `);
-        return result.rows.map(t => new Team(t.team_id, t.name, t.attack_rating || 0, t.defense_rating || 0, t.goalkeeper_rating || 0, t.jcups_won, t.runner_ups, t.highest_round_reached));
+        return result.rows.map(t => {
+            const team = new Team(t.team_id, t.name, t.attack_rating || 0, t.defense_rating || 0, t.goalkeeper_rating || 0, t.jcups_won, t.runner_ups, t.highest_round_reached);
+            team.wins = t.wins || 0;
+            team.losses = t.losses || 0;
+            team.goalsFor = t.goals_for || 0;
+            team.goalsAgainst = t.goals_against || 0;
+            return team;
+        });
     }
 
     static async getRatingById(teamId) {
