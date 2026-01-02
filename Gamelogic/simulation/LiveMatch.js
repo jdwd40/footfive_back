@@ -725,6 +725,7 @@ class LiveMatch {
     return {
       type,
       fixtureId: this.fixtureId,
+      tournamentId: this.tournamentId,
       minute,
       timestamp: Date.now(),
       score: { ...this.score },
