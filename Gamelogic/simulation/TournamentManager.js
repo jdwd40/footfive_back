@@ -412,29 +412,31 @@ class TournamentManager extends EventEmitter {
 
     const slots = roundSlotMap[roundKey] || [];
 
-    // Load fixtures for this round from pre-created bracket fixtures
-    const roundFixtures = [];
-    for (const slot of slots) {
-      const fixtureId = this.bracketFixtures.get(slot);
-      if (fixtureId) {
-        const fixture = await Fixture.getById(fixtureId);
-        // Only include if both teams are assigned (not TBD)
-        if (fixture.homeTeamId && fixture.awayTeamId) {
-          roundFixtures.push(fixture);
-        }
-      }
-    }
+    // Load ALL fixtures for this round in parallel
+    const fixturePromises = slots
+      .map(slot => this.bracketFixtures.get(slot))
+      .filter(Boolean)
+      .map(fixtureId => Fixture.getById(fixtureId));
 
-    // Create LiveMatch instances
-    this.fixtures = [];
-    this.liveMatches = [];
+    const allFixtures = await Promise.all(fixturePromises);
+    const roundFixtures = allFixtures.filter(f => f.homeTeamId && f.awayTeamId);
 
-    for (const fixture of roundFixtures) {
-      // Get full team data with ratings
-      const homeTeam = await Team.getRatingById(fixture.homeTeamId);
-      const awayTeam = await Team.getRatingById(fixture.awayTeamId);
+    // Create LiveMatch instances - load all team data in parallel
+    const teamIds = new Set();
+    roundFixtures.forEach(f => {
+      teamIds.add(f.homeTeamId);
+      teamIds.add(f.awayTeamId);
+    });
 
-      // Create LiveMatch
+    const teamPromises = [...teamIds].map(id => Team.getRatingById(id));
+    const teams = await Promise.all(teamPromises);
+    const teamMap = new Map(teams.map(t => [t.id, t]));
+
+    // Create all matches with their teams
+    const matches = roundFixtures.map(fixture => {
+      const homeTeam = teamMap.get(fixture.homeTeamId);
+      const awayTeam = teamMap.get(fixture.awayTeamId);
+
       const match = new LiveMatch(
         fixture.fixtureId,
         homeTeam,
@@ -443,13 +445,21 @@ class TournamentManager extends EventEmitter {
         this.rules
       );
 
-      // Set bracket info for immediate winner advancement
       match.bracketSlot = fixture.bracketSlot;
       match.feedsInto = fixture.feedsInto;
       match.tournamentId = this.tournamentId;
 
-      await match.loadPlayers();
+      return { match, fixture, homeTeam, awayTeam };
+    });
 
+    // Load ALL players in parallel
+    await Promise.all(matches.map(m => m.match.loadPlayers()));
+
+    // Now populate instance arrays
+    this.fixtures = [];
+    this.liveMatches = [];
+
+    for (const { match, fixture, homeTeam, awayTeam } of matches) {
       this.liveMatches.push(match);
       this.fixtures.push({
         home: homeTeam,
