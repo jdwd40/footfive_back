@@ -35,7 +35,6 @@ jobs:
           [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
           [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
           /home/jd/.nvm/versions/node/v24.5.0/bin/npm ci --production
-          /home/jd/.nvm/versions/node/v24.5.0/bin/npm run seed
           PGPASSWORD=${{ secrets.PGPASSWORD }} psql -h localhost -U jd -d footfive -f db/migrations/002_add_event_types.sql || true
           /home/jd/.nvm/versions/node/v24.5.0/bin/npx pm2 delete footfive-backend || true
           export SIMULATION_AUTO_START=true
