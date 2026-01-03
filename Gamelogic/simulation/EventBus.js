@@ -81,6 +81,12 @@ class EventBus extends EventEmitter {
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no' // Disable nginx buffering
     });
+    res.flushHeaders();
+
+    // Disable Nagle algorithm for immediate sends
+    if (res.socket) {
+      res.socket.setNoDelay(true);
+    }
 
     // Send initial connection event
     this._sendToClient(res, {
@@ -162,6 +168,10 @@ class EventBus extends EventEmitter {
    * Broadcast to all connected SSE clients
    */
   _broadcastToClients(event) {
+    const clientCount = this.clients.size;
+    if (clientCount > 0) {
+      console.log(`[EventBus] Broadcasting ${event.type} (seq ${event.seq}) to ${clientCount} clients`);
+    }
     for (const [clientId, client] of this.clients) {
       if (this._matchesFilters(event, client.filters)) {
         this._sendToClient(client.res, event);
@@ -192,12 +202,20 @@ class EventBus extends EventEmitter {
    */
   _sendToClient(res, event) {
     try {
+      if (!res.writable) {
+        console.warn(`[EventBus] Response not writable for event ${event.type}`);
+        return false;
+      }
       const data = JSON.stringify(event);
       res.write(`event: ${event.type}\n`);
       res.write(`data: ${data}\n\n`);
+      // Flush to ensure SSE events are sent immediately
+      if (res.flush) res.flush();
+      return true;
     } catch (err) {
       // Client likely disconnected
       console.error('[EventBus] Error sending to client:', err.message);
+      return false;
     }
   }
 
