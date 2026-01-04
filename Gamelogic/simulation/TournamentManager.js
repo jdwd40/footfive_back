@@ -239,24 +239,49 @@ class TournamentManager extends EventEmitter {
   /**
    * Check if all matches in current round are finished
    * Returns true if no matches exist or all are finished with a winner
+   * CRITICAL: Also checks that all matches have STARTED (not in SCHEDULED state)
    */
   _allMatchesFinished() {
     if (this.liveMatches.length === 0) return true;
 
-    const allFinished = this.liveMatches.every(match => {
-      if (!match.isFinished()) {
-        console.log(`[TournamentManager] Match ${match.fixtureId} still in state: ${match.state}`);
-        return false;
+    let scheduledCount = 0;
+    let inProgressCount = 0;
+    let finishedCount = 0;
+    let noWinnerCount = 0;
+
+    for (const match of this.liveMatches) {
+      // CRITICAL: Check for matches that never started
+      if (match.state === 'SCHEDULED') {
+        scheduledCount++;
+        console.error(`[TournamentManager] CRITICAL: Match ${match.fixtureId} never started! Still in SCHEDULED state.`);
+        continue;
       }
+
+      if (!match.isFinished()) {
+        inProgressCount++;
+        console.log(`[TournamentManager] Match ${match.fixtureId} still in progress: ${match.state}`);
+        continue;
+      }
+
       const winnerId = match.getWinnerId();
       if (!winnerId) {
+        noWinnerCount++;
         console.log(`[TournamentManager] Match ${match.fixtureId} finished but no winnerId`);
-        return false;
+        continue;
       }
-      return true;
-    });
 
-    return allFinished;
+      finishedCount++;
+    }
+
+    const total = this.liveMatches.length;
+    const allComplete = finishedCount === total;
+
+    if (!allComplete) {
+      console.log(`[TournamentManager] Round status: ${finishedCount}/${total} complete, ` +
+        `${scheduledCount} never started, ${inProgressCount} in progress, ${noWinnerCount} no winner`);
+    }
+
+    return allComplete;
   }
 
   _isValidTransition(from, to) {

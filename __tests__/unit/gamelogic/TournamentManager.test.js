@@ -521,5 +521,36 @@ describe('TournamentManager', () => {
       manager.liveMatches[0].state = MATCH_STATES.SECOND_HALF;
       expect(manager._allMatchesFinished()).toBe(false);
     });
+
+    it('should block transition when a match is still SCHEDULED (never started)', () => {
+      // Set most matches to FINISHED but leave one in SCHEDULED state
+      for (let i = 0; i < manager.liveMatches.length - 1; i++) {
+        manager.liveMatches[i].state = MATCH_STATES.FINISHED;
+        manager.liveMatches[i].score = { home: 2, away: 1 };
+      }
+      // This match never started - critical bug condition
+      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.SCHEDULED;
+
+      // Try to transition at minute :09
+      const breakTime = new Date();
+      breakTime.setMinutes(9);
+      manager.lastTickMinute = 8;
+
+      manager.tick(breakTime.getTime());
+
+      // Should still be in ROUND_OF_16 - transition blocked because match never started
+      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
+    });
+
+    it('should return false from _allMatchesFinished when match is SCHEDULED', () => {
+      // All matches finished except one that never started
+      for (let i = 0; i < manager.liveMatches.length - 1; i++) {
+        manager.liveMatches[i].state = MATCH_STATES.FINISHED;
+        manager.liveMatches[i].score = { home: 2, away: 1 };
+      }
+      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.SCHEDULED;
+
+      expect(manager._allMatchesFinished()).toBe(false);
+    });
   });
 });
