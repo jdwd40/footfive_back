@@ -113,6 +113,8 @@ class LiveMatch {
     this.startTime = startTime; // Wall-clock epoch ms
     this.rules = { ...DEFAULT_RULES, ...rules };
 
+    console.log(`[LiveMatch ${fixtureId}] Created with rules: knockout=${this.rules.knockout}, extraTimeEnabled=${this.rules.extraTimeEnabled}, penaltiesEnabled=${this.rules.penaltiesEnabled}`);
+
     // Bracket info (set by TournamentManager after construction)
     this.bracketSlot = null;
     this.feedsInto = null;
@@ -294,11 +296,26 @@ class LiveMatch {
   _handleFulltime() {
     const isDraw = this.score.home === this.score.away;
 
-    if (isDraw && this.rules.knockout && this.rules.extraTimeEnabled) {
+    // CRITICAL: Ensure knockout rules are set correctly (defensive check)
+    // Default to knockout=true if undefined (this is a knockout tournament)
+    const isKnockout = this.rules.knockout !== false;
+    const hasExtraTime = this.rules.extraTimeEnabled !== false;
+    const hasPenalties = this.rules.penaltiesEnabled !== false;
+
+    console.log(`[LiveMatch ${this.fixtureId}] _handleFulltime: score=${this.score.home}-${this.score.away}, isDraw=${isDraw}, knockout=${isKnockout}, extraTimeEnabled=${hasExtraTime}, penaltiesEnabled=${hasPenalties}`);
+
+    if (isDraw && isKnockout && hasExtraTime) {
+      console.log(`[LiveMatch ${this.fixtureId}] Knockout draw - going to EXTRA_TIME_1`);
       this.state = MATCH_STATES.EXTRA_TIME_1;
-    } else if (isDraw && this.rules.knockout && this.rules.penaltiesEnabled) {
+    } else if (isDraw && isKnockout && hasPenalties) {
+      console.log(`[LiveMatch ${this.fixtureId}] Knockout draw (no ET) - going to PENALTIES`);
+      this.state = MATCH_STATES.PENALTIES;
+    } else if (isDraw && isKnockout) {
+      // FAILSAFE: Knockout draw with no ET/penalties configured - force penalties
+      console.error(`[LiveMatch ${this.fixtureId}] CRITICAL: Knockout draw but no ET/penalties! Forcing PENALTIES`);
       this.state = MATCH_STATES.PENALTIES;
     } else {
+      console.log(`[LiveMatch ${this.fixtureId}] Match ending: isDraw=${isDraw}, knockout=${isKnockout}`);
       this.state = MATCH_STATES.FINISHED;
     }
   }
@@ -306,9 +323,21 @@ class LiveMatch {
   _handleExtraTimeEnd() {
     const isDraw = this.score.home === this.score.away;
 
-    if (isDraw && this.rules.knockout && this.rules.penaltiesEnabled) {
+    // CRITICAL: Ensure knockout rules are set correctly (defensive check)
+    const isKnockout = this.rules.knockout !== false;
+    const hasPenalties = this.rules.penaltiesEnabled !== false;
+
+    console.log(`[LiveMatch ${this.fixtureId}] _handleExtraTimeEnd: score=${this.score.home}-${this.score.away}, isDraw=${isDraw}, knockout=${isKnockout}, penaltiesEnabled=${hasPenalties}`);
+
+    if (isDraw && isKnockout && hasPenalties) {
+      console.log(`[LiveMatch ${this.fixtureId}] ET draw - going to PENALTIES`);
+      this.state = MATCH_STATES.PENALTIES;
+    } else if (isDraw && isKnockout) {
+      // FAILSAFE: Knockout draw after ET but penalties disabled - force penalties anyway
+      console.error(`[LiveMatch ${this.fixtureId}] CRITICAL: ET draw but penalties disabled! Forcing PENALTIES`);
       this.state = MATCH_STATES.PENALTIES;
     } else {
+      console.log(`[LiveMatch ${this.fixtureId}] Match ending after ET: isDraw=${isDraw}`);
       this.state = MATCH_STATES.FINISHED;
     }
   }
