@@ -448,4 +448,78 @@ describe('TournamentManager', () => {
       expect(ROUND_NAMES.FINAL).toBe('Final');
     });
   });
+
+  describe('_allMatchesFinished - blocking round transitions', () => {
+    beforeEach(async () => {
+      await manager._handleSetup();
+      await manager._startRound('ROUND_OF_16', Date.now());
+      manager.state = TOURNAMENT_STATES.ROUND_OF_16;
+    });
+
+    it('should block transition to QF_BREAK when matches are in extra time', () => {
+      // Set most matches to FINISHED but one to EXTRA_TIME_1
+      for (let i = 0; i < manager.liveMatches.length - 1; i++) {
+        manager.liveMatches[i].state = MATCH_STATES.FINISHED;
+        manager.liveMatches[i].score = { home: 2, away: 1 };
+      }
+      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.EXTRA_TIME_1;
+
+      // Try to transition at minute :09 (QF_BREAK time)
+      const breakTime = new Date();
+      breakTime.setMinutes(9);
+      manager.lastTickMinute = 8;
+
+      manager.tick(breakTime.getTime());
+
+      // Should still be in ROUND_OF_16 - transition blocked
+      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
+    });
+
+    it('should block transition to QF_BREAK when matches are in penalties', () => {
+      // Set most matches to FINISHED but one to PENALTIES
+      for (let i = 0; i < manager.liveMatches.length - 1; i++) {
+        manager.liveMatches[i].state = MATCH_STATES.FINISHED;
+        manager.liveMatches[i].score = { home: 2, away: 1 };
+      }
+      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.PENALTIES;
+
+      // Try to transition at minute :09
+      const breakTime = new Date();
+      breakTime.setMinutes(9);
+      manager.lastTickMinute = 8;
+
+      manager.tick(breakTime.getTime());
+
+      // Should still be in ROUND_OF_16 - transition blocked
+      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
+    });
+
+    it('should allow transition to QF_BREAK when all matches are finished with winners', () => {
+      // Set all matches to FINISHED with a winner
+      for (const match of manager.liveMatches) {
+        match.state = MATCH_STATES.FINISHED;
+        match.score = { home: 2, away: 1 };
+      }
+
+      // Try to transition at minute :09
+      const breakTime = new Date();
+      breakTime.setMinutes(9);
+      manager.lastTickMinute = 8;
+
+      manager.tick(breakTime.getTime());
+
+      // Should have transitioned to QF_BREAK
+      expect(manager.state).toBe(TOURNAMENT_STATES.QF_BREAK);
+    });
+
+    it('should return true from _allMatchesFinished when no matches exist', () => {
+      manager.liveMatches = [];
+      expect(manager._allMatchesFinished()).toBe(true);
+    });
+
+    it('should return false from _allMatchesFinished when match is in SECOND_HALF', () => {
+      manager.liveMatches[0].state = MATCH_STATES.SECOND_HALF;
+      expect(manager._allMatchesFinished()).toBe(false);
+    });
+  });
 });

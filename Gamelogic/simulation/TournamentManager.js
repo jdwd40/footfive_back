@@ -205,6 +205,12 @@ class TournamentManager extends EventEmitter {
 
         // Only transition if it's a valid next state
         if (this._isValidTransition(this.state, targetState)) {
+          // CRITICAL: Block transition from playing round to break if matches still in progress
+          // This handles extra time / penalty matches that run longer than scheduled
+          if (this._isTransitionToBreak(this.state, targetState) && !this._allMatchesFinished()) {
+            console.log(`[TournamentManager] Blocking ${this.state} -> ${targetState}: matches still in progress`);
+            return;
+          }
           this.state = targetState;
         }
         return;
@@ -215,6 +221,42 @@ class TournamentManager extends EventEmitter {
     if (this.state === TOURNAMENT_STATES.RESULTS || this.state === TOURNAMENT_STATES.COMPLETE) {
       this.state = TOURNAMENT_STATES.IDLE;
     }
+  }
+
+  /**
+   * Check if transition is from a playing round to a break state
+   */
+  _isTransitionToBreak(fromState, toState) {
+    const playingToBreak = {
+      [TOURNAMENT_STATES.ROUND_OF_16]: TOURNAMENT_STATES.QF_BREAK,
+      [TOURNAMENT_STATES.QUARTER_FINALS]: TOURNAMENT_STATES.SF_BREAK,
+      [TOURNAMENT_STATES.SEMI_FINALS]: TOURNAMENT_STATES.FINAL_BREAK,
+      [TOURNAMENT_STATES.FINAL]: TOURNAMENT_STATES.RESULTS
+    };
+    return playingToBreak[fromState] === toState;
+  }
+
+  /**
+   * Check if all matches in current round are finished
+   * Returns true if no matches exist or all are finished with a winner
+   */
+  _allMatchesFinished() {
+    if (this.liveMatches.length === 0) return true;
+
+    const allFinished = this.liveMatches.every(match => {
+      if (!match.isFinished()) {
+        console.log(`[TournamentManager] Match ${match.fixtureId} still in state: ${match.state}`);
+        return false;
+      }
+      const winnerId = match.getWinnerId();
+      if (!winnerId) {
+        console.log(`[TournamentManager] Match ${match.fixtureId} finished but no winnerId`);
+        return false;
+      }
+      return true;
+    });
+
+    return allFinished;
   }
 
   _isValidTransition(from, to) {
