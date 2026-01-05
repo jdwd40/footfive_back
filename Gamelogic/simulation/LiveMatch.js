@@ -408,6 +408,17 @@ class LiveMatch {
 
   _handleMatchEnd() {
     const events = [];
+
+    // CRITICAL DEFENSIVE CHECK: Ensure knockout matches always have a winner
+    const isDraw = this.score.home === this.score.away;
+    const isKnockout = this.rules.knockout !== false;
+
+    if (isDraw && isKnockout && (this.penaltyScore.home === 0 && this.penaltyScore.away === 0)) {
+      // This should never happen, but if it does, simulate instant penalties
+      console.error(`[LiveMatch ${this.fixtureId}] CRITICAL: Knockout match ending as draw without penalties! Fixing...`);
+      this._simulateInstantPenalties();
+    }
+
     const winnerId = this.getWinnerId();
 
     // Emit fulltime or ET end if not already emitted
@@ -793,12 +804,16 @@ class LiveMatch {
     const homePossession = totalTicks > 0 ? (this.possessionTicks.home / totalTicks * 100) : 50;
     const awayPossession = 100 - homePossession;
 
+    // Determine if penalties were played (check if either score is non-zero or any kicks taken)
+    const penaltiesPlayed = this.penaltyScore.home > 0 || this.penaltyScore.away > 0 ||
+                            this.shootoutTaken.home > 0 || this.shootoutTaken.away > 0;
+
     // Complete fixture
     await Fixture.complete(this.fixtureId, {
       homeScore: this.score.home,
       awayScore: this.score.away,
-      homePenaltyScore: this.penaltyScore.home || null,
-      awayPenaltyScore: this.penaltyScore.away || null,
+      homePenaltyScore: penaltiesPlayed ? this.penaltyScore.home : null,
+      awayPenaltyScore: penaltiesPlayed ? this.penaltyScore.away : null,
       winnerTeamId: winnerId
     });
 
@@ -822,7 +837,7 @@ class LiveMatch {
       homeRedCards: this.stats.home.redCards,
       awayRedCards: this.stats.away.redCards,
       extraTimePlayed: this.tickElapsed > this.timings.secondHalfEnd,
-      penaltiesPlayed: this.penaltyScore.home > 0 || this.penaltyScore.away > 0
+      penaltiesPlayed: penaltiesPlayed
     });
 
     // NOTE: Team stats (wins, losses, goals) are now updated here immediately
@@ -955,7 +970,58 @@ class LiveMatch {
   // === Admin Controls ===
 
   forceEnd() {
+    const isDraw = this.score.home === this.score.away;
+    const isKnockout = this.rules.knockout !== false;
+
+    // For knockout matches with a draw, we need to resolve the match properly
+    if (isDraw && isKnockout) {
+      // If we haven't played penalties yet, simulate them instantly
+      if (this.penaltyScore.home === 0 && this.penaltyScore.away === 0) {
+        console.log(`[LiveMatch ${this.fixtureId}] forceEnd: Knockout draw - simulating instant penalties`);
+        this._simulateInstantPenalties();
+      }
+    }
+
     this.state = MATCH_STATES.FINISHED;
+  }
+
+  /**
+   * Simulate an instant penalty shootout for forced match endings
+   * Used when a knockout match needs to end but is still a draw
+   */
+  _simulateInstantPenalties() {
+    // Simulate standard 5 rounds
+    for (let round = 0; round < 5; round++) {
+      // Home team takes a kick
+      if (Math.random() < 0.75) { // 75% success rate
+        this.shootoutScores.home++;
+      }
+      this.shootoutTaken.home++;
+
+      // Away team takes a kick
+      if (Math.random() < 0.75) {
+        this.shootoutScores.away++;
+      }
+      this.shootoutTaken.away++;
+
+      // Check for early winner (mathematically decided)
+      const remaining = 5 - (round + 1);
+      if (Math.abs(this.shootoutScores.home - this.shootoutScores.away) > remaining) {
+        break;
+      }
+    }
+
+    // Sudden death if still tied after 5 rounds
+    while (this.shootoutScores.home === this.shootoutScores.away) {
+      if (Math.random() < 0.75) this.shootoutScores.home++;
+      this.shootoutTaken.home++;
+      if (Math.random() < 0.75) this.shootoutScores.away++;
+      this.shootoutTaken.away++;
+    }
+
+    // Set final penalty score
+    this.penaltyScore = { ...this.shootoutScores };
+    console.log(`[LiveMatch ${this.fixtureId}] Instant penalties result: ${this.penaltyScore.home}-${this.penaltyScore.away}`);
   }
 
   forceSetScore(home, away) {
