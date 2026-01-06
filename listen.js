@@ -22,7 +22,7 @@ const corsOptions = {
         }
         
         // Allow your VPS IP/domain for production
-        if (origin.includes('77.68.4.18')) {
+        if (origin.includes('77.68.4.18') || origin.includes('jwd1.xyz')) {
             return callback(null, true);
         }
         

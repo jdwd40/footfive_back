@@ -241,7 +241,7 @@ class LiveMatch {
     // Update state based on tick elapsed
     this._updateState();
 
-    // Handle state transitions
+    // Handle state transitions from _updateState
     const transitionEvents = this._handleStateTransition(prevState);
     events.push(...transitionEvents);
 
@@ -262,8 +262,16 @@ class LiveMatch {
 
     // Handle penalties (special case - not minute-based)
     if (this.state === MATCH_STATES.PENALTIES) {
+      const stateBeforePenalties = this.state;
       const penaltyEvents = this._processShootoutTick();
       events.push(...penaltyEvents);
+
+      // CRITICAL: Handle state transition if shootout ended (set state to FINISHED)
+      // This ensures _handleMatchEnd is called to finalize the match in DB
+      if (stateBeforePenalties !== this.state) {
+        const shootoutTransitionEvents = this._handleStateTransition(stateBeforePenalties);
+        events.push(...shootoutTransitionEvents);
+      }
     }
 
     return events;
