@@ -991,6 +991,13 @@ class LiveMatch {
     }
 
     this.state = MATCH_STATES.FINISHED;
+
+    // CRITICAL: Finalize match to database - without this, winner_team_id stays NULL
+    // This was the cause of the "draw bug" - forceEnd() bypassed _handleMatchEnd()
+    // which meant _finalizeMatch() was never called
+    this._finalizationPromise = this._finalizeMatch().catch(err => {
+      console.error(`[LiveMatch ${this.fixtureId}] forceEnd finalize error:`, err);
+    });
   }
 
   /**
