@@ -137,6 +137,21 @@ class TournamentManager extends EventEmitter {
     // Prevent re-entry during async transitions
     if (this._transitioning) return;
 
+    // Handle COMPLETE/RESULTS/IDLE - start new tournament
+    if (this.state === TOURNAMENT_STATES.COMPLETE ||
+        this.state === TOURNAMENT_STATES.RESULTS ||
+        this.state === TOURNAMENT_STATES.IDLE) {
+      this._transitioning = true;
+      try {
+        console.log(`[TournamentManager] Force mode: starting new tournament from ${this.state}`);
+        this.state = TOURNAMENT_STATES.IDLE;
+        await this.startNewTournament();
+      } finally {
+        this._transitioning = false;
+      }
+      return;
+    }
+
     // Check if we're in a playing round and all matches are complete
     const playingRounds = [
       TOURNAMENT_STATES.ROUND_OF_16,
