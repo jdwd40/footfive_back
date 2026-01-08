@@ -621,9 +621,25 @@ class TournamentManager extends EventEmitter {
 
       const match = fixture.match;
       if (!match || !match.isFinished()) {
-        console.warn(`[TournamentManager] Match ${fixture.fixtureId} not finished!`);
+        console.warn(`[TournamentManager] Match ${fixture.fixtureId} not finished! (round=${this.currentRoundName}, matchState=${match?.state})`);
         // Use home team as fallback (shouldn't happen)
         winners.push(fixture.home);
+        // Still add to completedResults for Final round so runner-up can be found
+        // (This is a defensive fallback - the match SHOULD be finished at this point)
+        if (this.currentRoundName === 'Final' && match) {
+          const fallbackWinnerId = fixture.home.id;
+          this.completedResults.push({
+            fixtureId: fixture.fixtureId,
+            bracketSlot: fixture.bracketSlot,
+            round: this.currentRoundName,
+            home: fixture.home,
+            away: fixture.away,
+            score: match.getScore ? match.getScore() : { home: 0, away: 0 },
+            penaltyScore: match.getPenaltyScore ? match.getPenaltyScore() : { home: 0, away: 0 },
+            winnerId: fallbackWinnerId
+          });
+          console.warn(`[TournamentManager] Added fallback Final result to completedResults`);
+        }
         continue;
       }
 
@@ -717,12 +733,34 @@ class TournamentManager extends EventEmitter {
     if (this.roundWinners.length === 1) {
       this.winner = this.roundWinners[0];
 
-      // Find runner-up from final
+      // Find runner-up - try multiple sources for robustness
+      // Method 1: From completedResults (may have round name mismatch)
       const finalResult = this.completedResults.find(r => r.round === 'Final');
       if (finalResult) {
         this.runnerUp = finalResult.winnerId === finalResult.home.id
           ? finalResult.away
           : finalResult.home;
+      }
+
+      // Method 2: Fallback - get directly from this.fixtures (Final fixture)
+      // This is more reliable as it uses the actual match data
+      if (!this.runnerUp && this.fixtures.length === 1) {
+        const finalFixture = this.fixtures[0];
+        if (finalFixture && this.winner) {
+          // Runner-up is the team that lost (not the winner)
+          this.runnerUp = finalFixture.home.id === this.winner.id
+            ? finalFixture.away
+            : finalFixture.home;
+          console.log(`[TournamentManager] Runner-up found via fixture fallback: ${this.runnerUp?.name}`);
+        }
+      }
+
+      // Log diagnostic info if winner/runner-up missing
+      if (!this.winner) {
+        console.error(`[TournamentManager] WARNING: No winner found! roundWinners=${JSON.stringify(this.roundWinners)}, fixtures=${this.fixtures.length}`);
+      }
+      if (!this.runnerUp) {
+        console.error(`[TournamentManager] WARNING: No runner-up found! completedResults has Final=${!!finalResult}, fixtures=${this.fixtures.length}, currentRound=${this.currentRoundName}`);
       }
 
       // Update team stats for winner and runner-up
@@ -731,6 +769,8 @@ class TournamentManager extends EventEmitter {
           await Team.addJCupsWon(this.winner.id);
           await Team.updateHighestRound(this.winner.id, 'Winner');
           console.log(`[TournamentManager] Updated winner stats: ${this.winner.name} (ID: ${this.winner.id})`);
+        } else {
+          console.error(`[TournamentManager] Cannot update winner stats - winner is null`);
         }
       } catch (err) {
         console.error(`[TournamentManager] Failed to update winner stats:`, err.message);
@@ -741,6 +781,8 @@ class TournamentManager extends EventEmitter {
           await Team.addRunnerUp(this.runnerUp.id);
           await Team.updateHighestRound(this.runnerUp.id, 'Runner-up');
           console.log(`[TournamentManager] Updated runner-up stats: ${this.runnerUp.name} (ID: ${this.runnerUp.id})`);
+        } else {
+          console.error(`[TournamentManager] Cannot update runner-up stats - runnerUp is null`);
         }
       } catch (err) {
         console.error(`[TournamentManager] Failed to update runner-up stats:`, err.message);
