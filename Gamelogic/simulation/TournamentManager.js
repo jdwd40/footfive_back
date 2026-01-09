@@ -211,6 +211,15 @@ class TournamentManager extends EventEmitter {
       return;
     }
 
+    // CRITICAL FIX: If tournament is complete/results, transition to IDLE immediately
+    // This must happen BEFORE checking scheduled states, otherwise the tournament gets stuck
+    // when recovered into RESULTS state during a scheduled time window
+    if (this.state === TOURNAMENT_STATES.RESULTS || this.state === TOURNAMENT_STATES.COMPLETE) {
+      console.log(`[TournamentManager] Tournament finished (state=${this.state}), transitioning to IDLE`);
+      this.state = TOURNAMENT_STATES.IDLE;
+      return;
+    }
+
     // Check each scheduled state
     for (const [stateName, schedule] of Object.entries(SCHEDULE)) {
       if (stateName === 'SETUP') continue; // Handled above
@@ -230,11 +239,6 @@ class TournamentManager extends EventEmitter {
         }
         return;
       }
-    }
-
-    // After :55, go to IDLE if tournament is complete
-    if (this.state === TOURNAMENT_STATES.RESULTS || this.state === TOURNAMENT_STATES.COMPLETE) {
-      this.state = TOURNAMENT_STATES.IDLE;
     }
   }
 
