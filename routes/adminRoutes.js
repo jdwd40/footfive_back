@@ -16,7 +16,10 @@ const {
   clearEvents
 } = require('../controllers/adminController');
 
-// All routes require dev admin access
+// Public endpoint - no auth required
+router.get('/tournament/start', startTournament);         // GET /api/admin/tournament/start
+
+// All routes below require dev admin access
 router.use(devAdminOnly);
 
 // Simulation loop controls
@@ -24,7 +27,6 @@ router.post('/simulation/start', startSimulation);   // POST /api/admin/simulati
 router.post('/simulation/stop', stopSimulation);     // POST /api/admin/simulation/stop
 
 // Tournament controls
-router.get('/tournament/start', startTournament);         // GET /api/admin/tournament/start
 router.post('/tournament/cancel', cancelTournament);      // POST /api/admin/tournament/cancel
 router.post('/tournament/skip-to-round', skipToRound);    // POST /api/admin/tournament/skip-to-round
 
