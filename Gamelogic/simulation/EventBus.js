@@ -238,7 +238,7 @@ class EventBus extends EventEmitter {
     const persistableTypes = [
       'goal', 'penalty_scored', 'penalty_missed', 'penalty_saved',
       'shot_saved', 'shot_missed', 'shot_blocked',
-      'foul', 'yellow_card', 'red_card',
+      'foul', 'yellow_card', 'red_card', 'corner',
       'halftime', 'fulltime', 'second_half_start',
       'extra_time_start', 'extra_time_half', 'extra_time_end',
       'shootout_start', 'shootout_goal', 'shootout_miss', 'shootout_save', 'shootout_end',

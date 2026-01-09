@@ -495,8 +495,16 @@ class LiveMatch {
 
     // Defense blocks?
     if (this._defenseBlocks(defendingTeam)) {
-      this.stats[oppSide].corners += Math.random() < 0.3 ? 1 : 0;
-      // Don't emit block events (not key events)
+      const cornerAwarded = Math.random() < 0.3;
+      if (cornerAwarded) {
+        this.stats[side].corners++;
+        events.push(this._createEvent(EVENT_TYPES.CORNER, minute, {
+          teamId: attackingTeam.id,
+          description: `Corner to ${attackingTeam.name}. Good defensive work from ${defendingTeam.name}.`,
+          outcome: 'corner',
+          bundleId
+        }));
+      }
       return events;
     }
 
@@ -528,21 +536,23 @@ class LiveMatch {
     // On target? (60%)
     if (Math.random() < 0.6) {
       this.stats[side].shotsOnTarget++;
+      const shooter = this._selectScorer(players);
 
       // Goal or save?
       if (!this._goalkeeperSaves(defendingTeam)) {
         // GOAL!
         this.score[side]++;
-        const scorer = this._selectScorer(players);
-        const assister = this._selectAssister(players, scorer?.playerId);
+        const assister = this._selectAssister(players, shooter?.playerId);
 
         events.push(this._createEvent(EVENT_TYPES.GOAL, minute, {
           teamId: attackingTeam.id,
-          playerId: scorer?.playerId,
-          displayName: scorer?.name,
+          playerId: shooter?.playerId,
+          displayName: shooter?.name,
           assistPlayerId: assister?.playerId,
           assistName: assister?.name,
-          description: `GOAL! ${attackingTeam.name}`,
+          description: assister
+            ? `GOAL! ${shooter?.name || attackingTeam.name} scores! Assisted by ${assister.name}.`
+            : `GOAL! ${shooter?.name || attackingTeam.name} finds the net for ${attackingTeam.name}!`,
           xg,
           outcome: 'scored',
           bundleId
@@ -551,11 +561,36 @@ class LiveMatch {
         // Update fixture score immediately
         this._persistScore();
       } else {
-        // Saved - not a key event, skip during fast-forward
-        this.stats[oppSide].corners += Math.random() < 0.4 ? 1 : 0;
+        // Saved
+        const cornerAwarded = Math.random() < 0.4;
+        if (cornerAwarded) this.stats[side].corners++;
+
+        events.push(this._createEvent(EVENT_TYPES.SHOT_SAVED, minute, {
+          teamId: attackingTeam.id,
+          playerId: shooter?.playerId,
+          displayName: shooter?.name,
+          description: cornerAwarded
+            ? `Save! ${defendingTeam.name} keeper denies ${shooter?.name || attackingTeam.name}. Corner to ${attackingTeam.name}.`
+            : `Save! Good stop by the ${defendingTeam.name} goalkeeper from ${shooter?.name || attackingTeam.name}'s effort.`,
+          xg,
+          outcome: 'saved',
+          bundleId,
+          cornerAwarded
+        }));
       }
+    } else {
+      // Missed - off target
+      const shooter = this._selectScorer(players);
+      events.push(this._createEvent(EVENT_TYPES.SHOT_MISSED, minute, {
+        teamId: attackingTeam.id,
+        playerId: shooter?.playerId,
+        displayName: shooter?.name,
+        description: this._getMissDescription(shooter?.name, attackingTeam.name),
+        xg,
+        outcome: 'missed',
+        bundleId
+      }));
     }
-    // Missed shots - not key events
 
     return events;
   }
@@ -597,17 +632,29 @@ class LiveMatch {
     const isHomeFoul = Math.random() < 0.5;
     const side = isHomeFoul ? 'home' : 'away';
     const team = isHomeFoul ? this.homeTeam : this.awayTeam;
+    const opposingTeam = isHomeFoul ? this.awayTeam : this.homeTeam;
+    const players = isHomeFoul ? this.homePlayers : this.awayPlayers;
 
     this.stats[side].fouls++;
 
-    // Card chance (15% yellow, 2% red)
+    // Card chance (15% yellow, 2% red) - track stats only, no card events
     const cardRoll = Math.random();
     if (cardRoll < 0.02) {
       this.stats[side].redCards++;
-      // Red cards are notable but not "key" for catchup
     } else if (cardRoll < 0.17) {
       this.stats[side].yellowCards++;
     }
+
+    // Select a player who committed the foul
+    const fouler = this._selectScorer(players);
+
+    events.push(this._createEvent(EVENT_TYPES.FOUL, minute, {
+      teamId: team.id,
+      playerId: fouler?.playerId,
+      displayName: fouler?.name,
+      description: this._getFoulDescription(fouler?.name, team.name, opposingTeam.name),
+      outcome: 'foul'
+    }));
 
     return events;
   }
@@ -734,6 +781,28 @@ class LiveMatch {
       return 'scored';
     }
     return 'missed';
+  }
+
+  _getMissDescription(playerName, teamName) {
+    const descriptions = [
+      `${playerName || teamName} fires wide of the target.`,
+      `Shot from ${playerName || teamName} goes over the bar.`,
+      `${playerName || teamName} pulls the shot wide. Close!`,
+      `Effort from ${playerName || teamName} sails over the crossbar.`,
+      `${playerName || teamName} drags the shot wide of the post.`
+    ];
+    return descriptions[Math.floor(Math.random() * descriptions.length)];
+  }
+
+  _getFoulDescription(playerName, teamName, opposingTeam) {
+    const descriptions = [
+      `Foul by ${playerName || teamName}. Free kick to ${opposingTeam}.`,
+      `${playerName || teamName} brings down the opponent. Free kick awarded.`,
+      `${opposingTeam} win a free kick after a challenge from ${playerName || teamName}.`,
+      `The referee blows for a foul by ${playerName || teamName}.`,
+      `Free kick to ${opposingTeam} after ${playerName || teamName}'s challenge.`
+    ];
+    return descriptions[Math.floor(Math.random() * descriptions.length)];
   }
 
   _selectScorer(players) {
