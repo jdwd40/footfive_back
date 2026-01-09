@@ -18,18 +18,11 @@ const TOURNAMENT_STATES = {
   COMPLETE: 'COMPLETE'
 };
 
-// Schedule: minute of hour -> state
-// Matches start at: :00 (R16), :15 (QF), :30 (SF), :45 (Final)
+// Schedule: Only used for tournament start trigger
+// Rounds now advance dynamically based on match completion
 const SCHEDULE = {
-  SETUP: { startMinute: 55, endMinute: 60 },  // :55-:00 (wraps)
-  ROUND_OF_16: { startMinute: 0, endMinute: 9 },
-  QF_BREAK: { startMinute: 9, endMinute: 15 },
-  QUARTER_FINALS: { startMinute: 15, endMinute: 24 },
-  SF_BREAK: { startMinute: 24, endMinute: 30 },
-  SEMI_FINALS: { startMinute: 30, endMinute: 39 },
-  FINAL_BREAK: { startMinute: 39, endMinute: 45 },
-  FINAL: { startMinute: 45, endMinute: 54 },
-  RESULTS: { startMinute: 54, endMinute: 55 }
+  SETUP_START_MINUTE: 55,  // Tournament setup begins at :55
+  BREAK_DURATION_MS: 10000 // 10 seconds between rounds (for UI updates)
 };
 
 const ROUND_NAMES = {
@@ -96,7 +89,8 @@ class TournamentManager extends EventEmitter {
     // Timing
     this.roundStartTime = null;
     this.lastTickMinute = null;
-    this.forceMode = false; // When true, ignore wall-clock scheduling
+    this.forceMode = false; // When true, ignore wall-clock scheduling (legacy)
+    this.breakEndTime = null; // When set, waiting for break to end before next round
 
     // Results history
     this.winner = null;
@@ -106,28 +100,60 @@ class TournamentManager extends EventEmitter {
 
   /**
    * Main tick - called by SimulationLoop every second
+   * Uses dynamic scheduling: wall-clock only triggers SETUP at :55,
+   * then rounds advance based on match completion
    */
   tick(now) {
-    // In force mode, state transitions are driven by match completion, not wall-clock
+    // In force mode, use legacy force mode logic
     if (this.forceMode) {
       this._checkForceModeTick();
       return;
     }
 
+    // Prevent re-entry during async transitions
+    if (this._transitioning) return;
+
     const date = new Date(now);
     const minute = date.getMinutes();
 
-    // Only process state changes once per minute
-    if (minute === this.lastTickMinute) return;
-    this.lastTickMinute = minute;
-
-    const prevState = this.state;
-    this._updateState(minute);
-
-    // Handle state transitions
-    if (prevState !== this.state) {
-      this._handleStateTransition(prevState, this.state, now);
+    // === IDLE STATE: Wait for :55 to start tournament ===
+    if (this.state === TOURNAMENT_STATES.IDLE) {
+      if (minute >= SCHEDULE.SETUP_START_MINUTE && minute !== this.lastTickMinute) {
+        this.lastTickMinute = minute;
+        console.log(`[TournamentManager] Starting tournament setup at minute ${minute}`);
+        this.state = TOURNAMENT_STATES.SETUP;
+        this._handleStateTransition(TOURNAMENT_STATES.IDLE, TOURNAMENT_STATES.SETUP, now);
+      }
+      return;
     }
+
+    // === SETUP STATE: Wait for setup to complete, then start R16 ===
+    if (this.state === TOURNAMENT_STATES.SETUP) {
+      // Setup is synchronous, so if we're still in SETUP state,
+      // it means _handleSetup hasn't been called yet or just completed
+      // Transition to R16 happens via _handleStateTransition after setup
+      return;
+    }
+
+    // === RESULTS/COMPLETE STATE: Transition to IDLE ===
+    if (this.state === TOURNAMENT_STATES.RESULTS || this.state === TOURNAMENT_STATES.COMPLETE) {
+      console.log(`[TournamentManager] Tournament finished, transitioning to IDLE`);
+      this.state = TOURNAMENT_STATES.IDLE;
+      this._handleComplete();
+      return;
+    }
+
+    // === BREAK STATE: Wait for break timer, then start next round ===
+    if (this._isBreakState(this.state)) {
+      if (this.breakEndTime && now >= this.breakEndTime) {
+        this.breakEndTime = null;
+        this._advanceFromBreak(now);
+      }
+      return;
+    }
+
+    // === PLAYING STATE: Check if all matches complete ===
+    this._checkRoundCompletion(now);
   }
 
   /**
@@ -200,59 +226,92 @@ class TournamentManager extends EventEmitter {
   }
 
   /**
-   * Update state based on minute of hour
+   * Check if state is a break state
    */
-  _updateState(minute) {
-    // Handle SETUP wrapping around hour (55-59 of prev hour)
-    if (minute >= 55) {
-      if (this.state === TOURNAMENT_STATES.IDLE || this.state === TOURNAMENT_STATES.COMPLETE) {
-        this.state = TOURNAMENT_STATES.SETUP;
+  _isBreakState(state) {
+    return [
+      TOURNAMENT_STATES.QF_BREAK,
+      TOURNAMENT_STATES.SF_BREAK,
+      TOURNAMENT_STATES.FINAL_BREAK
+    ].includes(state);
+  }
+
+  /**
+   * Check if all matches in current round are complete, and advance if so
+   */
+  async _checkRoundCompletion(now) {
+    if (!this._allMatchesFinished()) return;
+
+    const playingRounds = [
+      TOURNAMENT_STATES.ROUND_OF_16,
+      TOURNAMENT_STATES.QUARTER_FINALS,
+      TOURNAMENT_STATES.SEMI_FINALS,
+      TOURNAMENT_STATES.FINAL
+    ];
+
+    if (!playingRounds.includes(this.state)) return;
+
+    console.log(`[TournamentManager] All matches complete in ${this.state}`);
+
+    this._transitioning = true;
+    try {
+      // Collect winners from completed matches
+      await this._collectWinners();
+
+      this.emit('round_complete', {
+        tournamentId: this.tournamentId,
+        round: this.currentRoundName,
+        winners: this.roundWinners.map(t => ({ id: t.id, name: t.name }))
+      });
+
+      // Determine next state
+      const nextBreak = {
+        [TOURNAMENT_STATES.ROUND_OF_16]: TOURNAMENT_STATES.QF_BREAK,
+        [TOURNAMENT_STATES.QUARTER_FINALS]: TOURNAMENT_STATES.SF_BREAK,
+        [TOURNAMENT_STATES.SEMI_FINALS]: TOURNAMENT_STATES.FINAL_BREAK,
+        [TOURNAMENT_STATES.FINAL]: TOURNAMENT_STATES.RESULTS
+      }[this.state];
+
+      if (nextBreak === TOURNAMENT_STATES.RESULTS) {
+        // Final just ended - go straight to results
+        this.state = TOURNAMENT_STATES.RESULTS;
+        await this._handleResults();
+      } else {
+        // Enter break state and set timer
+        this.state = nextBreak;
+        this.breakEndTime = now + SCHEDULE.BREAK_DURATION_MS;
+        console.log(`[TournamentManager] Entering ${nextBreak}, break ends in ${SCHEDULE.BREAK_DURATION_MS}ms`);
       }
-      return;
-    }
-
-    // CRITICAL FIX: If tournament is complete/results, transition to IDLE immediately
-    // This must happen BEFORE checking scheduled states, otherwise the tournament gets stuck
-    // when recovered into RESULTS state during a scheduled time window
-    if (this.state === TOURNAMENT_STATES.RESULTS || this.state === TOURNAMENT_STATES.COMPLETE) {
-      console.log(`[TournamentManager] Tournament finished (state=${this.state}), transitioning to IDLE`);
-      this.state = TOURNAMENT_STATES.IDLE;
-      return;
-    }
-
-    // Check each scheduled state
-    for (const [stateName, schedule] of Object.entries(SCHEDULE)) {
-      if (stateName === 'SETUP') continue; // Handled above
-
-      if (minute >= schedule.startMinute && minute < schedule.endMinute) {
-        const targetState = TOURNAMENT_STATES[stateName];
-
-        // Only transition if it's a valid next state
-        if (this._isValidTransition(this.state, targetState)) {
-          // CRITICAL: Block transition from playing round to break if matches still in progress
-          // This handles extra time / penalty matches that run longer than scheduled
-          if (this._isTransitionToBreak(this.state, targetState) && !this._allMatchesFinished()) {
-            console.log(`[TournamentManager] Blocking ${this.state} -> ${targetState}: matches still in progress`);
-            return;
-          }
-          this.state = targetState;
-        }
-        return;
-      }
+    } finally {
+      this._transitioning = false;
     }
   }
 
   /**
-   * Check if transition is from a playing round to a break state
+   * Advance from break state to next round
    */
-  _isTransitionToBreak(fromState, toState) {
-    const playingToBreak = {
-      [TOURNAMENT_STATES.ROUND_OF_16]: TOURNAMENT_STATES.QF_BREAK,
-      [TOURNAMENT_STATES.QUARTER_FINALS]: TOURNAMENT_STATES.SF_BREAK,
-      [TOURNAMENT_STATES.SEMI_FINALS]: TOURNAMENT_STATES.FINAL_BREAK,
-      [TOURNAMENT_STATES.FINAL]: TOURNAMENT_STATES.RESULTS
-    };
-    return playingToBreak[fromState] === toState;
+  async _advanceFromBreak(now) {
+    const nextRound = {
+      [TOURNAMENT_STATES.QF_BREAK]: 'QUARTER_FINALS',
+      [TOURNAMENT_STATES.SF_BREAK]: 'SEMI_FINALS',
+      [TOURNAMENT_STATES.FINAL_BREAK]: 'FINAL'
+    }[this.state];
+
+    if (!nextRound) {
+      console.error(`[TournamentManager] Unknown break state: ${this.state}`);
+      return;
+    }
+
+    console.log(`[TournamentManager] Break over, starting ${nextRound}`);
+
+    this._transitioning = true;
+    try {
+      const nextState = TOURNAMENT_STATES[nextRound];
+      this.state = nextState;
+      await this._startRound(nextRound, now);
+    } finally {
+      this._transitioning = false;
+    }
   }
 
   /**
@@ -328,41 +387,50 @@ class TournamentManager extends EventEmitter {
   async _handleStateTransition(fromState, toState, now) {
     console.log(`[TournamentManager] ${fromState} -> ${toState}`);
 
-    switch (toState) {
-      case TOURNAMENT_STATES.SETUP:
-        await this._handleSetup();
-        break;
+    this._transitioning = true;
+    try {
+      switch (toState) {
+        case TOURNAMENT_STATES.SETUP:
+          await this._handleSetup();
+          // Dynamic scheduling: immediately start R16 after setup
+          console.log(`[TournamentManager] Setup complete, starting Round of 16`);
+          this.state = TOURNAMENT_STATES.ROUND_OF_16;
+          await this._startRound('ROUND_OF_16', now);
+          break;
 
-      case TOURNAMENT_STATES.ROUND_OF_16:
-        await this._startRound('ROUND_OF_16', now);
-        break;
+        case TOURNAMENT_STATES.ROUND_OF_16:
+          await this._startRound('ROUND_OF_16', now);
+          break;
 
-      case TOURNAMENT_STATES.QUARTER_FINALS:
-        await this._startRound('QUARTER_FINALS', now);
-        break;
+        case TOURNAMENT_STATES.QUARTER_FINALS:
+          await this._startRound('QUARTER_FINALS', now);
+          break;
 
-      case TOURNAMENT_STATES.SEMI_FINALS:
-        await this._startRound('SEMI_FINALS', now);
-        break;
+        case TOURNAMENT_STATES.SEMI_FINALS:
+          await this._startRound('SEMI_FINALS', now);
+          break;
 
-      case TOURNAMENT_STATES.FINAL:
-        await this._startRound('FINAL', now);
-        break;
+        case TOURNAMENT_STATES.FINAL:
+          await this._startRound('FINAL', now);
+          break;
 
-      case TOURNAMENT_STATES.QF_BREAK:
-      case TOURNAMENT_STATES.SF_BREAK:
-      case TOURNAMENT_STATES.FINAL_BREAK:
-        await this._handleBreak(fromState);
-        break;
+        case TOURNAMENT_STATES.QF_BREAK:
+        case TOURNAMENT_STATES.SF_BREAK:
+        case TOURNAMENT_STATES.FINAL_BREAK:
+          // Breaks are now handled by breakEndTime timer in tick()
+          break;
 
-      case TOURNAMENT_STATES.RESULTS:
-        await this._handleResults();
-        break;
+        case TOURNAMENT_STATES.RESULTS:
+          await this._handleResults();
+          break;
 
-      case TOURNAMENT_STATES.COMPLETE:
-      case TOURNAMENT_STATES.IDLE:
-        this._handleComplete();
-        break;
+        case TOURNAMENT_STATES.COMPLETE:
+        case TOURNAMENT_STATES.IDLE:
+          this._handleComplete();
+          break;
+      }
+    } finally {
+      this._transitioning = false;
     }
   }
 
@@ -983,20 +1051,10 @@ class TournamentManager extends EventEmitter {
         allCurrentComplete = false;
         anyLive = true;
 
-        // Recover match state
-        const roundSchedule = SCHEDULE[Object.keys(ROUND_NAMES).find(k => ROUND_NAMES[k] === this.currentRoundName)];
-        const now = new Date();
-        const startTime = new Date(now);
-        startTime.setMinutes(roundSchedule?.startMinute || 0);
-        startTime.setSeconds(0);
-        startTime.setMilliseconds(0);
-
-        // Determine if we should be live based on time matching schedule?
-        // For now, if it's not completed, we treat it as potentially live or needing start
-
+        // Recover match state - use current time since we use dynamic scheduling
         match = await LiveMatch.recover(
           fixture.fixtureId,
-          startTime.getTime(),
+          Date.now(),
           this.rules
         );
 
@@ -1004,25 +1062,13 @@ class TournamentManager extends EventEmitter {
       } else if (fixture.status === 'completed') {
         // It's done
       } else {
-        // Scheduled but not live? Treat as live for recovery if we are in that time window?
-        // Or if we are recovering, we should arguably 'resume' them if they aren't marked finished.
-        // The issue is if status was never updated to 'live'.
-        // LiveMatches update status to 'live' on first tick.
-
-        // If status is NOT completed, we should probably recover it as a LiveMatch
+        // Scheduled but not started - recover as live match
         allCurrentComplete = false;
         anyLive = true;
 
-        const roundSchedule = SCHEDULE[Object.keys(ROUND_NAMES).find(k => ROUND_NAMES[k] === this.currentRoundName)];
-        const now = new Date();
-        const startTime = new Date(now);
-        startTime.setMinutes(roundSchedule?.startMinute || 0);
-        startTime.setSeconds(0);
-        startTime.setMilliseconds(0);
-
         match = await LiveMatch.recover(
           fixture.fixtureId,
-          startTime.getTime(),
+          Date.now(),
           this.rules
         );
         this.liveMatches.push(match);
