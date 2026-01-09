@@ -52,10 +52,10 @@ const stopSimulation = (req, res) => {
 };
 
 /**
- * Force start tournament now
- * POST /api/admin/tournament/start
+ * Start a new tournament
+ * GET /api/admin/tournament/start
  */
-const forceTournamentStart = async (req, res) => {
+const startTournament = async (req, res) => {
   try {
     const loop = getSimulationLoop();
 
@@ -63,13 +63,17 @@ const forceTournamentStart = async (req, res) => {
       return res.status(400).json({ error: 'Simulation not initialized' });
     }
 
-    const state = await loop.tournamentManager.forceStart();
+    const result = await loop.tournamentManager.startTournament();
 
     // Register created matches with loop
     const matches = loop.tournamentManager.getLiveMatches();
     loop.registerMatches(matches);
 
-    res.json({ success: true, state });
+    res.json({
+      success: true,
+      message: 'Tournament started',
+      ...result
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -246,7 +250,7 @@ module.exports = {
   devAdminOnly,
   startSimulation,
   stopSimulation,
-  forceTournamentStart,
+  startTournament,
   cancelTournament,
   skipToRound,
   forceScore,

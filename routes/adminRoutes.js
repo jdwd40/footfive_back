@@ -4,7 +4,7 @@ const {
   devAdminOnly,
   startSimulation,
   stopSimulation,
-  forceTournamentStart,
+  startTournament,
   cancelTournament,
   skipToRound,
   forceScore,
@@ -24,7 +24,7 @@ router.post('/simulation/start', startSimulation);   // POST /api/admin/simulati
 router.post('/simulation/stop', stopSimulation);     // POST /api/admin/simulation/stop
 
 // Tournament controls
-router.post('/tournament/start', forceTournamentStart);   // POST /api/admin/tournament/start
+router.get('/tournament/start', startTournament);         // GET /api/admin/tournament/start
 router.post('/tournament/cancel', cancelTournament);      // POST /api/admin/tournament/cancel
 router.post('/tournament/skip-to-round', skipToRound);    // POST /api/admin/tournament/skip-to-round
 

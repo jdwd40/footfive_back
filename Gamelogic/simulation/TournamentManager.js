@@ -18,11 +18,10 @@ const TOURNAMENT_STATES = {
   COMPLETE: 'COMPLETE'
 };
 
-// Schedule: Only used for tournament start trigger
-// Rounds now advance dynamically based on match completion
+// Configuration for dynamic scheduling
+// Tournament must be started manually via API, then rounds chain automatically
 const SCHEDULE = {
-  SETUP_START_MINUTE: 55,  // Tournament setup begins at :55
-  BREAK_DURATION_MS: 10000 // 10 seconds between rounds (for UI updates)
+  BREAK_DURATION_MS: 5 * 60 * 1000 // 5 minutes between rounds
 };
 
 const ROUND_NAMES = {
@@ -100,8 +99,8 @@ class TournamentManager extends EventEmitter {
 
   /**
    * Main tick - called by SimulationLoop every second
-   * Uses dynamic scheduling: wall-clock only triggers SETUP at :55,
-   * then rounds advance based on match completion
+   * Tournament must be started manually via startTournament()
+   * Rounds then chain automatically based on match completion
    */
   tick(now) {
     // In force mode, use legacy force mode logic
@@ -113,25 +112,13 @@ class TournamentManager extends EventEmitter {
     // Prevent re-entry during async transitions
     if (this._transitioning) return;
 
-    const date = new Date(now);
-    const minute = date.getMinutes();
-
-    // === IDLE STATE: Wait for :55 to start tournament ===
+    // === IDLE STATE: Wait for manual start via startTournament() ===
     if (this.state === TOURNAMENT_STATES.IDLE) {
-      if (minute >= SCHEDULE.SETUP_START_MINUTE && minute !== this.lastTickMinute) {
-        this.lastTickMinute = minute;
-        console.log(`[TournamentManager] Starting tournament setup at minute ${minute}`);
-        this.state = TOURNAMENT_STATES.SETUP;
-        this._handleStateTransition(TOURNAMENT_STATES.IDLE, TOURNAMENT_STATES.SETUP, now);
-      }
       return;
     }
 
-    // === SETUP STATE: Wait for setup to complete, then start R16 ===
+    // === SETUP STATE: Setup is handled by startTournament() ===
     if (this.state === TOURNAMENT_STATES.SETUP) {
-      // Setup is synchronous, so if we're still in SETUP state,
-      // it means _handleSetup hasn't been called yet or just completed
-      // Transition to R16 happens via _handleStateTransition after setup
       return;
     }
 
@@ -154,6 +141,36 @@ class TournamentManager extends EventEmitter {
 
     // === PLAYING STATE: Check if all matches complete ===
     this._checkRoundCompletion(now);
+  }
+
+  /**
+   * Manually start a new tournament
+   * Call this via API endpoint to begin a tournament
+   */
+  async startTournament() {
+    if (this.state !== TOURNAMENT_STATES.IDLE && this.state !== TOURNAMENT_STATES.COMPLETE) {
+      throw new Error(`Cannot start tournament: already in state ${this.state}`);
+    }
+
+    console.log(`[TournamentManager] Starting tournament manually`);
+
+    this._transitioning = true;
+    try {
+      this.state = TOURNAMENT_STATES.SETUP;
+      await this._handleSetup();
+
+      console.log(`[TournamentManager] Setup complete, starting Round of 16`);
+      this.state = TOURNAMENT_STATES.ROUND_OF_16;
+      await this._startRound('ROUND_OF_16', Date.now());
+    } finally {
+      this._transitioning = false;
+    }
+
+    return {
+      tournamentId: this.tournamentId,
+      state: this.state,
+      teamsCount: this.teams.length
+    };
   }
 
   /**
@@ -392,10 +409,6 @@ class TournamentManager extends EventEmitter {
       switch (toState) {
         case TOURNAMENT_STATES.SETUP:
           await this._handleSetup();
-          // Dynamic scheduling: immediately start R16 after setup
-          console.log(`[TournamentManager] Setup complete, starting Round of 16`);
-          this.state = TOURNAMENT_STATES.ROUND_OF_16;
-          await this._startRound('ROUND_OF_16', now);
           break;
 
         case TOURNAMENT_STATES.ROUND_OF_16:
