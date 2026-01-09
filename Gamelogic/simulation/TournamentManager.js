@@ -15,14 +15,19 @@ const TOURNAMENT_STATES = {
   FINAL_BREAK: 'FINAL_BREAK',
   FINAL: 'FINAL',
   RESULTS: 'RESULTS',
-  COMPLETE: 'COMPLETE'
+  COMPLETE: 'COMPLETE',
+  TOURNAMENT_BREAK: 'TOURNAMENT_BREAK' // Break between tournaments in continuous mode
 };
 
 // Configuration for dynamic scheduling
 // Tournament must be started manually via API, then rounds chain automatically
 const SCHEDULE = {
-  BREAK_DURATION_MS: 5 * 60 * 1000 // 5 minutes between rounds
+  BREAK_DURATION_MS: 5 * 60 * 1000, // 5 minutes between rounds
+  TOURNAMENT_BREAK_DURATION_MS: 2 * 60 * 1000 // 2 minutes between tournaments in continuous mode
 };
+
+// Continuous mode: when enabled, tournaments auto-restart after completion
+const CONTINUOUS_MODE = true;
 
 const ROUND_NAMES = {
   ROUND_OF_16: 'Round of 16',
@@ -90,6 +95,8 @@ class TournamentManager extends EventEmitter {
     this.lastTickMinute = null;
     this.forceMode = false; // When true, ignore wall-clock scheduling (legacy)
     this.breakEndTime = null; // When set, waiting for break to end before next round
+    this.tournamentBreakEndTime = null; // When set, waiting for tournament break to end
+    this.continuousMode = CONTINUOUS_MODE; // When true, tournaments auto-restart after completion
 
     // Results history
     this.winner = null;
@@ -122,11 +129,32 @@ class TournamentManager extends EventEmitter {
       return;
     }
 
-    // === RESULTS/COMPLETE STATE: Transition to IDLE ===
+    // === RESULTS/COMPLETE STATE: Start tournament break or transition to IDLE ===
     if (this.state === TOURNAMENT_STATES.RESULTS || this.state === TOURNAMENT_STATES.COMPLETE) {
-      console.log(`[TournamentManager] Tournament finished, transitioning to IDLE`);
-      this.state = TOURNAMENT_STATES.IDLE;
       this._handleComplete();
+      if (this.continuousMode) {
+        console.log(`[TournamentManager] Tournament finished, starting tournament break (continuous mode)`);
+        this.state = TOURNAMENT_STATES.TOURNAMENT_BREAK;
+        this.tournamentBreakEndTime = now + SCHEDULE.TOURNAMENT_BREAK_DURATION_MS;
+        this.emit('tournament_break_started', {
+          tournamentId: this.tournamentId,
+          breakEndTime: this.tournamentBreakEndTime,
+          durationMs: SCHEDULE.TOURNAMENT_BREAK_DURATION_MS
+        });
+      } else {
+        console.log(`[TournamentManager] Tournament finished, transitioning to IDLE`);
+        this.state = TOURNAMENT_STATES.IDLE;
+      }
+      return;
+    }
+
+    // === TOURNAMENT BREAK STATE: Wait for break, then start new tournament ===
+    if (this.state === TOURNAMENT_STATES.TOURNAMENT_BREAK) {
+      if (this.tournamentBreakEndTime && now >= this.tournamentBreakEndTime) {
+        console.log(`[TournamentManager] Tournament break ended, starting new tournament`);
+        this.tournamentBreakEndTime = null;
+        this._startNewTournamentAfterBreak();
+      }
       return;
     }
 
@@ -174,6 +202,25 @@ class TournamentManager extends EventEmitter {
   }
 
   /**
+   * Start a new tournament after the between-tournament break ends (continuous mode)
+   */
+  async _startNewTournamentAfterBreak() {
+    this._transitioning = true;
+    try {
+      // Reset state to IDLE so startTournament() can run
+      this.state = TOURNAMENT_STATES.IDLE;
+      await this.startTournament();
+      console.log(`[TournamentManager] New tournament started (continuous mode)`);
+    } catch (err) {
+      console.error(`[TournamentManager] Failed to start new tournament:`, err);
+      // Stay in IDLE state so manual restart is possible
+      this.state = TOURNAMENT_STATES.IDLE;
+    } finally {
+      this._transitioning = false;
+    }
+  }
+
+  /**
    * Handle tick in force mode - advance rounds when all matches complete
    */
   async _checkForceModeTick() {
@@ -188,7 +235,7 @@ class TournamentManager extends EventEmitter {
       try {
         console.log(`[TournamentManager] Force mode: starting new tournament from ${this.state}`);
         this.state = TOURNAMENT_STATES.IDLE;
-        await this.startNewTournament();
+        await this.startTournament();
       } finally {
         this._transitioning = false;
       }
@@ -1300,5 +1347,6 @@ module.exports = {
   TOURNAMENT_STATES,
   SCHEDULE,
   ROUND_NAMES,
-  BRACKET_STRUCTURE
+  BRACKET_STRUCTURE,
+  CONTINUOUS_MODE
 };
