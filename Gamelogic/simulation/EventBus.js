@@ -2,6 +2,27 @@ const EventEmitter = require('events');
 const MatchEvent = require('../../models/MatchEventModel');
 
 /**
+ * Event categories for filtering
+ * Highlight events are the key moments frontends typically want to display
+ */
+const EVENT_CATEGORIES = {
+  highlights: [
+    // Goals
+    'goal', 'penalty_scored',
+    // Extra time markers
+    'extra_time_start', 'extra_time_half', 'extra_time_end',
+    // Penalty shootout
+    'shootout_start', 'shootout_goal', 'shootout_miss', 'shootout_save', 'shootout_end',
+    // Match end / final score
+    'fulltime', 'match_end'
+  ],
+  goals: ['goal', 'penalty_scored', 'shootout_goal'],
+  shootout: ['shootout_start', 'shootout_goal', 'shootout_miss', 'shootout_save', 'shootout_end'],
+  cards: ['yellow_card', 'red_card'],
+  flow: ['match_start', 'halftime', 'second_half_start', 'fulltime', 'extra_time_start', 'extra_time_half', 'extra_time_end', 'match_end']
+};
+
+/**
  * EventBus - Central event hub for live simulation
  *
  * Responsibilities:
@@ -143,23 +164,23 @@ class EventBus extends EventEmitter {
   /**
    * Get recent events from buffer
    * @param {Object} filters - Optional filters
+   * @param {number} [filters.fixtureId] - Filter by fixture
+   * @param {number} [filters.tournamentId] - Filter by tournament
+   * @param {number} [filters.afterSeq] - Only events after this sequence
+   * @param {string} [filters.type] - Filter by specific event type
+   * @param {string} [filters.category] - Filter by category (highlights, goals, shootout, cards, flow)
    * @param {number} limit - Max events to return
    */
   getRecentEvents(filters = {}, limit = 100) {
     let events = this.eventBuffer;
 
-    if (filters.fixtureId) {
-      events = events.filter(e => e.fixtureId === filters.fixtureId);
-    }
-    if (filters.tournamentId) {
-      events = events.filter(e => e.tournamentId === filters.tournamentId);
-    }
+    // Apply afterSeq filter first (sequence-based)
     if (filters.afterSeq !== undefined) {
       events = events.filter(e => e.seq > filters.afterSeq);
     }
-    if (filters.type) {
-      events = events.filter(e => e.type === filters.type);
-    }
+
+    // Apply remaining filters using _matchesFilters
+    events = events.filter(e => this._matchesFilters(e, filters));
 
     return events.slice(-limit);
   }
@@ -181,6 +202,12 @@ class EventBus extends EventEmitter {
 
   /**
    * Check if event matches client filters
+   * @param {Object} event - The event to check
+   * @param {Object} filters - Filter criteria
+   * @param {number} [filters.fixtureId] - Match specific fixture
+   * @param {number} [filters.tournamentId] - Match specific tournament
+   * @param {string} [filters.type] - Match specific event type
+   * @param {string} [filters.category] - Match event category (highlights, goals, shootout, cards, flow)
    */
   _matchesFilters(event, filters) {
     if (!filters || Object.keys(filters).length === 0) {
@@ -192,6 +219,15 @@ class EventBus extends EventEmitter {
     }
     if (filters.tournamentId && event.tournamentId !== filters.tournamentId) {
       return false;
+    }
+    if (filters.type && event.type !== filters.type) {
+      return false;
+    }
+    if (filters.category) {
+      const categoryTypes = EVENT_CATEGORIES[filters.category];
+      if (categoryTypes && !categoryTypes.includes(event.type)) {
+        return false;
+      }
     }
 
     return true;
@@ -339,5 +375,6 @@ function resetEventBus() {
 module.exports = {
   EventBus,
   getEventBus,
-  resetEventBus
+  resetEventBus,
+  EVENT_CATEGORIES
 };
