@@ -52,14 +52,6 @@ describe('Main API Routes', () => {
         .expect(200);
     });
 
-    it('should mount /jcup sub-routes', async () => {
-      await request(app)
-        .get('/api/jcup/init')
-        .expect(res => {
-          expect([200, 400]).toContain(res.status);
-        });
-    });
-
     it('should mount /diagnostic sub-routes', async () => {
       await request(app)
         .get('/api/diagnostic')

@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 
-const jCupRoutes = require('./jCupRoutes');
 const teamRoutes = require('./teamRoutes');
 const playerRoutes = require('./playerRoutes');
 const diagnosticRoutes = require('./diagnosticRoutes');
@@ -12,8 +11,6 @@ const adminRoutes = require('./adminRoutes');
 router.get('/', (req, res) => {
     res.send({ "msg:": "ok" });
 });
-
-router.use('/jcup', jCupRoutes);
 
 router.use('/teams', teamRoutes);
 

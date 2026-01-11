@@ -2,7 +2,7 @@ const {
   devAdminOnly,
   startSimulation,
   stopSimulation,
-  forceTournamentStart,
+  startTournament,
   cancelTournament,
   skipToRound,
   forceScore,
@@ -159,11 +159,11 @@ describe('adminController', () => {
     });
   });
 
-  describe('forceTournamentStart', () => {
+  describe('startTournament', () => {
     it('should return error if simulation not initialized', async () => {
       mockLoop.tournamentManager = null;
 
-      await forceTournamentStart(mockReq, mockRes);
+      await startTournament(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(mockRes.json).toHaveBeenCalledWith({
@@ -171,20 +171,23 @@ describe('adminController', () => {
       });
     });
 
-    it('should force start tournament', async () => {
+    it('should start tournament', async () => {
       const mockTM = {
-        forceStart: jest.fn().mockResolvedValue({ state: 'ROUND_OF_16' }),
+        startTournament: jest.fn().mockResolvedValue({ tournamentId: 123, state: 'ROUND_OF_16', teamsCount: 16 }),
         getLiveMatches: jest.fn().mockReturnValue([{ fixtureId: 1 }])
       };
       mockLoop.tournamentManager = mockTM;
 
-      await forceTournamentStart(mockReq, mockRes);
+      await startTournament(mockReq, mockRes);
 
-      expect(mockTM.forceStart).toHaveBeenCalled();
+      expect(mockTM.startTournament).toHaveBeenCalled();
       expect(mockLoop.registerMatches).toHaveBeenCalled();
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
-        state: { state: 'ROUND_OF_16' }
+        message: 'Tournament started',
+        tournamentId: 123,
+        state: 'ROUND_OF_16',
+        teamsCount: 16
       });
     });
   });

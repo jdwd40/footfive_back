@@ -1,4 +1,4 @@
-const { TournamentManager, TOURNAMENT_STATES, SCHEDULE, ROUND_NAMES } = require('../../../Gamelogic/simulation/TournamentManager');
+const { TournamentManager, TOURNAMENT_STATES, ROUND_NAMES } = require('../../../Gamelogic/simulation/TournamentManager');
 const { MATCH_STATES } = require('../../../Gamelogic/simulation/LiveMatch');
 
 // Mock dependencies
@@ -116,44 +116,6 @@ describe('TournamentManager', () => {
     });
   });
 
-  describe('tick - state transitions', () => {
-    it('should transition to SETUP at minute 55', () => {
-      const date = new Date();
-      date.setMinutes(55);
-
-      manager.tick(date.getTime());
-
-      expect(manager.state).toBe(TOURNAMENT_STATES.SETUP);
-    });
-
-    it('should not process same minute twice', () => {
-      const date = new Date();
-      date.setMinutes(55);
-
-      manager.tick(date.getTime());
-      const firstState = manager.state;
-
-      // Tick again at same minute
-      manager.tick(date.getTime());
-
-      expect(manager.state).toBe(firstState);
-    });
-
-    it('should transition through schedule correctly', async () => {
-      // Setup first
-      await manager._handleSetup();
-      manager.state = TOURNAMENT_STATES.SETUP;
-
-      // Simulate minute 0 -> R16
-      const r16Time = new Date();
-      r16Time.setMinutes(0);
-      manager.lastTickMinute = 59; // Reset to allow transition
-
-      manager.tick(r16Time.getTime());
-      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
-    });
-  });
-
   describe('_handleSetup', () => {
     it('should load teams and create tournament ID', async () => {
       await manager._handleSetup();
@@ -179,13 +141,9 @@ describe('TournamentManager', () => {
     it('should shuffle teams', async () => {
       await manager._handleSetup();
 
-      // Teams should be shuffled (order likely different from original)
-      // This is probabilistic, but with 16 teams, shuffle should change order
       const teamIds = manager.roundWinners.map(t => t.id);
       const originalIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
-      // At least some teams should be in different positions
-      // (very unlikely to have exact same order after shuffle)
       expect(teamIds.length).toBe(originalIds.length);
     });
   });
@@ -265,49 +223,6 @@ describe('TournamentManager', () => {
     });
   });
 
-  describe('_collectWinnersAndAdvance', () => {
-    beforeEach(async () => {
-      await manager._handleSetup();
-      await manager._startRound('ROUND_OF_16', Date.now());
-    });
-
-    it('should collect winners from finished matches', async () => {
-      // R16 has 8 fixtures
-      expect(manager.fixtures.length).toBe(8);
-
-      // Mock all matches as finished with home team winning
-      for (const fixture of manager.fixtures) {
-        if (fixture.match) {
-          fixture.match.state = MATCH_STATES.FINISHED;
-          fixture.match.score = { home: 2, away: 1 };
-        }
-      }
-
-      await manager._collectWinnersAndAdvance();
-
-      expect(manager.roundWinners.length).toBe(8);
-      expect(manager.completedResults.length).toBe(8);
-    });
-
-    it('should advance winners to next round fixtures', async () => {
-      const Fixture = require('../../../models/FixtureModel');
-
-      // Mock all matches as finished with home team winning
-      for (const fixture of manager.fixtures) {
-        if (fixture.match) {
-          fixture.match.state = MATCH_STATES.FINISHED;
-          fixture.match.score = { home: 2, away: 1 };
-        }
-      }
-
-      await manager._collectWinnersAndAdvance();
-
-      // Should have updated next round fixtures
-      expect(Fixture.updateHomeTeam).toHaveBeenCalled();
-      expect(Fixture.updateAwayTeam).toHaveBeenCalled();
-    });
-  });
-
   describe('onMatchesComplete', () => {
     beforeEach(async () => {
       await manager._handleSetup();
@@ -330,7 +245,7 @@ describe('TournamentManager', () => {
   describe('getState', () => {
     it('should return current tournament state', async () => {
       await manager._handleSetup();
-      manager.state = TOURNAMENT_STATES.SETUP; // State is set by tick(), not _handleSetup
+      manager.state = TOURNAMENT_STATES.SETUP;
 
       const state = manager.getState();
 
@@ -420,26 +335,6 @@ describe('TournamentManager', () => {
     });
   });
 
-  describe('SCHEDULE', () => {
-    it('should have correct timing for all rounds', () => {
-      expect(SCHEDULE.SETUP.startMinute).toBe(55);
-      expect(SCHEDULE.ROUND_OF_16.startMinute).toBe(0);
-      expect(SCHEDULE.QUARTER_FINALS.startMinute).toBe(15);
-      expect(SCHEDULE.SEMI_FINALS.startMinute).toBe(30);
-      expect(SCHEDULE.FINAL.startMinute).toBe(45);
-    });
-
-    it('should have non-overlapping time slots', () => {
-      const slots = Object.entries(SCHEDULE)
-        .filter(([key]) => key !== 'SETUP')
-        .map(([key, val]) => ({ key, ...val }));
-
-      for (let i = 0; i < slots.length - 1; i++) {
-        expect(slots[i].endMinute).toBeLessThanOrEqual(slots[i + 1].startMinute);
-      }
-    });
-  });
-
   describe('ROUND_NAMES', () => {
     it('should have correct round names', () => {
       expect(ROUND_NAMES.ROUND_OF_16).toBe('Round of 16');
@@ -449,108 +344,40 @@ describe('TournamentManager', () => {
     });
   });
 
-  describe('_allMatchesFinished - blocking round transitions', () => {
+  describe('_allMatchesFinished', () => {
     beforeEach(async () => {
       await manager._handleSetup();
       await manager._startRound('ROUND_OF_16', Date.now());
       manager.state = TOURNAMENT_STATES.ROUND_OF_16;
     });
 
-    it('should block transition to QF_BREAK when matches are in extra time', () => {
-      // Set most matches to FINISHED but one to EXTRA_TIME_1
+    it('should return true when no matches exist', () => {
+      manager.liveMatches = [];
+      expect(manager._allMatchesFinished()).toBe(true);
+    });
+
+    it('should return false when match is in SECOND_HALF', () => {
+      manager.liveMatches[0].state = MATCH_STATES.SECOND_HALF;
+      expect(manager._allMatchesFinished()).toBe(false);
+    });
+
+    it('should return false when match is SCHEDULED', () => {
       for (let i = 0; i < manager.liveMatches.length - 1; i++) {
         manager.liveMatches[i].state = MATCH_STATES.FINISHED;
         manager.liveMatches[i].score = { home: 2, away: 1 };
       }
-      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.EXTRA_TIME_1;
+      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.SCHEDULED;
 
-      // Try to transition at minute :09 (QF_BREAK time)
-      const breakTime = new Date();
-      breakTime.setMinutes(9);
-      manager.lastTickMinute = 8;
-
-      manager.tick(breakTime.getTime());
-
-      // Should still be in ROUND_OF_16 - transition blocked
-      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
+      expect(manager._allMatchesFinished()).toBe(false);
     });
 
-    it('should block transition to QF_BREAK when matches are in penalties', () => {
-      // Set most matches to FINISHED but one to PENALTIES
-      for (let i = 0; i < manager.liveMatches.length - 1; i++) {
-        manager.liveMatches[i].state = MATCH_STATES.FINISHED;
-        manager.liveMatches[i].score = { home: 2, away: 1 };
-      }
-      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.PENALTIES;
-
-      // Try to transition at minute :09
-      const breakTime = new Date();
-      breakTime.setMinutes(9);
-      manager.lastTickMinute = 8;
-
-      manager.tick(breakTime.getTime());
-
-      // Should still be in ROUND_OF_16 - transition blocked
-      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
-    });
-
-    it('should allow transition to QF_BREAK when all matches are finished with winners', () => {
-      // Set all matches to FINISHED with a winner
+    it('should return true when all matches are finished', () => {
       for (const match of manager.liveMatches) {
         match.state = MATCH_STATES.FINISHED;
         match.score = { home: 2, away: 1 };
       }
 
-      // Try to transition at minute :09
-      const breakTime = new Date();
-      breakTime.setMinutes(9);
-      manager.lastTickMinute = 8;
-
-      manager.tick(breakTime.getTime());
-
-      // Should have transitioned to QF_BREAK
-      expect(manager.state).toBe(TOURNAMENT_STATES.QF_BREAK);
-    });
-
-    it('should return true from _allMatchesFinished when no matches exist', () => {
-      manager.liveMatches = [];
       expect(manager._allMatchesFinished()).toBe(true);
-    });
-
-    it('should return false from _allMatchesFinished when match is in SECOND_HALF', () => {
-      manager.liveMatches[0].state = MATCH_STATES.SECOND_HALF;
-      expect(manager._allMatchesFinished()).toBe(false);
-    });
-
-    it('should block transition when a match is still SCHEDULED (never started)', () => {
-      // Set most matches to FINISHED but leave one in SCHEDULED state
-      for (let i = 0; i < manager.liveMatches.length - 1; i++) {
-        manager.liveMatches[i].state = MATCH_STATES.FINISHED;
-        manager.liveMatches[i].score = { home: 2, away: 1 };
-      }
-      // This match never started - critical bug condition
-      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.SCHEDULED;
-
-      // Try to transition at minute :09
-      const breakTime = new Date();
-      breakTime.setMinutes(9);
-      manager.lastTickMinute = 8;
-
-      manager.tick(breakTime.getTime());
-
-      // Should still be in ROUND_OF_16 - transition blocked because match never started
-      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
-    });
-
-    it('should return false from _allMatchesFinished when match is SCHEDULED', () => {
-      // All matches finished except one that never started
-      for (let i = 0; i < manager.liveMatches.length - 1; i++) {
-        manager.liveMatches[i].state = MATCH_STATES.FINISHED;
-        manager.liveMatches[i].score = { home: 2, away: 1 };
-      }
-      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.SCHEDULED;
-
-      expect(manager._allMatchesFinished()).toBe(false);
     });
   });
 });
