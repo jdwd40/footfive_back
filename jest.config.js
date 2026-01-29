@@ -20,7 +20,7 @@ module.exports = {
     'models/**/*.js',
     'controllers/**/*.js',
     'routes/**/*.js',
-    'Gamelogic/**/*.js',
+    'gamelogic/**/*.js',
     '!node_modules/**',
     '!db/**',
     '!test-helpers/**',

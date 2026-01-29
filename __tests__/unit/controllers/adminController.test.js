@@ -46,15 +46,15 @@ const mockEventBus = {
   getRecentEvents: jest.fn().mockReturnValue([])
 };
 
-jest.mock('../../../Gamelogic/simulation/SimulationLoop', () => ({
+jest.mock('../../../gamelogic/simulation/SimulationLoop', () => ({
   getSimulationLoop: jest.fn(() => mockLoop)
 }));
 
-jest.mock('../../../Gamelogic/simulation/EventBus', () => ({
+jest.mock('../../../gamelogic/simulation/EventBus', () => ({
   getEventBus: jest.fn(() => mockEventBus)
 }));
 
-jest.mock('../../../Gamelogic/simulation/TournamentManager', () => ({
+jest.mock('../../../gamelogic/simulation/TournamentManager', () => ({
   TournamentManager: jest.fn().mockImplementation(() => ({
     getState: jest.fn().mockReturnValue({ state: 'IDLE' }),
     forceStart: jest.fn().mockResolvedValue({ state: 'ROUND_OF_16' }),

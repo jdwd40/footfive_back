@@ -1,5 +1,5 @@
-const { getEventBus, EVENT_CATEGORIES } = require('../Gamelogic/simulation/EventBus');
-const { getSimulationLoop } = require('../Gamelogic/simulation/SimulationLoop');
+const { getEventBus, EVENT_CATEGORIES } = require('../gamelogic/simulation/EventBus');
+const { getSimulationLoop } = require('../gamelogic/simulation/SimulationLoop');
 const Fixture = require('../models/FixtureModel');
 
 /**

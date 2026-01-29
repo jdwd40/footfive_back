@@ -1,4 +1,4 @@
-const { SimulationLoop, getSimulationLoop, resetSimulationLoop } = require('../../../Gamelogic/simulation/SimulationLoop');
+const { SimulationLoop, getSimulationLoop, resetSimulationLoop } = require('../../../gamelogic/simulation/SimulationLoop');
 
 describe('SimulationLoop', () => {
   let loop;

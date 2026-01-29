@@ -1,5 +1,5 @@
-const { TournamentManager, TOURNAMENT_STATES, ROUND_NAMES } = require('../../../Gamelogic/simulation/TournamentManager');
-const { MATCH_STATES } = require('../../../Gamelogic/simulation/LiveMatch');
+const { TournamentManager, TOURNAMENT_STATES, ROUND_NAMES } = require('../../../gamelogic/simulation/TournamentManager');
+const { MATCH_STATES } = require('../../../gamelogic/simulation/LiveMatch');
 
 // Mock dependencies
 jest.mock('../../../models/TeamModel', () => ({

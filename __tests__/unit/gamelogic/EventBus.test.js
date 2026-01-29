@@ -1,4 +1,4 @@
-const { EventBus, getEventBus, resetEventBus } = require('../../../Gamelogic/simulation/EventBus');
+const { EventBus, getEventBus, resetEventBus } = require('../../../gamelogic/simulation/EventBus');
 
 // Mock MatchEvent model
 jest.mock('../../../models/MatchEventModel', () => ({

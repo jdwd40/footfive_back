@@ -1,211 +1,149 @@
-const { getSimulationLoop } = require('../Gamelogic/simulation/SimulationLoop');
-const { getEventBus } = require('../Gamelogic/simulation/EventBus');
-const { TournamentManager } = require('../Gamelogic/simulation/TournamentManager');
+const { getSimulationLoop } = require('../gamelogic/simulation/SimulationLoop');
+const { getEventBus } = require('../gamelogic/simulation/EventBus');
+const { TournamentManager } = require('../gamelogic/simulation/TournamentManager');
 
 /**
  * Middleware: Dev admin only
- * Checks DEV_ADMIN env var or X-Admin-Secret header
  */
-const devAdminOnly = (req, res, next) => {
-  const devMode = process.env.DEV_ADMIN === 'true';
-  const secretMatch = process.env.ADMIN_SECRET &&
-    req.headers['x-admin-secret'] === process.env.ADMIN_SECRET;
-
-  if (!devMode && !secretMatch) {
-    return res.status(404).json({ error: 'Not found' });
+function devAdminOnly(req, res, next) {
+  if (process.env.DEV_ADMIN === 'true') {
+    return next();
   }
 
-  next();
-};
+  const secret = req.headers['x-admin-secret'];
+  if (process.env.ADMIN_SECRET && secret === process.env.ADMIN_SECRET) {
+    return next();
+  }
 
-/**
- * Start simulation loop
- * POST /api/admin/simulation/start
- */
-const startSimulation = async (req, res) => {
+  return res.status(404).json({ error: 'Not found' });
+}
+
+async function startSimulation(req, res) {
   try {
     const loop = getSimulationLoop();
     const eventBus = getEventBus();
-    const tournamentManager = new TournamentManager(req.body.rules || {});
+    const tournamentManager = new TournamentManager(req.body?.rules);
 
     loop.init({ tournamentManager, eventBus });
     await loop.start();
 
-    res.json({
-      success: true,
-      state: loop.getState()
-    });
+    res.json({ success: true, state: loop.getState() });
   } catch (err) {
+    console.error('[Admin] startSimulation error:', err);
     res.status(500).json({ error: err.message });
   }
-};
+}
 
-/**
- * Stop simulation loop
- * POST /api/admin/simulation/stop
- */
-const stopSimulation = (req, res) => {
+function stopSimulation(req, res) {
   const loop = getSimulationLoop();
   loop.stop();
+  res.json({ success: true, isRunning: false });
+}
 
-  res.json({ success: true, isRunning: loop.isRunning });
-};
-
-/**
- * Start a new tournament
- * GET /api/admin/tournament/start
- */
-const startTournament = async (req, res) => {
-  try {
-    const loop = getSimulationLoop();
-
-    if (!loop.tournamentManager) {
-      return res.status(400).json({ error: 'Simulation not initialized' });
-    }
-
-    const result = await loop.tournamentManager.startTournament();
-
-    // Register created matches with loop
-    const matches = loop.tournamentManager.getLiveMatches();
-    loop.registerMatches(matches);
-
-    res.json({
-      success: true,
-      message: 'Tournament started',
-      ...result
-    });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/**
- * Cancel current tournament
- * POST /api/admin/tournament/cancel
- */
-const cancelTournament = (req, res) => {
+async function startTournament(req, res) {
   const loop = getSimulationLoop();
 
   if (!loop.tournamentManager) {
     return res.status(400).json({ error: 'Simulation not initialized' });
   }
 
-  loop.tournamentManager.cancel();
-  loop.matches.clear();
-
-  res.json({ success: true });
-};
-
-/**
- * Skip to a specific round
- * POST /api/admin/tournament/skip-to-round
- * Body: { round: "FINAL" }
- */
-const skipToRound = async (req, res) => {
   try {
-    const { round } = req.body;
-    const loop = getSimulationLoop();
+    const result = await loop.tournamentManager.startTournament();
+    const matches = loop.tournamentManager.getLiveMatches();
+    loop.registerMatches(matches);
 
-    if (!loop.tournamentManager) {
-      return res.status(400).json({ error: 'Simulation not initialized' });
-    }
+    res.json({
+      success: true,
+      message: 'Tournament started',
+      tournamentId: result.tournamentId,
+      state: result.state,
+      teamsCount: result.teamsCount
+    });
+  } catch (err) {
+    console.error('[Admin] startTournament error:', err);
+    res.status(500).json({ error: err.message });
+  }
+}
 
-    if (!round) {
-      return res.status(400).json({ error: 'round is required' });
-    }
+function cancelTournament(req, res) {
+  const loop = getSimulationLoop();
+  if (loop.tournamentManager) {
+    loop.tournamentManager.cancel();
+  }
+  loop.matches.clear();
+  res.json({ success: true });
+}
 
+async function skipToRound(req, res) {
+  const loop = getSimulationLoop();
+
+  if (!loop.tournamentManager) {
+    return res.status(400).json({ error: 'Simulation not initialized' });
+  }
+
+  const { round } = req.body;
+  if (!round) {
+    return res.status(400).json({ error: 'round is required' });
+  }
+
+  try {
     const state = await loop.tournamentManager.skipToRound(round);
-
-    // Register created matches
     const matches = loop.tournamentManager.getLiveMatches();
     loop.registerMatches(matches);
 
     res.json({ success: true, state });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error('[Admin] skipToRound error:', err);
+    res.status(500).json({ error: err.message });
   }
-};
+}
 
-/**
- * Force set match score
- * POST /api/admin/match/:fixtureId/force-score
- * Body: { home: 2, away: 1 }
- */
-const forceScore = (req, res) => {
+function forceScore(req, res) {
+  const loop = getSimulationLoop();
   const { home, away } = req.body;
   const fixtureId = parseInt(req.params.fixtureId);
+
+  loop.forceSetScore(fixtureId, home, away);
+  res.json({ success: true, score: { home, away } });
+}
+
+function forceEndMatch(req, res) {
   const loop = getSimulationLoop();
-
-  try {
-    loop.forceSetScore(fixtureId, home, away);
-    res.json({ success: true, score: { home, away } });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/**
- * Force end match
- * POST /api/admin/match/:fixtureId/force-end
- */
-const forceEndMatch = (req, res) => {
   const fixtureId = parseInt(req.params.fixtureId);
-  const loop = getSimulationLoop();
 
-  try {
-    loop.forceEndMatch(fixtureId);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
+  loop.forceEndMatch(fixtureId);
+  res.json({ success: true });
+}
 
-/**
- * Pause simulation
- * POST /api/admin/clock/pause
- */
-const pauseSimulation = (req, res) => {
+function pauseSimulation(req, res) {
   const loop = getSimulationLoop();
   loop.pause();
   res.json({ success: true, isPaused: loop.isPaused });
-};
+}
 
-/**
- * Resume simulation
- * POST /api/admin/clock/resume
- */
-const resumeSimulation = (req, res) => {
+function resumeSimulation(req, res) {
   const loop = getSimulationLoop();
   loop.resume();
   res.json({ success: true, isPaused: loop.isPaused });
-};
+}
 
-/**
- * Set simulation speed
- * POST /api/admin/clock/set-speed
- * Body: { multiplier: 10 }
- */
-const setSpeed = (req, res) => {
+function setSpeed(req, res) {
   const { multiplier } = req.body;
-  const loop = getSimulationLoop();
 
   if (typeof multiplier !== 'number' || multiplier <= 0) {
     return res.status(400).json({ error: 'multiplier must be a positive number' });
   }
 
+  const loop = getSimulationLoop();
   loop.setSpeed(multiplier);
   res.json({
     success: true,
     speedMultiplier: loop.speedMultiplier,
     tickIntervalMs: loop.tickIntervalMs
   });
-};
+}
 
-/**
- * Get full internal state dump
- * GET /api/admin/state
- */
-const getFullState = (req, res) => {
+function getFullState(req, res) {
   const loop = getSimulationLoop();
   const eventBus = getEventBus();
 
@@ -233,18 +171,15 @@ const getFullState = (req, res) => {
     eventBus: eventBus.getStats(),
     recentEvents: eventBus.getRecentEvents({}, 50)
   });
-};
+}
 
-/**
- * Clear event bus buffer
- * POST /api/admin/events/clear
- */
-const clearEvents = (req, res) => {
+function clearEvents(req, res) {
   const eventBus = getEventBus();
   eventBus.eventBuffer = [];
   eventBus.sequence = 0;
+  eventBus.stats = { eventsEmitted: 0, eventsPersisted: 0, clientsConnected: eventBus.stats?.clientsConnected || 0 };
   res.json({ success: true });
-};
+}
 
 module.exports = {
   devAdminOnly,

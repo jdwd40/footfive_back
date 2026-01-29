@@ -1,4 +1,4 @@
-const { LiveMatch, MATCH_STATES, EVENT_TYPES, KEY_EVENTS, DEFAULT_RULES } = require('../../../Gamelogic/simulation/LiveMatch');
+const { LiveMatch, MATCH_STATES, EVENT_TYPES, KEY_EVENTS, DEFAULT_RULES } = require('../../../gamelogic/simulation/LiveMatch');
 
 // Mock dependencies
 jest.mock('../../../models/FixtureModel', () => ({

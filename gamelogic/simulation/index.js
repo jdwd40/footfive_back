@@ -2,6 +2,10 @@ const { SimulationLoop, getSimulationLoop, resetSimulationLoop } = require('./Si
 const { LiveMatch, MATCH_STATES, EVENT_TYPES, KEY_EVENTS, DEFAULT_RULES } = require('./LiveMatch');
 const { TournamentManager, TOURNAMENT_STATES, SCHEDULE, ROUND_NAMES } = require('./TournamentManager');
 const { EventBus, getEventBus, resetEventBus } = require('./EventBus');
+const { EventGenerator } = require('./EventGenerator');
+const { PenaltyShootout } = require('./PenaltyShootout');
+const { BracketManager } = require('./BracketManager');
+const { TournamentScheduler } = require('./TournamentScheduler');
 
 module.exports = {
   SimulationLoop,
@@ -18,5 +22,9 @@ module.exports = {
   ROUND_NAMES,
   EventBus,
   getEventBus,
-  resetEventBus
+  resetEventBus,
+  EventGenerator,
+  PenaltyShootout,
+  BracketManager,
+  TournamentScheduler
 };
