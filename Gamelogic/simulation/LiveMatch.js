@@ -586,8 +586,29 @@ class LiveMatch {
       }));
 
       this._persistScore();
+    } else if (outcome === 'saved') {
+      this.stats[side].shotsOnTarget++;
+
+      events.push(this._createEvent(EVENT_TYPES.PENALTY_SAVED, minute, {
+        teamId: attackingTeam.id,
+        playerId: taker?.playerId,
+        displayName: taker?.name,
+        description: `Penalty saved! ${attackingTeam.name}`,
+        xg: penXg,
+        outcome: 'saved',
+        bundleId
+      }));
+    } else {
+      events.push(this._createEvent(EVENT_TYPES.PENALTY_MISSED, minute, {
+        teamId: attackingTeam.id,
+        playerId: taker?.playerId,
+        displayName: taker?.name,
+        description: `Penalty missed! ${attackingTeam.name}`,
+        xg: penXg,
+        outcome: 'missed',
+        bundleId
+      }));
     }
-    // Saved/missed penalties - not key events
 
     return events;
   }
