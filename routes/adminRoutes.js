@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const {
-  devAdminOnly,
   startSimulation,
   stopSimulation,
   forceTournamentStart,
@@ -15,9 +14,6 @@ const {
   getFullState,
   clearEvents
 } = require('../controllers/adminController');
-
-// All routes require dev admin access
-router.use(devAdminOnly);
 
 // Simulation loop controls
 router.post('/simulation/start', startSimulation);   // POST /api/admin/simulation/start

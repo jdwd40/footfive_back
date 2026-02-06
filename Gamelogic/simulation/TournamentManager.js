@@ -406,9 +406,8 @@ class TournamentManager extends EventEmitter {
     this.teams = await Team.getAll();
 
     if (this.teams.length < 2) {
-      console.error('[TournamentManager] Not enough teams for tournament');
       this.state = TOURNAMENT_STATES.IDLE;
-      return;
+      throw new Error('Not enough teams for tournament (need at least 2 in database)');
     }
 
     // Shuffle teams for first round

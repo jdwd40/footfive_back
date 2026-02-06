@@ -62,17 +62,26 @@ const forceTournamentStart = async (req, res) => {
     const loop = getSimulationLoop();
 
     if (!loop.tournamentManager) {
-      return res.status(400).json({ error: 'Simulation not initialized' });
+      return res.status(400).json({
+        error: 'Simulation not initialized',
+        hint: 'Call POST /api/admin/simulation/start first, then POST /api/admin/tournament/start'
+      });
     }
 
-    const totalMatchMinutes = req.body.totalMatchMinutes || undefined;
+    const totalMatchMinutes = req.body?.totalMatchMinutes ?? undefined;
     const state = await loop.tournamentManager.startNow(totalMatchMinutes);
-
-    // Matches are registered via 'matches_created' event on SimulationLoop.init()
 
     res.json({ success: true, state });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const isValidation = err.message?.includes('already in progress') ||
+      err.message?.includes('Not enough teams') ||
+      err.message?.includes('match duration') ||
+      err.message?.includes('totalMatchMinutes');
+    if (isValidation) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('[admin] tournament/start failed:', err);
+    res.status(500).json({ error: err.message || 'Failed to start tournament' });
   }
 };
 
