@@ -26,7 +26,8 @@ const startSimulation = async (req, res) => {
   try {
     const loop = getSimulationLoop();
     const eventBus = getEventBus();
-    const tournamentManager = new TournamentManager(req.body.rules || {});
+    const totalMatchMinutes = req.body.totalMatchMinutes || undefined;
+    const tournamentManager = new TournamentManager(totalMatchMinutes);
 
     loop.init({ tournamentManager, eventBus });
     await loop.start();
@@ -52,8 +53,9 @@ const stopSimulation = (req, res) => {
 };
 
 /**
- * Force start tournament now
+ * Start tournament now (event-driven flow with inter-round delays)
  * POST /api/admin/tournament/start
+ * Body: { totalMatchMinutes: 8 } (optional, even int 2..20)
  */
 const forceTournamentStart = async (req, res) => {
   try {
@@ -63,11 +65,10 @@ const forceTournamentStart = async (req, res) => {
       return res.status(400).json({ error: 'Simulation not initialized' });
     }
 
-    const state = await loop.tournamentManager.forceStart();
+    const totalMatchMinutes = req.body.totalMatchMinutes || undefined;
+    const state = await loop.tournamentManager.startNow(totalMatchMinutes);
 
-    // Register created matches with loop
-    const matches = loop.tournamentManager.getLiveMatches();
-    loop.registerMatches(matches);
+    // Matches are registered via 'matches_created' event on SimulationLoop.init()
 
     res.json({ success: true, state });
   } catch (err) {
@@ -79,17 +80,21 @@ const forceTournamentStart = async (req, res) => {
  * Cancel current tournament
  * POST /api/admin/tournament/cancel
  */
-const cancelTournament = (req, res) => {
-  const loop = getSimulationLoop();
+const cancelTournament = async (req, res) => {
+  try {
+    const loop = getSimulationLoop();
 
-  if (!loop.tournamentManager) {
-    return res.status(400).json({ error: 'Simulation not initialized' });
+    if (!loop.tournamentManager) {
+      return res.status(400).json({ error: 'Simulation not initialized' });
+    }
+
+    await loop.tournamentManager.cancel();
+    loop.matches.clear();
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  loop.tournamentManager.cancel();
-  loop.matches.clear();
-
-  res.json({ success: true });
 };
 
 /**
@@ -112,9 +117,7 @@ const skipToRound = async (req, res) => {
 
     const state = await loop.tournamentManager.skipToRound(round);
 
-    // Register created matches
-    const matches = loop.tournamentManager.getLiveMatches();
-    loop.registerMatches(matches);
+    // Matches are registered via 'matches_created' event on SimulationLoop.init()
 
     res.json({ success: true, state });
   } catch (err) {

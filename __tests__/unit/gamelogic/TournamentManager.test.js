@@ -1,4 +1,4 @@
-const { TournamentManager, TOURNAMENT_STATES, SCHEDULE, ROUND_NAMES } = require('../../../Gamelogic/simulation/TournamentManager');
+const { TournamentManager, TOURNAMENT_STATES, ROUND_NAMES, ROUND_ORDER, ROUND_SLOT_MAP, BRACKET_STRUCTURE, INTER_ROUND_DELAY_MS, deriveMatchTimings } = require('../../../Gamelogic/simulation/TournamentManager');
 const { MATCH_STATES } = require('../../../Gamelogic/simulation/LiveMatch');
 
 // Mock dependencies
@@ -110,47 +110,27 @@ describe('TournamentManager', () => {
       expect(manager.teams).toEqual([]);
     });
 
-    it('should accept custom rules', () => {
-      const customManager = new TournamentManager({ knockout: false });
-      expect(customManager.rules.knockout).toBe(false);
+    it('should accept custom match minutes', () => {
+      const customManager = new TournamentManager(10);
+      expect(customManager.totalMatchMinutes).toBe(10);
+      expect(customManager.rules).toBeDefined();
     });
   });
 
-  describe('tick - state transitions', () => {
-    it('should transition to SETUP at minute 55', () => {
-      const date = new Date();
-      date.setMinutes(55);
-
-      manager.tick(date.getTime());
-
-      expect(manager.state).toBe(TOURNAMENT_STATES.SETUP);
-    });
-
-    it('should not process same minute twice', () => {
-      const date = new Date();
-      date.setMinutes(55);
-
-      manager.tick(date.getTime());
-      const firstState = manager.state;
-
-      // Tick again at same minute
-      manager.tick(date.getTime());
-
-      expect(manager.state).toBe(firstState);
-    });
-
-    it('should transition through schedule correctly', async () => {
-      // Setup first
+  describe('tick', () => {
+    it('should start next round when inter-round delay expires', async () => {
       await manager._handleSetup();
-      manager.state = TOURNAMENT_STATES.SETUP;
+      await manager._startRound('ROUND_OF_16', Date.now());
+      // Simulate round complete -> delay state
+      manager.state = TOURNAMENT_STATES.INTER_ROUND_DELAY;
+      manager.currentRoundKey = 'ROUND_OF_16';
+      manager.nextRoundStartAt = Date.now() - 1000; // expired
+      manager.roundWinners = manager.roundWinners.slice(0, 8);
 
-      // Simulate minute 0 -> R16
-      const r16Time = new Date();
-      r16Time.setMinutes(0);
-      manager.lastTickMinute = 59; // Reset to allow transition
+      manager.tick(Date.now());
+      await new Promise(resolve => setTimeout(resolve, 50)); // Allow async _startNextRound
 
-      manager.tick(r16Time.getTime());
-      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
+      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_ACTIVE);
     });
   });
 
@@ -289,39 +269,43 @@ describe('TournamentManager', () => {
       expect(manager.completedResults.length).toBe(8);
     });
 
-    it('should advance winners to next round fixtures', async () => {
-      const Fixture = require('../../../models/FixtureModel');
-
+    it('should populate completedResults with winner data', async () => {
       // Mock all matches as finished with home team winning
       for (const fixture of manager.fixtures) {
         if (fixture.match) {
           fixture.match.state = MATCH_STATES.FINISHED;
           fixture.match.score = { home: 2, away: 1 };
+          fixture.match.getWinnerId = () => fixture.home.id;
+          fixture.match.getPenaltyScore = () => null;
         }
       }
 
       await manager._collectWinnersAndAdvance();
 
-      // Should have updated next round fixtures
-      expect(Fixture.updateHomeTeam).toHaveBeenCalled();
-      expect(Fixture.updateAwayTeam).toHaveBeenCalled();
+      expect(manager.completedResults.length).toBe(8);
+      expect(manager.completedResults[0]).toMatchObject({
+        winnerId: expect.any(Number),
+        bracketSlot: expect.any(String),
+        score: { home: 2, away: 1 }
+      });
     });
   });
 
-  describe('onMatchesComplete', () => {
+  describe('onMatchFinalized', () => {
     beforeEach(async () => {
       await manager._handleSetup();
       await manager._startRound('ROUND_OF_16', Date.now());
     });
 
-    it('should mark fixtures as completed', () => {
+    it('should mark fixture as completed', async () => {
       const fixtureId = manager.fixtures[0].fixtureId;
 
-      manager.onMatchesComplete([{
+      await manager.onMatchFinalized({
         fixtureId,
         winnerId: 1,
-        score: { home: 2, away: 1 }
-      }]);
+        score: { home: 2, away: 1 },
+        penaltyScore: null
+      });
 
       expect(manager.fixtures[0].completed).toBe(true);
     });
@@ -330,11 +314,11 @@ describe('TournamentManager', () => {
   describe('getState', () => {
     it('should return current tournament state', async () => {
       await manager._handleSetup();
-      manager.state = TOURNAMENT_STATES.SETUP; // State is set by tick(), not _handleSetup
+      manager.state = TOURNAMENT_STATES.SETUP;
 
       const state = manager.getState();
 
-      expect(state).toEqual({
+      expect(state).toMatchObject({
         state: TOURNAMENT_STATES.SETUP,
         tournamentId: expect.any(Number),
         currentRound: null,
@@ -344,17 +328,19 @@ describe('TournamentManager', () => {
         runnerUp: null,
         lastCompleted: null
       });
+      expect(state.totalMatchMinutes).toBeDefined();
+      expect(state.currentRoundKey).toBeDefined();
     });
 
     it('should include round info when active', async () => {
       await manager._handleSetup();
       await manager._startRound('ROUND_OF_16', Date.now());
-      manager.state = TOURNAMENT_STATES.ROUND_OF_16;
 
       const state = manager.getState();
 
-      expect(state.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
+      expect(state.state).toBe(TOURNAMENT_STATES.ROUND_ACTIVE);
       expect(state.currentRound).toBe('Round of 16');
+      expect(state.currentRoundKey).toBe('ROUND_OF_16');
       expect(state.activeMatches).toBe(8);
     });
   });
@@ -379,7 +365,7 @@ describe('TournamentManager', () => {
       it('should start tournament immediately', async () => {
         const state = await manager.forceStart();
 
-        expect(state.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
+        expect(state.state).toBe(TOURNAMENT_STATES.ROUND_ACTIVE);
         expect(manager.tournamentId).toBeTruthy();
         expect(manager.liveMatches.length).toBe(8);
       });
@@ -398,7 +384,7 @@ describe('TournamentManager', () => {
         const cancelHandler = jest.fn();
         manager.on('tournament_cancelled', cancelHandler);
 
-        manager.cancel();
+        await manager.cancel();
 
         expect(manager.state).toBe(TOURNAMENT_STATES.IDLE);
         expect(manager.liveMatches.length).toBe(0);
@@ -410,7 +396,8 @@ describe('TournamentManager', () => {
       it('should skip to specified round', async () => {
         const state = await manager.skipToRound('FINAL');
 
-        expect(state.state).toBe(TOURNAMENT_STATES.FINAL);
+        expect(state.state).toBe(TOURNAMENT_STATES.ROUND_ACTIVE);
+        expect(state.currentRoundKey).toBe('FINAL');
         expect(manager.liveMatches.length).toBe(1);
       });
 
@@ -420,23 +407,13 @@ describe('TournamentManager', () => {
     });
   });
 
-  describe('SCHEDULE', () => {
-    it('should have correct timing for all rounds', () => {
-      expect(SCHEDULE.SETUP.startMinute).toBe(55);
-      expect(SCHEDULE.ROUND_OF_16.startMinute).toBe(0);
-      expect(SCHEDULE.QUARTER_FINALS.startMinute).toBe(15);
-      expect(SCHEDULE.SEMI_FINALS.startMinute).toBe(30);
-      expect(SCHEDULE.FINAL.startMinute).toBe(45);
+  describe('constants', () => {
+    it('should have correct round order', () => {
+      expect(ROUND_ORDER).toEqual(['ROUND_OF_16', 'QUARTER_FINALS', 'SEMI_FINALS', 'FINAL']);
     });
 
-    it('should have non-overlapping time slots', () => {
-      const slots = Object.entries(SCHEDULE)
-        .filter(([key]) => key !== 'SETUP')
-        .map(([key, val]) => ({ key, ...val }));
-
-      for (let i = 0; i < slots.length - 1; i++) {
-        expect(slots[i].endMinute).toBeLessThanOrEqual(slots[i + 1].startMinute);
-      }
+    it('should have correct inter-round delay', () => {
+      expect(INTER_ROUND_DELAY_MS).toBe(300000);
     });
   });
 
@@ -449,101 +426,23 @@ describe('TournamentManager', () => {
     });
   });
 
-  describe('_allMatchesFinished - blocking round transitions', () => {
+  describe('_allMatchesFinished', () => {
     beforeEach(async () => {
       await manager._handleSetup();
       await manager._startRound('ROUND_OF_16', Date.now());
-      manager.state = TOURNAMENT_STATES.ROUND_OF_16;
     });
 
-    it('should block transition to QF_BREAK when matches are in extra time', () => {
-      // Set most matches to FINISHED but one to EXTRA_TIME_1
-      for (let i = 0; i < manager.liveMatches.length - 1; i++) {
-        manager.liveMatches[i].state = MATCH_STATES.FINISHED;
-        manager.liveMatches[i].score = { home: 2, away: 1 };
-      }
-      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.EXTRA_TIME_1;
-
-      // Try to transition at minute :09 (QF_BREAK time)
-      const breakTime = new Date();
-      breakTime.setMinutes(9);
-      manager.lastTickMinute = 8;
-
-      manager.tick(breakTime.getTime());
-
-      // Should still be in ROUND_OF_16 - transition blocked
-      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
-    });
-
-    it('should block transition to QF_BREAK when matches are in penalties', () => {
-      // Set most matches to FINISHED but one to PENALTIES
-      for (let i = 0; i < manager.liveMatches.length - 1; i++) {
-        manager.liveMatches[i].state = MATCH_STATES.FINISHED;
-        manager.liveMatches[i].score = { home: 2, away: 1 };
-      }
-      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.PENALTIES;
-
-      // Try to transition at minute :09
-      const breakTime = new Date();
-      breakTime.setMinutes(9);
-      manager.lastTickMinute = 8;
-
-      manager.tick(breakTime.getTime());
-
-      // Should still be in ROUND_OF_16 - transition blocked
-      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
-    });
-
-    it('should allow transition to QF_BREAK when all matches are finished with winners', () => {
-      // Set all matches to FINISHED with a winner
-      for (const match of manager.liveMatches) {
-        match.state = MATCH_STATES.FINISHED;
-        match.score = { home: 2, away: 1 };
-      }
-
-      // Try to transition at minute :09
-      const breakTime = new Date();
-      breakTime.setMinutes(9);
-      manager.lastTickMinute = 8;
-
-      manager.tick(breakTime.getTime());
-
-      // Should have transitioned to QF_BREAK
-      expect(manager.state).toBe(TOURNAMENT_STATES.QF_BREAK);
-    });
-
-    it('should return true from _allMatchesFinished when no matches exist', () => {
+    it('should return true when no matches exist', () => {
       manager.liveMatches = [];
       expect(manager._allMatchesFinished()).toBe(true);
     });
 
-    it('should return false from _allMatchesFinished when match is in SECOND_HALF', () => {
+    it('should return false when match is in SECOND_HALF', () => {
       manager.liveMatches[0].state = MATCH_STATES.SECOND_HALF;
       expect(manager._allMatchesFinished()).toBe(false);
     });
 
-    it('should block transition when a match is still SCHEDULED (never started)', () => {
-      // Set most matches to FINISHED but leave one in SCHEDULED state
-      for (let i = 0; i < manager.liveMatches.length - 1; i++) {
-        manager.liveMatches[i].state = MATCH_STATES.FINISHED;
-        manager.liveMatches[i].score = { home: 2, away: 1 };
-      }
-      // This match never started - critical bug condition
-      manager.liveMatches[manager.liveMatches.length - 1].state = MATCH_STATES.SCHEDULED;
-
-      // Try to transition at minute :09
-      const breakTime = new Date();
-      breakTime.setMinutes(9);
-      manager.lastTickMinute = 8;
-
-      manager.tick(breakTime.getTime());
-
-      // Should still be in ROUND_OF_16 - transition blocked because match never started
-      expect(manager.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
-    });
-
-    it('should return false from _allMatchesFinished when match is SCHEDULED', () => {
-      // All matches finished except one that never started
+    it('should return false when match is SCHEDULED', () => {
       for (let i = 0; i < manager.liveMatches.length - 1; i++) {
         manager.liveMatches[i].state = MATCH_STATES.FINISHED;
         manager.liveMatches[i].score = { home: 2, away: 1 };

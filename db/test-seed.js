@@ -91,13 +91,7 @@ const seedTestData = async (customTeamsData = null) => {
 const cleanupTestDatabase = async () => {
     try {
         console.log('Cleaning up test database...');
-        
-        // Clear all data
-        await db.query('DELETE FROM players;');
-        await db.query('DELETE FROM teams;');
-        await db.query('ALTER SEQUENCE teams_team_id_seq RESTART WITH 1;');
-        await db.query('ALTER SEQUENCE players_player_id_seq RESTART WITH 1;');
-        
+        await db.query('TRUNCATE TABLE players, teams RESTART IDENTITY CASCADE;');
         console.log('Test database cleaned up successfully!');
         return true;
     } catch (error) {

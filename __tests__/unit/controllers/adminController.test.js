@@ -173,29 +173,27 @@ describe('adminController', () => {
 
     it('should force start tournament', async () => {
       const mockTM = {
-        forceStart: jest.fn().mockResolvedValue({ state: 'ROUND_OF_16' }),
-        getLiveMatches: jest.fn().mockReturnValue([{ fixtureId: 1 }])
+        startNow: jest.fn().mockResolvedValue({ state: 'ROUND_ACTIVE' })
       };
       mockLoop.tournamentManager = mockTM;
 
       await forceTournamentStart(mockReq, mockRes);
 
-      expect(mockTM.forceStart).toHaveBeenCalled();
-      expect(mockLoop.registerMatches).toHaveBeenCalled();
+      expect(mockTM.startNow).toHaveBeenCalled();
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
-        state: { state: 'ROUND_OF_16' }
+        state: { state: 'ROUND_ACTIVE' }
       });
     });
   });
 
   describe('cancelTournament', () => {
-    it('should cancel tournament and clear matches', () => {
-      const mockTM = { cancel: jest.fn() };
+    it('should cancel tournament and clear matches', async () => {
+      const mockTM = { cancel: jest.fn().mockResolvedValue(undefined) };
       mockLoop.tournamentManager = mockTM;
       mockLoop.matches = new Map([[1, {}]]);
 
-      cancelTournament(mockReq, mockRes);
+      await cancelTournament(mockReq, mockRes);
 
       expect(mockTM.cancel).toHaveBeenCalled();
       expect(mockLoop.matches.size).toBe(0);

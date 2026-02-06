@@ -140,7 +140,9 @@ describe('EventBus', () => {
         writeHead: jest.fn(),
         write: jest.fn(),
         end: jest.fn(),
-        on: jest.fn()
+        on: jest.fn(),
+        flushHeaders: jest.fn(),
+        writable: true
       };
     });
 
@@ -202,7 +204,7 @@ describe('EventBus', () => {
 
     describe('broadcast', () => {
       it('should broadcast to all clients', () => {
-        const mockRes2 = { writeHead: jest.fn(), write: jest.fn(), on: jest.fn() };
+        const mockRes2 = { writeHead: jest.fn(), write: jest.fn(), on: jest.fn(), flushHeaders: jest.fn(), writable: true };
 
         eventBus.addClient(mockRes);
         eventBus.addClient(mockRes2);
@@ -218,7 +220,7 @@ describe('EventBus', () => {
       });
 
       it('should filter by fixtureId', () => {
-        const mockRes2 = { writeHead: jest.fn(), write: jest.fn(), on: jest.fn() };
+        const mockRes2 = { writeHead: jest.fn(), write: jest.fn(), on: jest.fn(), flushHeaders: jest.fn(), writable: true };
 
         eventBus.addClient(mockRes, { fixtureId: 1 });
         eventBus.addClient(mockRes2, { fixtureId: 2 });
@@ -233,7 +235,7 @@ describe('EventBus', () => {
       });
 
       it('should filter by tournamentId', () => {
-        const mockRes2 = { writeHead: jest.fn(), write: jest.fn(), on: jest.fn() };
+        const mockRes2 = { writeHead: jest.fn(), write: jest.fn(), on: jest.fn(), flushHeaders: jest.fn(), writable: true };
 
         eventBus.addClient(mockRes, { tournamentId: 100 });
         eventBus.addClient(mockRes2, { tournamentId: 200 });
@@ -369,7 +371,9 @@ describe('EventBus', () => {
         writeHead: jest.fn(),
         write: jest.fn(),
         end: jest.fn(),
-        on: jest.fn()
+        on: jest.fn(),
+        flushHeaders: jest.fn(),
+        writable: true
       };
       eventBus.addClient(mockRes);
 
@@ -386,7 +390,9 @@ describe('EventBus', () => {
         writeHead: jest.fn(),
         write: jest.fn(),
         end: jest.fn(),
-        on: jest.fn()
+        on: jest.fn(),
+        flushHeaders: jest.fn(),
+        writable: true
       };
 
       eventBus.addClient(mockRes);
