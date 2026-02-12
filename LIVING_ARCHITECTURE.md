@@ -114,6 +114,7 @@
 | `db/migrations/001_match_system.sql` | fixtures, match_events, match_reports, fixture_odds. | — |
 | `db/migrations/002_add_event_types.sql` | Additional event type enums. | 001 |
 | `db/migrations/003_bracket_system.sql` | Bracket positioning columns. | 001 |
+| `db/migrations/004_tournament_state.sql` | Tournament state table for event-driven scheduling. | — |
 
 ---
 
@@ -215,12 +216,27 @@
 |------|---------|
 | `docs/old/DEPLOYMENT.md` | Legacy deployment docs. |
 | `docs/old/TESTING.md` | Legacy testing docs. |
-| `docs/old/TEST_FAILURE_REPORT.md` | Test failure report. |
-| `docs/old/TEST_FIXES_SUMMARY.md` | Test fixes summary. |
-| `docs/old/TEST_MIGRATION_REPORT.md` | Test migration report. |
-| `docs/old/critical_bug_01_draw_bug.md` | Draw bug analysis. |
 | `docs/old/highlight.md` | Highlight feature notes. |
-| `docs/old/highlights_problem.md` | Highlights problem. |
+
+---
+
+## Documentation — docs/obsolete/
+
+| File | Purpose |
+|------|---------|
+| `docs/obsolete/CODE_REVIEW_REPORT.md` | Code review notes. |
+| `docs/obsolete/README.md` | Obsolete docs index. |
+| `docs/obsolete/TEST_FAILURE_REPORT.md` | Test failure report. |
+| `docs/obsolete/TEST_FIXES_SUMMARY.md` | Test fixes summary. |
+| `docs/obsolete/TEST_MIGRATION_REPORT.md` | Test migration report. |
+| `docs/obsolete/backend_changes.md` | Change log. |
+| `docs/obsolete/claude_instructions.md` | Claude-specific instructions. |
+| `docs/obsolete/claude_phase1_validation_prompt.md` | Phase 1 validation prompt. |
+| `docs/obsolete/critical_bug_01_draw_bug.md` | Draw bug analysis. |
+| `docs/obsolete/fix-live-match-display.plan.md` | Fix plan for live match display. |
+| `docs/obsolete/highlights_problem.md` | Highlights problem. |
+| `docs/obsolete/latest_changes.md` | Recent changes. |
+| `docs/obsolete/sse_fix.md` | SSE fix notes. |
 
 ---
 
@@ -310,4 +326,4 @@ listen.js → SimulationLoop.init() → TournamentManager
 
 ---
 
-*Last updated: 2025-02-11*
+*Last updated: 2025-02-12*

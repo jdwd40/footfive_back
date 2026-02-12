@@ -12,7 +12,7 @@ Three LLMs (Claude, Codex, Gemini) analyzed a "clock sync bug" across 9 document
 
 **What's actually true:** 2-second delay between same-minute events is **intentional UX design**
 
-From highlights_problem.md (which we misread):
+From docs/obsolete/highlights_problem.md (which we misread):
 > Lines 430-433 in `app.js` added 2000ms delay for each subsequent event in the same minute
 
 This was described as causing issues, but it's actually **working as designed**.

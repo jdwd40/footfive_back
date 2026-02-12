@@ -239,25 +239,26 @@ class SimulationLoop extends EventEmitter {
   }
 
   /**
-   * Check if matches have completed and notify tournament manager
+   * Check if matches have completed and notify tournament manager.
+   * Calls onMatchFinalized() once per finished match (not batched).
    */
   checkMatchCompletion() {
-    const justFinished = [];
-
     for (const [fixtureId, match] of this.matches) {
       if (match.isFinished() && !match.completionNotified) {
         match.completionNotified = true;
-        justFinished.push({
-          fixtureId,
-          winnerId: match.getWinnerId(),
-          score: match.getScore(),
-          penaltyScore: match.getPenaltyScore()
-        });
-      }
-    }
 
-    if (justFinished.length > 0 && this.tournamentManager) {
-      this.tournamentManager.onMatchesComplete(justFinished);
+        if (this.tournamentManager) {
+          const result = {
+            fixtureId,
+            winnerId: match.getWinnerId(),
+            score: match.getScore(),
+            penaltyScore: match.getPenaltyScore()
+          };
+          this.tournamentManager.onMatchFinalized(result).catch(err => {
+            console.error('[SimulationLoop] Error in onMatchFinalized:', err);
+          });
+        }
+      }
     }
   }
 

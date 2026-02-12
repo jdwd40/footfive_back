@@ -30,7 +30,7 @@
 | 1 | Clock drift >3sec causes poor UX | All LLM analyses | Waste 2-12 weeks fixing non-issue |
 | 2 | Frontend can't handle 200+ events | Claude R3, Codex R4 | Over-engineer or under-deliver |
 | 3 | Users want more detailed highlights | All LLM analyses | Build unwanted features |
-| 4 | Current system has timing bugs | highlights_problem.md | Fix wrong problem |
+| 4 | Current system has timing bugs | docs/obsolete/highlights_problem.md | Fix wrong problem |
 | 5 | Event chains improve satisfaction | Consensus view | Complex solution for no benefit |
 
 ### Success/Failure Criteria

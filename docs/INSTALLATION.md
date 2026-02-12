@@ -523,7 +523,7 @@ After installation, you can:
 - **Main Documentation:** `backend_documentation.md`
 - **Testing Guide:** `TESTING.md`
 - **Test Server Guide:** `test-server/README.md`
-- **Backend Changes:** `backend_changes.md`
+- **Backend Changes (historical):** `obsolete/backend_changes.md`
 
 ---
 

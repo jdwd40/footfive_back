@@ -41,13 +41,16 @@ function stopSimulation(req, res) {
 }
 
 async function startTournament(req, res) {
-  const loop = getSimulationLoop();
-
-  if (!loop.tournamentManager) {
-    return res.status(400).json({ error: 'Simulation not initialized' });
-  }
-
   try {
+    const loop = getSimulationLoop();
+
+    if (!loop.tournamentManager) {
+      return res.status(400).json({
+        error: 'Simulation not initialized',
+        hint: 'Call POST /api/admin/simulation/start first, then POST /api/admin/tournament/start'
+      });
+    }
+
     const result = await loop.tournamentManager.startTournament();
     const matches = loop.tournamentManager.getLiveMatches();
     loop.registerMatches(matches);
@@ -88,9 +91,7 @@ async function skipToRound(req, res) {
 
   try {
     const state = await loop.tournamentManager.skipToRound(round);
-    const matches = loop.tournamentManager.getLiveMatches();
-    loop.registerMatches(matches);
-
+    // Matches are registered via 'matches_created' event on SimulationLoop.init()
     res.json({ success: true, state });
   } catch (err) {
     console.error('[Admin] skipToRound error:', err);

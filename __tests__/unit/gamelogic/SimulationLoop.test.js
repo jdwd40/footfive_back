@@ -237,7 +237,7 @@ describe('SimulationLoop', () => {
       const mockTournamentManager = {
         on: jest.fn(),
         tick: jest.fn(),
-        onMatchesComplete: jest.fn(),
+        onMatchFinalized: jest.fn().mockResolvedValue(undefined),
         recover: jest.fn().mockResolvedValue(false)
       };
 
@@ -257,19 +257,19 @@ describe('SimulationLoop', () => {
       await loop.start();
       loop.tick();
 
-      expect(mockTournamentManager.onMatchesComplete).toHaveBeenCalledWith([{
+      expect(mockTournamentManager.onMatchFinalized).toHaveBeenCalledWith({
         fixtureId: 1,
         winnerId: 5,
         score: { home: 2, away: 1 },
         penaltyScore: null
-      }]);
+      });
     });
 
     it('should only notify once per match', async () => {
       const mockTournamentManager = {
         on: jest.fn(),
         tick: jest.fn(),
-        onMatchesComplete: jest.fn(),
+        onMatchFinalized: jest.fn().mockResolvedValue(undefined),
         recover: jest.fn().mockResolvedValue(false)
       };
 
@@ -292,7 +292,7 @@ describe('SimulationLoop', () => {
       loop.tick();
       loop.tick();
 
-      expect(mockTournamentManager.onMatchesComplete).toHaveBeenCalledTimes(1);
+      expect(mockTournamentManager.onMatchFinalized).toHaveBeenCalledTimes(1);
     });
   });
 });

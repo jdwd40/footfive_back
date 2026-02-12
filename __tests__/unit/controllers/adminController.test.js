@@ -193,12 +193,12 @@ describe('adminController', () => {
   });
 
   describe('cancelTournament', () => {
-    it('should cancel tournament and clear matches', () => {
-      const mockTM = { cancel: jest.fn() };
+    it('should cancel tournament and clear matches', async () => {
+      const mockTM = { cancel: jest.fn().mockResolvedValue(undefined) };
       mockLoop.tournamentManager = mockTM;
       mockLoop.matches = new Map([[1, {}]]);
 
-      cancelTournament(mockReq, mockRes);
+      await cancelTournament(mockReq, mockRes);
 
       expect(mockTM.cancel).toHaveBeenCalled();
       expect(mockLoop.matches.size).toBe(0);

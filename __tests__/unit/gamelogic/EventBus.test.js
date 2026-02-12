@@ -132,6 +132,154 @@ describe('EventBus', () => {
     });
   });
 
+  describe('SSE clients', () => {
+    let mockRes;
+
+    beforeEach(() => {
+      mockRes = {
+        writeHead: jest.fn(),
+        write: jest.fn(),
+        end: jest.fn(),
+        on: jest.fn(),
+        flushHeaders: jest.fn(),
+        writable: true
+      };
+    });
+
+    describe('addClient', () => {
+      it('should setup SSE headers', () => {
+        eventBus.addClient(mockRes);
+
+        expect(mockRes.writeHead).toHaveBeenCalledWith(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no'
+        });
+      });
+
+      it('should return client ID', () => {
+        const clientId = eventBus.addClient(mockRes);
+        expect(clientId).toMatch(/^client_\d+$/);
+      });
+
+      it('should send connected event', () => {
+        eventBus.addClient(mockRes);
+
+        expect(mockRes.write).toHaveBeenCalledWith('event: connected\n');
+        expect(mockRes.write).toHaveBeenCalledWith(expect.stringContaining('data: '));
+      });
+
+      it('should register close handler', () => {
+        eventBus.addClient(mockRes);
+        expect(mockRes.on).toHaveBeenCalledWith('close', expect.any(Function));
+      });
+
+      it('should track client count', () => {
+        eventBus.addClient(mockRes);
+        expect(eventBus.stats.clientsConnected).toBe(1);
+
+        const mockRes2 = { ...mockRes, on: jest.fn() };
+        eventBus.addClient(mockRes2);
+        expect(eventBus.stats.clientsConnected).toBe(2);
+      });
+    });
+
+    describe('removeClient', () => {
+      it('should remove client', () => {
+        const clientId = eventBus.addClient(mockRes);
+        expect(eventBus.clients.size).toBe(1);
+
+        eventBus.removeClient(clientId);
+        expect(eventBus.clients.size).toBe(0);
+      });
+
+      it('should update stats', () => {
+        const clientId = eventBus.addClient(mockRes);
+        eventBus.removeClient(clientId);
+
+        expect(eventBus.stats.clientsConnected).toBe(0);
+      });
+    });
+
+    describe('broadcast', () => {
+      it('should broadcast to all clients', () => {
+        const mockRes2 = { writeHead: jest.fn(), write: jest.fn(), on: jest.fn(), flushHeaders: jest.fn(), writable: true };
+
+        eventBus.addClient(mockRes);
+        eventBus.addClient(mockRes2);
+
+        // Clear initial connection writes
+        mockRes.write.mockClear();
+        mockRes2.write.mockClear();
+
+        eventBus.emit({ type: 'goal', fixtureId: 1 });
+
+        expect(mockRes.write).toHaveBeenCalled();
+        expect(mockRes2.write).toHaveBeenCalled();
+      });
+
+      it('should filter by fixtureId', () => {
+        const mockRes2 = { writeHead: jest.fn(), write: jest.fn(), on: jest.fn(), flushHeaders: jest.fn(), writable: true };
+
+        eventBus.addClient(mockRes, { fixtureId: 1 });
+        eventBus.addClient(mockRes2, { fixtureId: 2 });
+
+        mockRes.write.mockClear();
+        mockRes2.write.mockClear();
+
+        eventBus.emit({ type: 'goal', fixtureId: 1 });
+
+        expect(mockRes.write).toHaveBeenCalled();
+        expect(mockRes2.write).not.toHaveBeenCalled();
+      });
+
+      it('should filter by tournamentId', () => {
+        const mockRes2 = { writeHead: jest.fn(), write: jest.fn(), on: jest.fn(), flushHeaders: jest.fn(), writable: true };
+
+        eventBus.addClient(mockRes, { tournamentId: 100 });
+        eventBus.addClient(mockRes2, { tournamentId: 200 });
+
+        mockRes.write.mockClear();
+        mockRes2.write.mockClear();
+
+        eventBus.emit({ type: 'round_start', tournamentId: 100 });
+
+        expect(mockRes.write).toHaveBeenCalled();
+        expect(mockRes2.write).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('sendCatchup', () => {
+      it('should send missed events', () => {
+        eventBus.emit({ type: 'goal', fixtureId: 1 });
+        eventBus.emit({ type: 'foul', fixtureId: 1 });
+        eventBus.emit({ type: 'goal', fixtureId: 1 });
+
+        const clientId = eventBus.addClient(mockRes);
+        mockRes.write.mockClear();
+
+        eventBus.sendCatchup(clientId, 0); // Get events after seq 0
+
+        // Should receive 2 events (seq 1 and 2)
+        expect(mockRes.write).toHaveBeenCalledTimes(4); // 2 events * 2 writes each
+      });
+
+      it('should respect client filters in catchup', () => {
+        eventBus.emit({ type: 'goal', fixtureId: 1 });
+        eventBus.emit({ type: 'goal', fixtureId: 2 });
+
+        const clientId = eventBus.addClient(mockRes, { fixtureId: 1 });
+        mockRes.write.mockClear();
+
+        eventBus.sendCatchup(clientId, -1);
+
+        // Should only receive fixture 1 event
+        expect(mockRes.write).toHaveBeenCalledTimes(2); // 1 event * 2 writes
+      });
+    });
+  });
+
   describe('persistence', () => {
     const MatchEvent = require('../../../models/MatchEventModel');
 
@@ -224,6 +372,22 @@ describe('EventBus', () => {
       expect(eventBus.eventBuffer.length).toBe(0);
       expect(eventBus.sequence).toBe(0);
       expect(eventBus.stats.eventsEmitted).toBe(0);
+    });
+
+    it('should close client connections', () => {
+      const mockRes = {
+        writeHead: jest.fn(),
+        write: jest.fn(),
+        end: jest.fn(),
+        on: jest.fn(),
+        flushHeaders: jest.fn(),
+        writable: true
+      };
+
+      eventBus.addClient(mockRes);
+      eventBus.clear();
+
+      expect(mockRes.end).toHaveBeenCalled();
     });
   });
 

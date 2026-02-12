@@ -110,9 +110,10 @@ describe('TournamentManager', () => {
       expect(manager.teams).toEqual([]);
     });
 
-    it('should accept custom rules', () => {
-      const customManager = new TournamentManager({ knockout: false });
-      expect(customManager.rules.knockout).toBe(false);
+    it('should accept custom match minutes', () => {
+      const customManager = new TournamentManager(10);
+      expect(customManager.totalMatchMinutes).toBe(10);
+      expect(customManager.rules).toBeDefined();
     });
   });
 
@@ -223,20 +224,21 @@ describe('TournamentManager', () => {
     });
   });
 
-  describe('onMatchesComplete', () => {
+  describe('onMatchFinalized', () => {
     beforeEach(async () => {
       await manager._handleSetup();
       await manager._startRound('ROUND_OF_16', Date.now());
     });
 
-    it('should mark fixtures as completed', () => {
+    it('should mark fixture as completed', async () => {
       const fixtureId = manager.fixtures[0].fixtureId;
 
-      manager.onMatchesComplete([{
+      await manager.onMatchFinalized({
         fixtureId,
         winnerId: 1,
-        score: { home: 2, away: 1 }
-      }]);
+        score: { home: 2, away: 1 },
+        penaltyScore: null
+      });
 
       expect(manager.fixtures[0].completed).toBe(true);
     });
@@ -249,7 +251,7 @@ describe('TournamentManager', () => {
 
       const state = manager.getState();
 
-      expect(state).toEqual({
+      expect(state).toMatchObject({
         state: TOURNAMENT_STATES.SETUP,
         tournamentId: expect.any(Number),
         currentRound: null,
@@ -259,17 +261,19 @@ describe('TournamentManager', () => {
         runnerUp: null,
         lastCompleted: null
       });
+      expect(state.totalMatchMinutes).toBeDefined();
+      expect(state.currentRoundKey).toBeDefined();
     });
 
     it('should include round info when active', async () => {
       await manager._handleSetup();
       await manager._startRound('ROUND_OF_16', Date.now());
-      manager.state = TOURNAMENT_STATES.ROUND_OF_16;
 
       const state = manager.getState();
 
-      expect(state.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
+      expect(state.state).toBe(TOURNAMENT_STATES.ROUND_ACTIVE);
       expect(state.currentRound).toBe('Round of 16');
+      expect(state.currentRoundKey).toBe('ROUND_OF_16');
       expect(state.activeMatches).toBe(8);
     });
   });
@@ -294,7 +298,7 @@ describe('TournamentManager', () => {
       it('should start tournament immediately', async () => {
         const state = await manager.forceStart();
 
-        expect(state.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
+        expect(state.state).toBe(TOURNAMENT_STATES.ROUND_ACTIVE);
         expect(manager.tournamentId).toBeTruthy();
         expect(manager.liveMatches.length).toBe(8);
       });
@@ -313,7 +317,7 @@ describe('TournamentManager', () => {
         const cancelHandler = jest.fn();
         manager.on('tournament_cancelled', cancelHandler);
 
-        manager.cancel();
+        await manager.cancel();
 
         expect(manager.state).toBe(TOURNAMENT_STATES.IDLE);
         expect(manager.liveMatches.length).toBe(0);
@@ -325,7 +329,8 @@ describe('TournamentManager', () => {
       it('should skip to specified round', async () => {
         const state = await manager.skipToRound('FINAL');
 
-        expect(state.state).toBe(TOURNAMENT_STATES.FINAL);
+        expect(state.state).toBe(TOURNAMENT_STATES.ROUND_ACTIVE);
+        expect(state.currentRoundKey).toBe('FINAL');
         expect(manager.liveMatches.length).toBe(1);
       });
 
@@ -348,7 +353,6 @@ describe('TournamentManager', () => {
     beforeEach(async () => {
       await manager._handleSetup();
       await manager._startRound('ROUND_OF_16', Date.now());
-      manager.state = TOURNAMENT_STATES.ROUND_OF_16;
     });
 
     it('should return true when no matches exist', () => {

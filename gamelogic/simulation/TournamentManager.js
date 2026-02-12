@@ -531,6 +531,17 @@ class TournamentManager extends EventEmitter {
     }
   }
 
+  /**
+   * Called by SimulationLoop when a match finishes (one at a time).
+   * Marks the fixture completed.
+   */
+  async onMatchFinalized(result) {
+    const fixture = this.fixtures.find(f => f.fixtureId === result.fixtureId);
+    if (fixture) {
+      fixture.completed = true;
+    }
+  }
+
   getLiveMatches() {
     return this.liveMatches.filter(m => !m.isFinished());
   }
