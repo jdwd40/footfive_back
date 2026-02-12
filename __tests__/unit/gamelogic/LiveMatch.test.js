@@ -255,6 +255,11 @@ describe('LiveMatch', () => {
       match.tick(startTime + 500 * 1000);
       expect(match.tickElapsed).toBe(500);
     });
+
+    it('should emit match_recap when skipping multiple minutes', () => {
+      const events = match.tick(startTime + 300 * 1000);
+      expect(events.some(e => e.type === EVENT_TYPES.MATCH_RECAP)).toBe(true);
+    });
   });
 
   describe('score tracking', () => {
@@ -367,6 +372,17 @@ describe('LiveMatch', () => {
       expect(events.length).toBe(1);
       expect([EVENT_TYPES.SHOOTOUT_GOAL, EVENT_TYPES.SHOOTOUT_MISS, EVENT_TYPES.SHOOTOUT_SAVE])
         .toContain(events[0].type);
+      expect(events[0]).toEqual(expect.objectContaining({
+        shootoutRound: 1,
+        kickIndex: 1,
+        isSuddenDeath: false
+      }));
+    });
+
+    it('should emit walkup micro-event before kick outcome tick', () => {
+      match.tickElapsed = 812; // et2End=810, interval=3 => walkup tick
+      const events = match._processShootoutTick();
+      expect(events[0].type).toBe(EVENT_TYPES.SHOOTOUT_WALKUP);
     });
 
     it('should alternate between teams', () => {

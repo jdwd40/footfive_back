@@ -110,9 +110,10 @@ describe('TournamentManager', () => {
       expect(manager.teams).toEqual([]);
     });
 
-    it('should accept custom match minutes', () => {
-      const customManager = new TournamentManager(10);
-      expect(customManager.totalMatchMinutes).toBe(10);
+    it('should accept custom rules', () => {
+      const customManager = new TournamentManager({ knockout: false, penaltiesEnabled: false });
+      expect(customManager.rules.knockout).toBe(false);
+      expect(customManager.rules.penaltiesEnabled).toBe(false);
       expect(customManager.rules).toBeDefined();
     });
   });
@@ -261,19 +262,18 @@ describe('TournamentManager', () => {
         runnerUp: null,
         lastCompleted: null
       });
-      expect(state.totalMatchMinutes).toBeDefined();
-      expect(state.currentRoundKey).toBeDefined();
+      expect(state.currentRound).toBeNull();
     });
 
     it('should include round info when active', async () => {
       await manager._handleSetup();
+      manager.state = TOURNAMENT_STATES.ROUND_OF_16;
       await manager._startRound('ROUND_OF_16', Date.now());
 
       const state = manager.getState();
 
-      expect(state.state).toBe(TOURNAMENT_STATES.ROUND_ACTIVE);
+      expect(state.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
       expect(state.currentRound).toBe('Round of 16');
-      expect(state.currentRoundKey).toBe('ROUND_OF_16');
       expect(state.activeMatches).toBe(8);
     });
   });
@@ -298,7 +298,7 @@ describe('TournamentManager', () => {
       it('should start tournament immediately', async () => {
         const state = await manager.forceStart();
 
-        expect(state.state).toBe(TOURNAMENT_STATES.ROUND_ACTIVE);
+        expect(state.state).toBe(TOURNAMENT_STATES.ROUND_OF_16);
         expect(manager.tournamentId).toBeTruthy();
         expect(manager.liveMatches.length).toBe(8);
       });
@@ -329,8 +329,8 @@ describe('TournamentManager', () => {
       it('should skip to specified round', async () => {
         const state = await manager.skipToRound('FINAL');
 
-        expect(state.state).toBe(TOURNAMENT_STATES.ROUND_ACTIVE);
-        expect(state.currentRoundKey).toBe('FINAL');
+        expect(state.state).toBe(TOURNAMENT_STATES.FINAL);
+        expect(state.currentRound).toBe('Final');
         expect(manager.liveMatches.length).toBe(1);
       });
 

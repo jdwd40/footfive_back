@@ -1,4 +1,5 @@
 const EventEmitter = require('events');
+const { EVENT_TYPES } = require('../constants');
 
 // Will be implemented in separate files
 // const TournamentManager = require('./TournamentManager');
@@ -35,6 +36,7 @@ class SimulationLoop extends EventEmitter {
     this.tournamentManager = null;
     this.matches = new Map(); // fixtureId -> LiveMatch
     this.eventBus = null;
+    this.startedFixtureEvents = new Set();
 
     // Recovery tracking
     this.lastTickTime = null;
@@ -52,11 +54,30 @@ class SimulationLoop extends EventEmitter {
     if (this.tournamentManager) {
       this.tournamentManager.on('matches_created', (matches) => {
         this.registerMatches(matches);
+        this._emitTournamentEvent(EVENT_TYPES.MATCHES_CREATED, {
+          tournamentId: this.tournamentManager.tournamentId,
+          count: matches.length,
+          fixtureIds: matches.map(m => m.fixtureId)
+        });
+        for (const match of matches) {
+          this._emitTournamentEvent(EVENT_TYPES.FIXTURE_QUEUED, {
+            tournamentId: this.tournamentManager.tournamentId,
+            fixtureId: match.fixtureId,
+            round: match.bracketSlot || null
+          });
+        }
       });
 
-      this.tournamentManager.on('round_complete', async () => {
+      this.tournamentManager.on('round_complete', async (data = {}) => {
+        this._emitTournamentEvent(EVENT_TYPES.ROUND_COMPLETE, data);
         await this.clearFinishedMatches();
       });
+
+      this.tournamentManager.on('round_start', data => this._emitTournamentEvent(EVENT_TYPES.ROUND_START, data));
+      this.tournamentManager.on('tournament_break_started', data => this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_BREAK_STARTED, data));
+      this.tournamentManager.on('tournament_end', data => this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_END, data));
+      this.tournamentManager.on('tournament_setup', data => this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_SETUP, data));
+      this.tournamentManager.on('tournament_cancelled', data => this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_CANCELLED, data));
     }
 
     return this;
@@ -246,6 +267,13 @@ class SimulationLoop extends EventEmitter {
     for (const [fixtureId, match] of this.matches) {
       if (match.isFinished() && !match.completionNotified) {
         match.completionNotified = true;
+        this._emitTournamentEvent(EVENT_TYPES.FIXTURE_FINAL, {
+          tournamentId: this.tournamentManager?.tournamentId ?? null,
+          fixtureId,
+          winnerId: match.getWinnerId(),
+          score: match.getScore(),
+          penaltyScore: match.getPenaltyScore()
+        });
 
         if (this.tournamentManager) {
           const result = {
@@ -266,10 +294,29 @@ class SimulationLoop extends EventEmitter {
    * Emit event through event bus
    */
   emitEvent(event) {
+    if (event.type === EVENT_TYPES.MATCH_START && !this.startedFixtureEvents.has(event.fixtureId)) {
+      this.startedFixtureEvents.add(event.fixtureId);
+      this._emitTournamentEvent(EVENT_TYPES.FIXTURE_KICKED_OFF, {
+        tournamentId: event.tournamentId ?? this.tournamentManager?.tournamentId ?? null,
+        fixtureId: event.fixtureId
+      });
+    }
     if (this.eventBus) {
       this.eventBus.emit(event);
     }
     this.emit('event', event);
+  }
+
+  _emitTournamentEvent(type, data = {}) {
+    if (!this.eventBus) return;
+    this.eventBus.emit({
+      type,
+      scope: 'tournament',
+      tournamentId: data.tournamentId ?? this.tournamentManager?.tournamentId ?? null,
+      fixtureId: data.fixtureId ?? null,
+      minute: null,
+      payload: data
+    });
   }
 
   /**

@@ -1,26 +1,30 @@
 const EventEmitter = require('events');
 const MatchEvent = require('../../models/MatchEventModel');
+const {
+  EVENT_TYPE_TO_CATEGORIES,
+  PERSISTABLE_MATCH_EVENT_TYPES
+} = require('../constants');
 
-/**
- * Event categories for filtering
- * Highlight events are the key moments frontends typically want to display
- */
-const EVENT_CATEGORIES = {
-  highlights: [
-    // Goals
-    'goal', 'penalty_scored',
-    // Extra time markers
-    'extra_time_start', 'extra_time_half', 'extra_time_end',
-    // Penalty shootout
-    'shootout_start', 'shootout_goal', 'shootout_miss', 'shootout_save', 'shootout_end',
-    // Match end / final score
-    'fulltime', 'match_end'
-  ],
-  goals: ['goal', 'penalty_scored', 'shootout_goal'],
-  shootout: ['shootout_start', 'shootout_goal', 'shootout_miss', 'shootout_save', 'shootout_end'],
-  cards: ['yellow_card', 'red_card'],
-  flow: ['match_start', 'halftime', 'second_half_start', 'fulltime', 'extra_time_start', 'extra_time_half', 'extra_time_end', 'match_end']
-};
+const CANONICAL_SCOPES = new Set(['match', 'tournament', 'system']);
+const BASE_EVENT_KEYS = new Set([
+  'scope',
+  'tournamentId',
+  'fixtureId',
+  'minute',
+  'type',
+  'category',
+  'payload',
+  'seq',
+  'serverTimestamp'
+]);
+
+const EVENT_CATEGORIES = Object.entries(EVENT_TYPE_TO_CATEGORIES).reduce((acc, [type, categories]) => {
+  for (const category of categories) {
+    if (!acc[category]) acc[category] = [];
+    if (!acc[category].includes(type)) acc[category].push(type);
+  }
+  return acc;
+}, {});
 
 /**
  * EventBus - Central event hub for live simulation
@@ -58,13 +62,12 @@ class EventBus extends EventEmitter {
    * Emit an event to all listeners and SSE clients
    * @param {Object} event - Event object from LiveMatch or TournamentManager
    */
-  emit(event) {
-    // Add sequence and timestamp
-    const enrichedEvent = {
-      ...event,
-      seq: this.sequence++,
-      serverTimestamp: Date.now()
-    };
+  emit(rawEvent) {
+    const enrichedEvent = this._normalizeEvent(rawEvent);
+    enrichedEvent.seq = this.sequence++;
+    enrichedEvent.serverTimestamp = Date.now();
+
+    this._validateEvent(enrichedEvent);
 
     this.stats.eventsEmitted++;
 
@@ -72,7 +75,7 @@ class EventBus extends EventEmitter {
     this._addToBuffer(enrichedEvent);
 
     // Persist to DB if it's a match event
-    if (event.fixtureId && this._isPersistableEvent(event)) {
+    if (this._isPersistableEvent(enrichedEvent)) {
       this._persistEvent(enrichedEvent);
     }
 
@@ -81,7 +84,7 @@ class EventBus extends EventEmitter {
 
     // Emit on EventEmitter for internal listeners
     super.emit('event', enrichedEvent);
-    super.emit(event.type, enrichedEvent);
+    super.emit(enrichedEvent.type, enrichedEvent);
 
     return enrichedEvent;
   }
@@ -110,12 +113,14 @@ class EventBus extends EventEmitter {
     }
 
     // Send initial connection event
-    this._sendToClient(res, {
+    const connectedEvent = this._normalizeEvent({
       type: 'connected',
-      clientId,
-      seq: this.sequence,
-      serverTimestamp: Date.now()
+      scope: 'system',
+      payload: { clientId }
     });
+    connectedEvent.seq = this.sequence;
+    connectedEvent.serverTimestamp = Date.now();
+    this._sendToClient(res, connectedEvent);
 
     // Store client
     this.clients.set(clientId, { res, filters });
@@ -224,8 +229,8 @@ class EventBus extends EventEmitter {
       return false;
     }
     if (filters.category) {
-      const categoryTypes = EVENT_CATEGORIES[filters.category];
-      if (categoryTypes && !categoryTypes.includes(event.type)) {
+      const categories = Array.isArray(event.category) ? event.category : [];
+      if (!categories.includes(filters.category)) {
         return false;
       }
     }
@@ -271,17 +276,9 @@ class EventBus extends EventEmitter {
    * Check if event should be persisted to DB
    */
   _isPersistableEvent(event) {
-    const persistableTypes = [
-      'goal', 'penalty_scored', 'penalty_missed', 'penalty_saved',
-      'shot_saved', 'shot_missed', 'shot_blocked',
-      'foul', 'yellow_card', 'red_card', 'corner',
-      'halftime', 'fulltime', 'second_half_start',
-      'extra_time_start', 'extra_time_half', 'extra_time_end',
-      'shootout_start', 'shootout_goal', 'shootout_miss', 'shootout_save', 'shootout_end',
-      'match_start', 'match_end'
-    ];
-
-    return persistableTypes.includes(event.type);
+    return event.scope === 'match' &&
+      event.fixtureId !== null &&
+      PERSISTABLE_MATCH_EVENT_TYPES.has(event.type);
   }
 
   /**
@@ -289,26 +286,27 @@ class EventBus extends EventEmitter {
    */
   async _persistEvent(event) {
     try {
+      const payload = event.payload || {};
+
       // Map event to DB schema
       const dbEvent = {
         fixtureId: event.fixtureId,
         minute: event.minute || 0,
-        second: event.second || 0,
+        second: payload.second || 0,
         eventType: event.type,
-        teamId: event.teamId || null,
-        playerId: event.playerId || null,
-        assistPlayerId: event.assistPlayerId || null,
-        description: event.description || null,
-        xg: event.xg || null,
-        outcome: event.outcome || null,
-        bundleId: event.bundleId || null,
-        bundleStep: event.bundleStep || null,
+        teamId: payload.teamId || null,
+        playerId: payload.playerId || null,
+        assistPlayerId: payload.assistPlayerId || null,
+        description: payload.description || null,
+        xg: payload.xg || null,
+        outcome: payload.outcome || null,
+        bundleId: payload.bundleId || null,
+        bundleStep: payload.bundleStep || null,
         metadata: {
-          displayName: event.displayName,
-          assistName: event.assistName,
-          score: event.score,
-          shootoutScore: event.shootoutScore,
-          round: event.round,
+          ...payload,
+          score: payload.score,
+          shootoutScore: payload.shootoutScore,
+          round: payload.round,
           seq: event.seq
         }
       };
@@ -317,6 +315,68 @@ class EventBus extends EventEmitter {
       this.stats.eventsPersisted++;
     } catch (err) {
       console.error('[EventBus] Failed to persist event:', err.message);
+    }
+  }
+
+  _normalizeEvent(rawEvent = {}) {
+    const type = rawEvent.type || 'unknown';
+    const tournamentId = rawEvent.tournamentId ?? null;
+    const fixtureId = rawEvent.fixtureId ?? null;
+    const scope = this._resolveScope(rawEvent.scope, type, fixtureId, tournamentId);
+    const minute = scope === 'match' ? (rawEvent.minute ?? null) : null;
+    const payload = this._extractPayload(rawEvent);
+
+    return {
+      seq: null,
+      serverTimestamp: null,
+      scope,
+      tournamentId,
+      fixtureId,
+      minute,
+      type,
+      category: EVENT_TYPE_TO_CATEGORIES[type] ? [...EVENT_TYPE_TO_CATEGORIES[type]] : [],
+      payload
+    };
+  }
+
+  _resolveScope(scope, type, fixtureId, tournamentId) {
+    if (CANONICAL_SCOPES.has(scope)) {
+      return scope;
+    }
+    if (type === 'connected') return 'system';
+    if (fixtureId !== null) return 'match';
+    if (tournamentId !== null) return 'tournament';
+    return 'system';
+  }
+
+  _extractPayload(rawEvent) {
+    const payload = {};
+    if (rawEvent.payload && typeof rawEvent.payload === 'object' && !Array.isArray(rawEvent.payload)) {
+      Object.assign(payload, rawEvent.payload);
+    }
+
+    for (const [key, value] of Object.entries(rawEvent)) {
+      if (!BASE_EVENT_KEYS.has(key)) {
+        payload[key] = value;
+      }
+    }
+    return payload;
+  }
+
+  _validateEvent(event) {
+    if (process.env.NODE_ENV === 'production') return;
+
+    if (typeof event.type !== 'string' || event.type.length === 0) {
+      throw new Error('EventBus received invalid event.type');
+    }
+    if (!CANONICAL_SCOPES.has(event.scope)) {
+      throw new Error(`EventBus received invalid event.scope: ${event.scope}`);
+    }
+    if (!Array.isArray(event.category)) {
+      throw new Error('EventBus received invalid event.category');
+    }
+    if (event.payload === null || typeof event.payload !== 'object' || Array.isArray(event.payload)) {
+      throw new Error('EventBus received invalid event.payload');
     }
   }
 
@@ -376,5 +436,6 @@ module.exports = {
   EventBus,
   getEventBus,
   resetEventBus,
-  EVENT_CATEGORIES
+  EVENT_CATEGORIES,
+  EVENT_TYPE_TO_CATEGORIES
 };

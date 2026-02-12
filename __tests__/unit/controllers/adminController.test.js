@@ -166,9 +166,9 @@ describe('adminController', () => {
       await startTournament(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
-      expect(mockRes.json).toHaveBeenCalledWith({
+      expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
         error: 'Simulation not initialized'
-      });
+      }));
     });
 
     it('should start tournament', async () => {

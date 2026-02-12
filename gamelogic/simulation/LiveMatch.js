@@ -174,8 +174,17 @@ class LiveMatch {
     // Fast-forward if we're behind
     if (expectedTick > this.tickElapsed + 1) {
       this.isFastForwarding = true;
+      const fromMinute = this.getMatchMinute();
+      const recap = {
+        goals: 0,
+        shots: 0,
+        bigChances: 0,
+        cards: 0,
+        corners: 0
+      };
       while (this.tickElapsed < expectedTick && this.state !== MATCH_STATES.FINISHED) {
         const tickEvents = this._processTick();
+        this._collectRecapStats(recap, tickEvents);
         // Only emit key events during fast-forward
         for (const evt of tickEvents) {
           if (KEY_EVENTS.has(evt.type)) {
@@ -183,6 +192,10 @@ class LiveMatch {
           }
         }
         this.tickElapsed++;
+      }
+      const toMinute = this.getMatchMinute();
+      if (toMinute - fromMinute >= 3) {
+        events.unshift(this._createFastForwardRecap(fromMinute, toMinute, recap));
       }
       this.isFastForwarding = false;
     } else {
@@ -442,6 +455,26 @@ class LiveMatch {
       awayTeam: { id: this.awayTeam.id, name: this.awayTeam.name },
       ...data
     };
+  }
+
+  _collectRecapStats(recap, events) {
+    for (const evt of events) {
+      if ([EVENT_TYPES.GOAL, EVENT_TYPES.PENALTY_SCORED].includes(evt.type)) recap.goals++;
+      if ([EVENT_TYPES.SHOT_SAVED, EVENT_TYPES.SHOT_MISSED].includes(evt.type)) recap.shots++;
+      if (evt.type === EVENT_TYPES.CHANCE_CREATED) recap.bigChances++;
+      if ([EVENT_TYPES.YELLOW_CARD, EVENT_TYPES.RED_CARD].includes(evt.type)) recap.cards++;
+      if (evt.type === EVENT_TYPES.CORNER) recap.corners++;
+    }
+  }
+
+  _createFastForwardRecap(fromMinute, toMinute, recap) {
+    const summary = `${fromMinute}'-${toMinute}' recap: ${recap.goals} goals, ${recap.shots} shots, ${recap.bigChances} big chances, ${recap.cards} cards, ${recap.corners} corners.`;
+    return this._createEvent(EVENT_TYPES.MATCH_RECAP, toMinute, {
+      fromMinute,
+      toMinute,
+      recap,
+      description: summary
+    });
   }
 
   // === Persistence ===

@@ -117,6 +117,18 @@ class EventGenerator {
           bundleId,
           cornerAwarded
         }));
+
+        if (xg >= SIM.BIG_CHANCE_XG) {
+          events.push(this._createEvent(EVENT_TYPES.CHANCE_CREATED, minute, {
+            teamId: attackingTeam.id,
+            playerId: shooter?.playerId,
+            displayName: shooter?.name,
+            description: `Big chance for ${attackingTeam.name} denied by a save.`,
+            xg,
+            outcome: 'saved',
+            bundleId
+          }));
+        }
       }
     } else {
       const shooter = this._selectScorer(players);
@@ -129,6 +141,18 @@ class EventGenerator {
         outcome: 'missed',
         bundleId
       }));
+
+      if (xg >= SIM.BIG_CHANCE_XG) {
+        events.push(this._createEvent(EVENT_TYPES.CHANCE_CREATED, minute, {
+          teamId: attackingTeam.id,
+          playerId: shooter?.playerId,
+          displayName: shooter?.name,
+          description: `Big chance for ${attackingTeam.name} goes begging.`,
+          xg,
+          outcome: 'missed',
+          bundleId
+        }));
+      }
     }
 
     return events;
@@ -159,6 +183,27 @@ class EventGenerator {
       }));
 
       this._persistScore();
+    } else if (outcome === 'saved') {
+      this.ctx.stats[side].shotsOnTarget++;
+      events.push(this._createEvent(EVENT_TYPES.PENALTY_SAVED, minute, {
+        teamId: attackingTeam.id,
+        playerId: taker?.playerId,
+        displayName: taker?.name,
+        description: `Penalty saved! ${defendingTeam.name} keep it out.`,
+        xg: SIM.PENALTY_XG,
+        outcome: 'saved',
+        bundleId
+      }));
+    } else {
+      events.push(this._createEvent(EVENT_TYPES.PENALTY_MISSED, minute, {
+        teamId: attackingTeam.id,
+        playerId: taker?.playerId,
+        displayName: taker?.name,
+        description: `Penalty missed by ${taker?.name || attackingTeam.name}.`,
+        xg: SIM.PENALTY_XG,
+        outcome: 'missed',
+        bundleId
+      }));
     }
 
     return events;
@@ -174,14 +219,27 @@ class EventGenerator {
 
     this.ctx.stats[side].fouls++;
 
+    const fouler = this._selectScorer(players);
     const cardRoll = Math.random();
     if (cardRoll < SIM.RED_CARD_THRESHOLD) {
       this.ctx.stats[side].redCards++;
+      events.push(this._createEvent(EVENT_TYPES.RED_CARD, minute, {
+        teamId: team.id,
+        playerId: fouler?.playerId,
+        displayName: fouler?.name,
+        description: `Red card shown to ${fouler?.name || team.name}.`,
+        outcome: 'red_card'
+      }));
     } else if (cardRoll < SIM.YELLOW_CARD_THRESHOLD) {
       this.ctx.stats[side].yellowCards++;
+      events.push(this._createEvent(EVENT_TYPES.YELLOW_CARD, minute, {
+        teamId: team.id,
+        playerId: fouler?.playerId,
+        displayName: fouler?.name,
+        description: `Yellow card shown to ${fouler?.name || team.name}.`,
+        outcome: 'yellow_card'
+      }));
     }
-
-    const fouler = this._selectScorer(players);
 
     events.push(this._createEvent(EVENT_TYPES.FOUL, minute, {
       teamId: team.id,

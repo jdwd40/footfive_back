@@ -50,6 +50,22 @@ describe('EventBus', () => {
       expect(event.serverTimestamp).toBeLessThanOrEqual(after);
     });
 
+    it('should normalize to canonical schema', () => {
+      const event = eventBus.emit({
+        type: 'goal',
+        fixtureId: 1,
+        tournamentId: 100,
+        minute: 17,
+        teamId: 5
+      });
+
+      expect(event.scope).toBe('match');
+      expect(event.payload).toEqual(expect.objectContaining({ teamId: 5 }));
+      expect(Array.isArray(event.category)).toBe(true);
+      expect(event.category).toContain('highlights');
+      expect(event.category).toContain('goals');
+    });
+
     it('should emit on EventEmitter', () => {
       const handler = jest.fn();
       eventBus.on('event', handler);
@@ -93,7 +109,7 @@ describe('EventBus', () => {
       }
 
       expect(eventBus.eventBuffer.length).toBe(5);
-      expect(eventBus.eventBuffer[0].index).toBe(5); // First 5 should be trimmed
+      expect(eventBus.eventBuffer[0].payload.index).toBe(5); // First 5 should be trimmed
     });
   });
 
@@ -300,7 +316,12 @@ describe('EventBus', () => {
       // Wait for async persistence
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(MatchEvent.create).toHaveBeenCalled();
+      expect(MatchEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+        fixtureId: 1,
+        eventType: 'goal',
+        teamId: 5,
+        playerId: 10
+      }));
     });
 
     it('should persist halftime events', async () => {
@@ -399,7 +420,7 @@ describe('EventBus', () => {
       ];
 
       for (const type of persistableTypes) {
-        expect(eventBus._isPersistableEvent({ type })).toBe(true);
+        expect(eventBus._isPersistableEvent({ type, scope: 'match', fixtureId: 1 })).toBe(true);
       }
     });
 
@@ -410,7 +431,7 @@ describe('EventBus', () => {
       ];
 
       for (const type of nonPersistableTypes) {
-        expect(eventBus._isPersistableEvent({ type })).toBe(false);
+        expect(eventBus._isPersistableEvent({ type, scope: 'system', fixtureId: null })).toBe(false);
       }
     });
   });
