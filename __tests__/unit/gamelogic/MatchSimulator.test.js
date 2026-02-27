@@ -221,24 +221,13 @@ describe('MatchSimulator', () => {
   });
 
   describe('Edge cases', () => {
-    it('should handle minimum rating values', () => {
-      const team1 = { name: 'Min Team 1', attackRating: 10, defenseRating: 10, goalkeeperRating: 10 };
-      const team2 = { name: 'Min Team 2', attackRating: 10, defenseRating: 10, goalkeeperRating: 10 };
-      
-      expect(() => {
-        const match = new MatchSimulator(team1, team2);
-        match.simulate();
-      }).not.toThrow();
-    });
-
-    it('should handle maximum rating values', () => {
-      const team1 = { name: 'Max Team 1', attackRating: 100, defenseRating: 100, goalkeeperRating: 100 };
-      const team2 = { name: 'Max Team 2', attackRating: 100, defenseRating: 100, goalkeeperRating: 100 };
-      
-      expect(() => {
-        const match = new MatchSimulator(team1, team2);
-        match.simulate();
-      }).not.toThrow();
+    it('should handle minimum and maximum rating values without throwing', () => {
+      const minTeam1 = { name: 'Min 1', attackRating: 10, defenseRating: 10, goalkeeperRating: 10 };
+      const minTeam2 = { name: 'Min 2', attackRating: 10, defenseRating: 10, goalkeeperRating: 10 };
+      const maxTeam1 = { name: 'Max 1', attackRating: 100, defenseRating: 100, goalkeeperRating: 100 };
+      const maxTeam2 = { name: 'Max 2', attackRating: 100, defenseRating: 100, goalkeeperRating: 100 };
+      expect(() => new MatchSimulator(minTeam1, minTeam2).simulate()).not.toThrow();
+      expect(() => new MatchSimulator(maxTeam1, maxTeam2).simulate()).not.toThrow();
     });
 
     it('should handle teams with same name differently', () => {

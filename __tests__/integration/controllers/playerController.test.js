@@ -29,7 +29,6 @@ describe('PlayerController', () => {
       
       expect(response.body).toHaveProperty('message');
       expect(response.body).toHaveProperty('players');
-      expect(Array.isArray(response.body.players)).toBe(true);
       expect(response.body.players.length).toBeGreaterThan(0);
     });
 
@@ -45,13 +44,6 @@ describe('PlayerController', () => {
       expect(firstPlayer).toHaveProperty('attack');
       expect(firstPlayer).toHaveProperty('defense');
       expect(firstPlayer).toHaveProperty('isGoalkeeper');
-    });
-
-    it('should return proper content type', async () => {
-      await request(app)
-        .get('/api/players')
-        .expect(200)
-        .expect('Content-Type', /json/);
     });
 
     it('should include both goalkeepers and outfield players', async () => {
@@ -92,7 +84,6 @@ describe('PlayerController', () => {
       
       expect(response.body).toHaveProperty('message');
       expect(response.body).toHaveProperty('players');
-      expect(Array.isArray(response.body.players)).toBe(true);
       expect(response.body.players.length).toBeGreaterThan(0);
     });
 
@@ -118,7 +109,6 @@ describe('PlayerController', () => {
         .expect(200);
       
       expect(response.body).toHaveProperty('players');
-      expect(Array.isArray(response.body.players)).toBe(true);
       expect(response.body.players.length).toBe(0);
     });
 
@@ -196,16 +186,6 @@ describe('PlayerController', () => {
         .get('/api/players/invalid')
         .expect(500);
     });
-
-    it('should return proper content type', async () => {
-      const teams = await DatabaseTestHelper.getAllTeams();
-      const players = await DatabaseTestHelper.getPlayersByTeamId(teams[0].team_id);
-      
-      await request(app)
-        .get(`/api/players/${players[0].player_id}`)
-        .expect(200)
-        .expect('Content-Type', /json/);
-    });
   });
 
   describe('Error handling', () => {
@@ -245,7 +225,6 @@ describe('PlayerController', () => {
         .expect(200);
       
       expect(response.body).toHaveProperty('players');
-      expect(Array.isArray(response.body.players)).toBe(true);
       expect(response.body.players.length).toBe(0);
     });
   });

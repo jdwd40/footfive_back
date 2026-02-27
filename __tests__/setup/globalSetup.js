@@ -3,7 +3,7 @@
  * Runs once before all test suites
  */
 
-const { setupTestDatabase } = require('../../db/test-seed');
+const { setupTestDatabase, runTestMigrations } = require('../../db/test-seed');
 
 module.exports = async () => {
   console.log('\n🔧 Setting up test environment...');
@@ -12,8 +12,8 @@ module.exports = async () => {
   process.env.NODE_ENV = 'test';
   
   try {
-    // Setup test database schema
     await setupTestDatabase();
+    await runTestMigrations();
     console.log('✅ Test database ready!\n');
   } catch (error) {
     console.error('❌ Failed to setup test database:', error.message);

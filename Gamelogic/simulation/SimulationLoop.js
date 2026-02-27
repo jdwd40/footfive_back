@@ -357,6 +357,13 @@ class SimulationLoop extends EventEmitter {
     }
 
     match.forceSetScore(homeScore, awayScore);
+    if (this.eventBus) {
+      this.emitEvent({
+        type: 'score_update',
+        fixtureId,
+        score: { home: homeScore, away: awayScore }
+      });
+    }
     console.log(`[SimulationLoop] Force-set score for match ${fixtureId}: ${homeScore}-${awayScore}`);
   }
 }

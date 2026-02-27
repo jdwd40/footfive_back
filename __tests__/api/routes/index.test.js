@@ -22,20 +22,12 @@ describe('Main API Routes', () => {
   });
 
   describe('Root endpoint', () => {
-    it('GET /api should be available', async () => {
+    it('GET /api returns 200 and ok message', async () => {
       const response = await request(app)
         .get('/api')
         .expect(200);
-      
-      expect(response.body).toHaveProperty('msg:');
-    });
-
-    it('should return ok message', async () => {
-      const response = await request(app)
-        .get('/api')
-        .expect(200);
-      
-      expect(response.body['msg:']).toBe('ok');
+      expect(response.body).toHaveProperty('msg');
+      expect(response.body.msg).toBe('ok');
     });
   });
 
@@ -53,11 +45,11 @@ describe('Main API Routes', () => {
     });
 
     it('should mount /jcup sub-routes', async () => {
-      await request(app)
-        .get('/api/jcup/init')
-        .expect(res => {
-          expect([200, 400]).toContain(res.status);
-        });
+      // With seeded DB, init returns 200 and body has message + fixtures
+      const response = await request(app).get('/api/jcup/init');
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('message');
+      expect(response.body).toHaveProperty('fixtures');
     });
 
     it('should mount /diagnostic sub-routes', async () => {
@@ -88,18 +80,12 @@ describe('Main API Routes', () => {
   });
 
   describe('Content-Type', () => {
-    it('should return JSON for all API endpoints', async () => {
-      await request(app)
-        .get('/api')
-        .expect('Content-Type', /json/);
-      
-      await request(app)
-        .get('/api/teams')
-        .expect('Content-Type', /json/);
-      
-      await request(app)
-        .get('/api/players')
-        .expect('Content-Type', /json/);
+    it('should return JSON for documented GET endpoints', async () => {
+      const jsonRoutes = ['/api', '/api/teams', '/api/players', '/api/diagnostic', '/api/jcup/init'];
+      for (const route of jsonRoutes) {
+        const res = await request(app).get(route);
+        expect(res.headers['content-type']).toMatch(/json/);
+      }
     });
   });
 

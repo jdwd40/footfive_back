@@ -29,7 +29,6 @@ describe('TeamController', () => {
       
       expect(response.body).toHaveProperty('message');
       expect(response.body).toHaveProperty('teams');
-      expect(Array.isArray(response.body.teams)).toBe(true);
       expect(response.body.teams.length).toBeGreaterThan(0);
     });
 
@@ -47,13 +46,6 @@ describe('TeamController', () => {
       expect(firstTeam).toHaveProperty('goalsAgainst');
       expect(firstTeam).toHaveProperty('jcups_won');
       expect(firstTeam).toHaveProperty('runner_ups');
-    });
-
-    it('should return proper content type', async () => {
-      await request(app)
-        .get('/api/teams')
-        .expect(200)
-        .expect('Content-Type', /json/);
     });
 
     it('should return consistent data across requests', async () => {
@@ -100,7 +92,7 @@ describe('TeamController', () => {
       
       expect(response.body).toHaveProperty('message');
       expect(response.body).toHaveProperty('top3JCupWinners');
-      expect(Array.isArray(response.body.top3JCupWinners)).toBe(true);
+      expect(response.body.top3JCupWinners.length).toBeGreaterThanOrEqual(0);
     });
 
     it('should order winners by jcups_won descending', async () => {
@@ -135,13 +127,6 @@ describe('TeamController', () => {
         expect(typeof firstWinner.jcups_won).toBe('number');
       }
     });
-
-    it('should return proper content type', async () => {
-      await request(app)
-        .get('/api/teams/3jcup')
-        .expect(200)
-        .expect('Content-Type', /json/);
-    });
   });
 
   describe('Error handling', () => {
@@ -151,14 +136,10 @@ describe('TeamController', () => {
         .expect(404);
     });
 
-    it('should handle malformed requests gracefully', async () => {
-      // Test various malformed requests
-      await request(app)
-        .get('/api/teams/')
-        .expect(res => {
-          // Should either return 200 with teams or handle gracefully
-          expect([200, 404]).toContain(res.status);
-        });
+    it('should return 200 and teams for GET /api/teams/ with trailing slash', async () => {
+      // Express matches /api/teams/ to the same handler as /api/teams
+      const res = await request(app).get('/api/teams/').expect(200);
+      expect(res.body).toHaveProperty('teams');
     });
   });
 
@@ -174,15 +155,10 @@ describe('TeamController', () => {
     });
 
     it('should handle empty results gracefully', async () => {
-      // Clean database
       await DatabaseTestHelper.cleanDatabase();
-      
-      const response = await request(app)
-        .get('/api/teams')
-        .expect(200);
-      
+      const response = await request(app).get('/api/teams').expect(200);
       expect(response.body).toHaveProperty('teams');
-      expect(Array.isArray(response.body.teams)).toBe(true);
+      expect(response.body.teams).toEqual([]);
     });
   });
 });

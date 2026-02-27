@@ -138,7 +138,8 @@ describe('TournamentManager', () => {
     it('should load teams and create tournament ID', async () => {
       await manager._handleSetup();
 
-      expect(manager.tournamentId).toBeTruthy();
+      expect(typeof manager.tournamentId).toBe('number');
+      expect(manager.tournamentId).toBeGreaterThan(0);
       expect(manager.teams.length).toBe(16);
       expect(manager.roundWinners.length).toBe(16);
     });
@@ -157,16 +158,17 @@ describe('TournamentManager', () => {
     });
 
     it('should shuffle teams', async () => {
-      await manager._handleSetup();
+      // Use deterministic RNG so order is predictable and we can assert it changed
+      const fixedRandom = () => 0.5; // Always swap with middle index -> deterministic reorder
+      const deterministicManager = new TournamentManager(8, fixedRandom);
+      await deterministicManager._handleSetup();
 
-      // Teams should be shuffled (order likely different from original)
-      // This is probabilistic, but with 16 teams, shuffle should change order
-      const teamIds = manager.roundWinners.map(t => t.id);
+      const teamIds = deterministicManager.roundWinners.map(t => t.id);
       const originalIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
-      // At least some teams should be in different positions
-      // (very unlikely to have exact same order after shuffle)
       expect(teamIds.length).toBe(originalIds.length);
+      // With fixed RNG, shuffle must produce a different order than [1..16]
+      expect(teamIds).not.toEqual(originalIds);
     });
   });
 
@@ -366,7 +368,8 @@ describe('TournamentManager', () => {
         const state = await manager.forceStart();
 
         expect(state.state).toBe(TOURNAMENT_STATES.ROUND_ACTIVE);
-        expect(manager.tournamentId).toBeTruthy();
+        expect(typeof manager.tournamentId).toBe('number');
+        expect(manager.tournamentId).toBeGreaterThan(0);
         expect(manager.liveMatches.length).toBe(8);
       });
 

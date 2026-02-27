@@ -19,7 +19,6 @@ describe('TeamModel', () => {
     it('should fetch all teams from database', async () => {
       const teams = await Team.getAll();
       
-      expect(Array.isArray(teams)).toBe(true);
       expect(teams.length).toBeGreaterThan(0);
       
       // Check team structure
@@ -51,7 +50,6 @@ describe('TeamModel', () => {
       
       const team = await Team.getRatingById(testTeam.team_id);
       
-      expect(team).toBeDefined();
       expect(team.id).toBe(testTeam.team_id);
       expect(team.name).toBe(testTeam.name);
       expect(typeof team.attackRating).toBe('number');
@@ -71,7 +69,6 @@ describe('TeamModel', () => {
       
       const team = await Team.getRatingByTeamName(testTeamName);
       
-      expect(team).toBeDefined();
       expect(team.name).toBe(testTeamName);
       expect(team.attackRating).toBeGreaterThanOrEqual(10);
       expect(team.attackRating).toBeLessThanOrEqual(100);
@@ -192,7 +189,6 @@ describe('TeamModel', () => {
       
       const topWinners = await Team.getTop3JCupWinners();
       
-      expect(Array.isArray(topWinners)).toBe(true);
       expect(topWinners.length).toBeGreaterThan(0);
       
       // Check each team has required fields

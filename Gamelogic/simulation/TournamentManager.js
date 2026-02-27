@@ -128,12 +128,14 @@ function getNextRoundKey(currentKey) {
  * - Handle recovery on restart with inconsistent-state safety
  */
 class TournamentManager extends EventEmitter {
-  constructor(totalMatchMinutes = DEFAULT_TOTAL_MATCH_MINUTES) {
+  constructor(totalMatchMinutes = DEFAULT_TOTAL_MATCH_MINUTES, randomFn = undefined) {
     super();
 
     this.state = TOURNAMENT_STATES.IDLE;
     this.totalMatchMinutes = totalMatchMinutes;
     this.rules = deriveMatchTimings(this.totalMatchMinutes);
+    // Optional RNG for deterministic tests (default: Math.random)
+    this._randomFn = randomFn || Math.random;
 
     // Tournament data
     this.tournamentId = null;
@@ -1214,7 +1216,7 @@ class TournamentManager extends EventEmitter {
   _shuffleTeams(teams) {
     const shuffled = [...teams];
     for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(this._randomFn() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     return shuffled;
