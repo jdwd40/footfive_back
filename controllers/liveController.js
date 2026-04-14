@@ -1,10 +1,16 @@
-const { getEventBus } = require('../Gamelogic/simulation/EventBus');
-const { getSimulationLoop } = require('../Gamelogic/simulation/SimulationLoop');
+const { getEventBus, EVENT_CATEGORIES } = require('../gamelogic/simulation/EventBus');
+const { getSimulationLoop } = require('../gamelogic/simulation/SimulationLoop');
 const Fixture = require('../models/FixtureModel');
 
 /**
  * SSE endpoint for live match events
- * GET /api/live/events?tournamentId=&fixtureId=
+ * GET /api/live/events?tournamentId=&fixtureId=&category=
+ *
+ * Query params:
+ *   tournamentId - Filter by tournament
+ *   fixtureId - Filter by fixture
+ *   category - Filter by event category: highlights, goals, shootout, cards, flow
+ *   afterSeq - Sequence number for reconnection catchup
  */
 const streamEvents = (req, res) => {
   const eventBus = getEventBus();
@@ -15,6 +21,9 @@ const streamEvents = (req, res) => {
   }
   if (req.query.fixtureId) {
     filters.fixtureId = parseInt(req.query.fixtureId);
+  }
+  if (req.query.category && EVENT_CATEGORIES[req.query.category]) {
+    filters.category = req.query.category;
   }
 
   const clientId = eventBus.addClient(res, filters);
@@ -95,7 +104,15 @@ const getMatchState = (req, res) => {
 
 /**
  * Get recent events from buffer
- * GET /api/live/events/recent?fixtureId=&type=&limit=
+ * GET /api/live/events/recent?fixtureId=&type=&category=&limit=
+ *
+ * Query params:
+ *   fixtureId - Filter by fixture
+ *   tournamentId - Filter by tournament
+ *   type - Filter by specific event type (e.g., 'goal')
+ *   category - Filter by event category: highlights, goals, shootout, cards, flow
+ *   afterSeq - Only events after this sequence number
+ *   limit - Max events to return (default: 100)
  */
 const getRecentEvents = (req, res) => {
   const eventBus = getEventBus();
@@ -109,6 +126,9 @@ const getRecentEvents = (req, res) => {
   }
   if (req.query.type) {
     filters.type = req.query.type;
+  }
+  if (req.query.category && EVENT_CATEGORIES[req.query.category]) {
+    filters.category = req.query.category;
   }
   if (req.query.afterSeq) {
     filters.afterSeq = parseInt(req.query.afterSeq);

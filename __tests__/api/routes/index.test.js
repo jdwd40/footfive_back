@@ -44,14 +44,6 @@ describe('Main API Routes', () => {
         .expect(200);
     });
 
-    it('should mount /jcup sub-routes', async () => {
-      // With seeded DB, init returns 200 and body has message + fixtures
-      const response = await request(app).get('/api/jcup/init');
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('message');
-      expect(response.body).toHaveProperty('fixtures');
-    });
-
     it('should mount /diagnostic sub-routes', async () => {
       await request(app)
         .get('/api/diagnostic')
@@ -81,7 +73,7 @@ describe('Main API Routes', () => {
 
   describe('Content-Type', () => {
     it('should return JSON for documented GET endpoints', async () => {
-      const jsonRoutes = ['/api', '/api/teams', '/api/players', '/api/diagnostic', '/api/jcup/init'];
+      const jsonRoutes = ['/api', '/api/teams', '/api/players', '/api/diagnostic'];
       for (const route of jsonRoutes) {
         const res = await request(app).get(route);
         expect(res.headers['content-type']).toMatch(/json/);

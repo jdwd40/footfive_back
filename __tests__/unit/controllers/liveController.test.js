@@ -22,11 +22,11 @@ const mockEventBus = {
 };
 
 // Mock simulation modules
-jest.mock('../../../Gamelogic/simulation/EventBus', () => ({
+jest.mock('../../../gamelogic/simulation/EventBus', () => ({
   getEventBus: jest.fn(() => mockEventBus)
 }));
 
-jest.mock('../../../Gamelogic/simulation/SimulationLoop', () => ({
+jest.mock('../../../gamelogic/simulation/SimulationLoop', () => ({
   getSimulationLoop: jest.fn(() => ({
     isRunning: true,
     isPaused: false,

@@ -3,8 +3,8 @@ const Odds = require('../models/OddsModel');
 const MatchEvent = require('../models/MatchEventModel');
 const MatchReport = require('../models/MatchReportModel');
 const Team = require('../models/TeamModel');
-const OddsEngine = require('../Gamelogic/OddsEngine');
-const SimulationEngine = require('../Gamelogic/SimulationEngine');
+const OddsEngine = require('../gamelogic/OddsEngine');
+const SimulationEngine = require('../gamelogic/SimulationEngine');
 
 const oddsEngine = new OddsEngine(0.05);
 

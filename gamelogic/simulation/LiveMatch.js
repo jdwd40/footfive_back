@@ -5,74 +5,18 @@ const Team = require('../../models/TeamModel');
 const Player = require('../../models/PlayerModel');
 const db = require('../../db/connection');
 
-const MATCH_STATES = {
-  SCHEDULED: 'SCHEDULED',
-  FIRST_HALF: 'FIRST_HALF',
-  HALFTIME: 'HALFTIME',
-  SECOND_HALF: 'SECOND_HALF',
-  EXTRA_TIME_1: 'EXTRA_TIME_1',
-  ET_HALFTIME: 'ET_HALFTIME',
-  EXTRA_TIME_2: 'EXTRA_TIME_2',
-  PENALTIES: 'PENALTIES',
-  FINISHED: 'FINISHED'
-};
+const {
+  MATCH_STATES,
+  EVENT_TYPES,
+  KEY_EVENTS,
+  DEFAULT_RULES,
+  BRACKET_STRUCTURE,
+  MATCH_MINUTES,
+  SIM
+} = require('../constants');
 
-const EVENT_TYPES = {
-  MATCH_START: 'match_start',
-  KICKOFF: 'kickoff',
-  GOAL: 'goal',
-  SHOT_SAVED: 'shot_saved',
-  SHOT_MISSED: 'shot_missed',
-  SHOT_BLOCKED: 'shot_blocked',
-  PENALTY_AWARDED: 'penalty_awarded',
-  PENALTY_SCORED: 'penalty_scored',
-  PENALTY_MISSED: 'penalty_missed',
-  PENALTY_SAVED: 'penalty_saved',
-  CORNER: 'corner',
-  FOUL: 'foul',
-  YELLOW_CARD: 'yellow_card',
-  RED_CARD: 'red_card',
-  HALFTIME: 'halftime',
-  SECOND_HALF_START: 'second_half_start',
-  FULLTIME: 'fulltime',
-  EXTRA_TIME_START: 'extra_time_start',
-  EXTRA_TIME_HALF: 'extra_time_half',
-  EXTRA_TIME_END: 'extra_time_end',
-  SHOOTOUT_START: 'shootout_start',
-  SHOOTOUT_GOAL: 'shootout_goal',
-  SHOOTOUT_MISS: 'shootout_miss',
-  SHOOTOUT_SAVE: 'shootout_save',
-  SHOOTOUT_END: 'shootout_end',
-  MATCH_END: 'match_end'
-};
-
-// Key events that should be emitted even during fast-forward
-const KEY_EVENTS = new Set([
-  EVENT_TYPES.GOAL,
-  EVENT_TYPES.PENALTY_SCORED,
-  EVENT_TYPES.HALFTIME,
-  EVENT_TYPES.SECOND_HALF_START,
-  EVENT_TYPES.FULLTIME,
-  EVENT_TYPES.EXTRA_TIME_START,
-  EVENT_TYPES.EXTRA_TIME_HALF,
-  EVENT_TYPES.EXTRA_TIME_END,
-  EVENT_TYPES.SHOOTOUT_START,
-  EVENT_TYPES.SHOOTOUT_GOAL,
-  EVENT_TYPES.SHOOTOUT_MISS,
-  EVENT_TYPES.SHOOTOUT_SAVE,
-  EVENT_TYPES.SHOOTOUT_END,
-  EVENT_TYPES.MATCH_END
-]);
-
-const DEFAULT_RULES = {
-  knockout: true,
-  halfDurationMs: 240000,      // 4 min real = 45 match minutes
-  halftimeDurationMs: 60000,   // 1 min real
-  extraTimeEnabled: true,
-  etHalfDurationMs: 120000,    // 2 min real = 15 match minutes
-  etHalftimeMs: 30000,         // 30s real
-  penaltiesEnabled: true
-};
+const { EventGenerator } = require('./EventGenerator');
+const { PenaltyShootout } = require('./PenaltyShootout');
 
 /**
  * LiveMatch - Real-time match simulation driven by external ticks
@@ -86,25 +30,6 @@ const DEFAULT_RULES = {
  * - ET 2nd half:  tick 690-809 -> match min 106-120
  * - Penalties:    tick 810+    -> until resolved
  */
-// Bracket slot definitions with feedsInto relationships
-const BRACKET_STRUCTURE = {
-  R16_1: { round: 'Round of 16', feedsInto: 'QF1', position: 'home' },
-  R16_2: { round: 'Round of 16', feedsInto: 'QF1', position: 'away' },
-  R16_3: { round: 'Round of 16', feedsInto: 'QF2', position: 'home' },
-  R16_4: { round: 'Round of 16', feedsInto: 'QF2', position: 'away' },
-  R16_5: { round: 'Round of 16', feedsInto: 'QF3', position: 'home' },
-  R16_6: { round: 'Round of 16', feedsInto: 'QF3', position: 'away' },
-  R16_7: { round: 'Round of 16', feedsInto: 'QF4', position: 'home' },
-  R16_8: { round: 'Round of 16', feedsInto: 'QF4', position: 'away' },
-  QF1: { round: 'Quarter-finals', feedsInto: 'SF1', position: 'home' },
-  QF2: { round: 'Quarter-finals', feedsInto: 'SF1', position: 'away' },
-  QF3: { round: 'Quarter-finals', feedsInto: 'SF2', position: 'home' },
-  QF4: { round: 'Quarter-finals', feedsInto: 'SF2', position: 'away' },
-  SF1: { round: 'Semi-finals', feedsInto: 'FINAL', position: 'home' },
-  SF2: { round: 'Semi-finals', feedsInto: 'FINAL', position: 'away' },
-  FINAL: { round: 'Final', feedsInto: null, position: null }
-};
-
 class LiveMatch {
   constructor(fixtureId, homeTeam, awayTeam, startTime, rules = {}) {
     this.fixtureId = fixtureId;
@@ -135,7 +60,6 @@ class LiveMatch {
     this.playersLoaded = false;
 
     // Event tracking
-    this.bundleCounter = 0;
     this.processedMinutes = new Set();
     this.emittedTransitions = new Set();
     this.completionNotified = false;
@@ -150,17 +74,57 @@ class LiveMatch {
     // Penalty shootout state
     this.shootoutRound = 0;
     this.shootoutScores = { home: 0, away: 0 };
+    this.currentShooter = 'home';
 
     // Finalization tracking (for race condition prevention)
     this._finalizationPromise = null;
     this.shootoutTaken = { home: 0, away: 0 };
-    this.currentShooter = 'home';
 
     // Fast-forward mode
     this.isFastForwarding = false;
 
     // Precompute timing boundaries
     this._computeTimings();
+
+    // Initialize sub-modules
+    this._eventGenerator = new EventGenerator(
+      this._getEventContext(),
+      this._createEvent.bind(this),
+      this._persistScore.bind(this)
+    );
+
+    this._shootout = new PenaltyShootout(
+      this._getShootoutContext(),
+      this._createEvent.bind(this),
+      this._eventGenerator._selectScorer.bind(this._eventGenerator)
+    );
+  }
+
+  _getEventContext() {
+    return {
+      homeTeam: this.homeTeam,
+      awayTeam: this.awayTeam,
+      get homePlayers() { return this._owner.homePlayers; },
+      get awayPlayers() { return this._owner.awayPlayers; },
+      stats: this.stats,
+      score: this.score,
+      possessionTicks: this.possessionTicks,
+      _owner: this
+    };
+  }
+
+  _getShootoutContext() {
+    return {
+      homeTeam: this.homeTeam,
+      awayTeam: this.awayTeam,
+      get homePlayers() { return this._owner.homePlayers; },
+      get awayPlayers() { return this._owner.awayPlayers; },
+      score: this.score,
+      penaltyScore: this.penaltyScore,
+      shootoutScores: this.shootoutScores,
+      shootoutTaken: this.shootoutTaken,
+      _owner: this
+    };
   }
 
   _computeTimings() {
@@ -210,8 +174,17 @@ class LiveMatch {
     // Fast-forward if we're behind
     if (expectedTick > this.tickElapsed + 1) {
       this.isFastForwarding = true;
+      const fromMinute = this.getMatchMinute();
+      const recap = {
+        goals: 0,
+        shots: 0,
+        bigChances: 0,
+        cards: 0,
+        corners: 0
+      };
       while (this.tickElapsed < expectedTick && this.state !== MATCH_STATES.FINISHED) {
         const tickEvents = this._processTick();
+        this._collectRecapStats(recap, tickEvents);
         // Only emit key events during fast-forward
         for (const evt of tickEvents) {
           if (KEY_EVENTS.has(evt.type)) {
@@ -219,6 +192,10 @@ class LiveMatch {
           }
         }
         this.tickElapsed++;
+      }
+      const toMinute = this.getMatchMinute();
+      if (toMinute - fromMinute >= 3) {
+        events.unshift(this._createFastForwardRecap(fromMinute, toMinute, recap));
       }
       this.isFastForwarding = false;
     } else {
@@ -251,24 +228,26 @@ class LiveMatch {
 
       // Only generate events once per match minute
       if (!this.processedMinutes.has(matchMinute)) {
-        const playEvents = this._simulateMinute(matchMinute);
+        const playEvents = this._eventGenerator.simulateMinute(matchMinute);
         events.push(...playEvents);
         this.processedMinutes.add(matchMinute);
       }
 
       // Track possession every tick
-      this._trackPossession();
+      this._eventGenerator.trackPossession();
     }
 
     // Handle penalties (special case - not minute-based)
     if (this.state === MATCH_STATES.PENALTIES) {
       const stateBeforePenalties = this.state;
-      const penaltyEvents = this._processShootoutTick();
+      const { events: penaltyEvents, finished } = this._shootout.processTick(
+        this.tickElapsed,
+        this.timings.et2End
+      );
       events.push(...penaltyEvents);
 
-      // CRITICAL: Handle state transition if shootout ended (set state to FINISHED)
-      // This ensures _handleMatchEnd is called to finalize the match in DB
-      if (stateBeforePenalties !== this.state) {
+      if (finished) {
+        this.state = MATCH_STATES.FINISHED;
         const shootoutTransitionEvents = this._handleStateTransition(stateBeforePenalties);
         events.push(...shootoutTransitionEvents);
       }
@@ -303,9 +282,6 @@ class LiveMatch {
 
   _handleFulltime() {
     const isDraw = this.score.home === this.score.away;
-
-    // CRITICAL: Ensure knockout rules are set correctly (defensive check)
-    // Default to knockout=true if undefined (this is a knockout tournament)
     const isKnockout = this.rules.knockout !== false;
     const hasExtraTime = this.rules.extraTimeEnabled !== false;
     const hasPenalties = this.rules.penaltiesEnabled !== false;
@@ -319,7 +295,6 @@ class LiveMatch {
       console.log(`[LiveMatch ${this.fixtureId}] Knockout draw (no ET) - going to PENALTIES`);
       this.state = MATCH_STATES.PENALTIES;
     } else if (isDraw && isKnockout) {
-      // FAILSAFE: Knockout draw with no ET/penalties configured - force penalties
       console.error(`[LiveMatch ${this.fixtureId}] CRITICAL: Knockout draw but no ET/penalties! Forcing PENALTIES`);
       this.state = MATCH_STATES.PENALTIES;
     } else {
@@ -330,8 +305,6 @@ class LiveMatch {
 
   _handleExtraTimeEnd() {
     const isDraw = this.score.home === this.score.away;
-
-    // CRITICAL: Ensure knockout rules are set correctly (defensive check)
     const isKnockout = this.rules.knockout !== false;
     const hasPenalties = this.rules.penaltiesEnabled !== false;
 
@@ -341,7 +314,6 @@ class LiveMatch {
       console.log(`[LiveMatch ${this.fixtureId}] ET draw - going to PENALTIES`);
       this.state = MATCH_STATES.PENALTIES;
     } else if (isDraw && isKnockout) {
-      // FAILSAFE: Knockout draw after ET but penalties disabled - force penalties anyway
       console.error(`[LiveMatch ${this.fixtureId}] CRITICAL: ET draw but penalties disabled! Forcing PENALTIES`);
       this.state = MATCH_STATES.PENALTIES;
     } else {
@@ -371,37 +343,37 @@ class LiveMatch {
         break;
 
       case MATCH_STATES.HALFTIME:
-        events.push(this._createEvent(EVENT_TYPES.HALFTIME, 45, {
+        events.push(this._createEvent(EVENT_TYPES.HALFTIME, MATCH_MINUTES.FIRST_HALF_END, {
           description: `Half time: ${this.homeTeam.name} ${this.score.home}-${this.score.away} ${this.awayTeam.name}`
         }));
         break;
 
       case MATCH_STATES.SECOND_HALF:
-        events.push(this._createEvent(EVENT_TYPES.SECOND_HALF_START, 46, {
+        events.push(this._createEvent(EVENT_TYPES.SECOND_HALF_START, MATCH_MINUTES.SECOND_HALF_START, {
           description: 'Second half begins'
         }));
         break;
 
       case MATCH_STATES.EXTRA_TIME_1:
-        events.push(this._createEvent(EVENT_TYPES.EXTRA_TIME_START, 91, {
+        events.push(this._createEvent(EVENT_TYPES.EXTRA_TIME_START, MATCH_MINUTES.ET_FIRST_HALF_START, {
           description: 'Extra time begins'
         }));
         break;
 
       case MATCH_STATES.ET_HALFTIME:
-        events.push(this._createEvent(EVENT_TYPES.EXTRA_TIME_HALF, 105, {
+        events.push(this._createEvent(EVENT_TYPES.EXTRA_TIME_HALF, MATCH_MINUTES.ET_FIRST_HALF_END, {
           description: `ET Half: ${this.homeTeam.name} ${this.score.home}-${this.score.away} ${this.awayTeam.name}`
         }));
         break;
 
       case MATCH_STATES.EXTRA_TIME_2:
-        events.push(this._createEvent(EVENT_TYPES.KICKOFF, 106, {
+        events.push(this._createEvent(EVENT_TYPES.KICKOFF, MATCH_MINUTES.ET_SECOND_HALF_START, {
           description: 'Extra time second half begins'
         }));
         break;
 
       case MATCH_STATES.PENALTIES:
-        events.push(this._createEvent(EVENT_TYPES.SHOOTOUT_START, 120, {
+        events.push(this._createEvent(EVENT_TYPES.SHOOTOUT_START, MATCH_MINUTES.ET_SECOND_HALF_END, {
           description: 'Penalty shootout begins'
         }));
         break;
@@ -422,9 +394,8 @@ class LiveMatch {
     const isKnockout = this.rules.knockout !== false;
 
     if (isDraw && isKnockout && (this.penaltyScore.home === 0 && this.penaltyScore.away === 0)) {
-      // This should never happen, but if it does, simulate instant penalties
       console.error(`[LiveMatch ${this.fixtureId}] CRITICAL: Knockout match ending as draw without penalties! Fixing...`);
-      this._simulateInstantPenalties();
+      PenaltyShootout.simulateInstant(this.shootoutScores, this.shootoutTaken, this.penaltyScore);
     }
 
     const winnerId = this.getWinnerId();
@@ -432,13 +403,13 @@ class LiveMatch {
     // Emit fulltime or ET end if not already emitted
     if (!this.emittedTransitions.has('fulltime_emitted')) {
       if (this.penaltyScore.home > 0 || this.penaltyScore.away > 0) {
-        events.push(this._createEvent(EVENT_TYPES.SHOOTOUT_END, 120, {
+        events.push(this._createEvent(EVENT_TYPES.SHOOTOUT_END, MATCH_MINUTES.ET_SECOND_HALF_END, {
           description: `Shootout: ${this.homeTeam.name} ${this.shootoutScores.home}-${this.shootoutScores.away} ${this.awayTeam.name}`,
           winnerId
         }));
       } else if (this.tickElapsed >= this.timings.secondHalfEnd) {
-        const minute = this.timings.et2End && this.tickElapsed >= this.timings.et2End ? 120 : 90;
-        const eventType = minute > 90 ? EVENT_TYPES.EXTRA_TIME_END : EVENT_TYPES.FULLTIME;
+        const minute = this.timings.et2End && this.tickElapsed >= this.timings.et2End ? MATCH_MINUTES.ET_SECOND_HALF_END : MATCH_MINUTES.SECOND_HALF_END;
+        const eventType = minute > MATCH_MINUTES.SECOND_HALF_END ? EVENT_TYPES.EXTRA_TIME_END : EVENT_TYPES.FULLTIME;
         events.push(this._createEvent(eventType, minute, {
           description: `Full time: ${this.homeTeam.name} ${this.score.home}-${this.score.away} ${this.awayTeam.name}`
         }));
@@ -461,259 +432,6 @@ class LiveMatch {
     return events;
   }
 
-  /**
-   * Simulate a single match minute
-   */
-  _simulateMinute(minute) {
-    const events = [];
-
-    // 5% foul chance
-    if (Math.random() < 0.05) {
-      const foulEvents = this._handleFoul(minute);
-      events.push(...foulEvents);
-    }
-
-    // Attack chances (~35% per minute that something happens)
-    const homeAttackChance = this.homeTeam.attackRating / 200;
-    const awayAttackChance = this.awayTeam.attackRating / 200;
-
-    if (Math.random() < homeAttackChance) {
-      const attackEvents = this._handleAttack(this.homeTeam, this.awayTeam, 'home', minute);
-      events.push(...attackEvents);
-    } else if (Math.random() < awayAttackChance) {
-      const attackEvents = this._handleAttack(this.awayTeam, this.homeTeam, 'away', minute);
-      events.push(...attackEvents);
-    }
-
-    return events;
-  }
-
-  _handleAttack(attackingTeam, defendingTeam, side, minute) {
-    const events = [];
-    const oppSide = side === 'home' ? 'away' : 'home';
-    const bundleId = this._generateBundleId('attack', minute);
-
-    // Defense blocks?
-    if (this._defenseBlocks(defendingTeam)) {
-      this.stats[oppSide].corners += Math.random() < 0.3 ? 1 : 0;
-      // Don't emit block events (not key events)
-      return events;
-    }
-
-    // Penalty chance (4-8%)
-    const pressureLevel = this._calculatePressure(attackingTeam, defendingTeam);
-    const penaltyChance = pressureLevel === 'high' ? 0.08 : 0.04;
-
-    if (Math.random() < penaltyChance) {
-      return this._handlePenalty(attackingTeam, defendingTeam, side, minute, bundleId);
-    }
-
-    // Shot
-    return this._handleShot(attackingTeam, defendingTeam, side, minute, bundleId);
-  }
-
-  _handleShot(attackingTeam, defendingTeam, side, minute, bundleId) {
-    const events = [];
-    const oppSide = side === 'home' ? 'away' : 'home';
-    const players = side === 'home' ? this.homePlayers : this.awayPlayers;
-
-    this.stats[side].shots++;
-
-    // xG calculation
-    const baseXg = 0.08 + Math.random() * 0.12;
-    const pressureMod = this._calculatePressure(attackingTeam, defendingTeam) === 'high' ? 1.3 : 1.0;
-    const xg = Math.min(0.80, baseXg * pressureMod);
-    this.stats[side].xg += xg;
-
-    // On target? (60%)
-    if (Math.random() < 0.6) {
-      this.stats[side].shotsOnTarget++;
-
-      // Goal or save?
-      if (!this._goalkeeperSaves(defendingTeam)) {
-        // GOAL!
-        this.score[side]++;
-        const scorer = this._selectScorer(players);
-        const assister = this._selectAssister(players, scorer?.playerId);
-
-        events.push(this._createEvent(EVENT_TYPES.GOAL, minute, {
-          teamId: attackingTeam.id,
-          playerId: scorer?.playerId,
-          displayName: scorer?.name,
-          assistPlayerId: assister?.playerId,
-          assistName: assister?.name,
-          description: `GOAL! ${attackingTeam.name}`,
-          xg,
-          outcome: 'scored',
-          bundleId
-        }));
-
-        // Update fixture score immediately
-        this._persistScore();
-      } else {
-        // Saved - not a key event, skip during fast-forward
-        this.stats[oppSide].corners += Math.random() < 0.4 ? 1 : 0;
-      }
-    }
-    // Missed shots - not key events
-
-    return events;
-  }
-
-  _handlePenalty(attackingTeam, defendingTeam, side, minute, bundleId) {
-    const events = [];
-    const players = side === 'home' ? this.homePlayers : this.awayPlayers;
-    const penXg = 0.76;
-
-    this.stats[side].shots++;
-    this.stats[side].xg += penXg;
-
-    const outcome = this._determinePenaltyOutcome(defendingTeam);
-    const taker = this._selectScorer(players);
-
-    if (outcome === 'scored') {
-      this.score[side]++;
-      this.stats[side].shotsOnTarget++;
-
-      events.push(this._createEvent(EVENT_TYPES.PENALTY_SCORED, minute, {
-        teamId: attackingTeam.id,
-        playerId: taker?.playerId,
-        displayName: taker?.name,
-        description: `PENALTY GOAL! ${attackingTeam.name}`,
-        xg: penXg,
-        outcome: 'scored',
-        bundleId
-      }));
-
-      this._persistScore();
-    } else if (outcome === 'saved') {
-      this.stats[side].shotsOnTarget++;
-
-      events.push(this._createEvent(EVENT_TYPES.PENALTY_SAVED, minute, {
-        teamId: attackingTeam.id,
-        playerId: taker?.playerId,
-        displayName: taker?.name,
-        description: `Penalty saved! ${attackingTeam.name}`,
-        xg: penXg,
-        outcome: 'saved',
-        bundleId
-      }));
-    } else {
-      events.push(this._createEvent(EVENT_TYPES.PENALTY_MISSED, minute, {
-        teamId: attackingTeam.id,
-        playerId: taker?.playerId,
-        displayName: taker?.name,
-        description: `Penalty missed! ${attackingTeam.name}`,
-        xg: penXg,
-        outcome: 'missed',
-        bundleId
-      }));
-    }
-
-    return events;
-  }
-
-  _handleFoul(minute) {
-    const events = [];
-    const isHomeFoul = Math.random() < 0.5;
-    const side = isHomeFoul ? 'home' : 'away';
-    const team = isHomeFoul ? this.homeTeam : this.awayTeam;
-
-    this.stats[side].fouls++;
-
-    // Card chance (15% yellow, 2% red)
-    const cardRoll = Math.random();
-    if (cardRoll < 0.02) {
-      this.stats[side].redCards++;
-      // Red cards are notable but not "key" for catchup
-    } else if (cardRoll < 0.17) {
-      this.stats[side].yellowCards++;
-    }
-
-    return events;
-  }
-
-  /**
-   * Process penalty shootout (one kick per tick in penalties state)
-   */
-  _processShootoutTick() {
-    const events = [];
-
-    // One penalty per 3 ticks (to spread them out)
-    if ((this.tickElapsed - this.timings.et2End) % 3 !== 0) return events;
-
-    const side = this.currentShooter;
-    const team = side === 'home' ? this.homeTeam : this.awayTeam;
-    const defendingTeam = side === 'home' ? this.awayTeam : this.homeTeam;
-    const players = side === 'home' ? this.homePlayers : this.awayPlayers;
-    const taker = this._selectScorer(players);
-
-    // 75% success rate
-    const onTarget = Math.random() < 0.85;
-    const saved = onTarget && Math.random() < 0.12;
-    const scored = onTarget && !saved;
-
-    this.shootoutTaken[side]++;
-
-    if (scored) {
-      this.shootoutScores[side]++;
-      events.push(this._createEvent(EVENT_TYPES.SHOOTOUT_GOAL, 120, {
-        teamId: team.id,
-        playerId: taker?.playerId,
-        displayName: taker?.name,
-        description: `Shootout: ${team.name} SCORES!`,
-        outcome: 'scored',
-        round: Math.ceil(this.shootoutTaken[side]),
-        shootoutScore: { ...this.shootoutScores }
-      }));
-    } else if (saved) {
-      events.push(this._createEvent(EVENT_TYPES.SHOOTOUT_SAVE, 120, {
-        teamId: team.id,
-        playerId: taker?.playerId,
-        displayName: taker?.name,
-        description: `Shootout: ${team.name} SAVED!`,
-        outcome: 'saved',
-        round: Math.ceil(this.shootoutTaken[side]),
-        shootoutScore: { ...this.shootoutScores }
-      }));
-    } else {
-      events.push(this._createEvent(EVENT_TYPES.SHOOTOUT_MISS, 120, {
-        teamId: team.id,
-        playerId: taker?.playerId,
-        displayName: taker?.name,
-        description: `Shootout: ${team.name} MISSES!`,
-        outcome: 'missed',
-        round: Math.ceil(this.shootoutTaken[side]),
-        shootoutScore: { ...this.shootoutScores }
-      }));
-    }
-
-    // Switch shooter
-    this.currentShooter = side === 'home' ? 'away' : 'home';
-
-    // Check for winner after both teams have taken equal kicks
-    if (this.shootoutTaken.home === this.shootoutTaken.away) {
-      const round = this.shootoutTaken.home;
-
-      // After 5 rounds each, check for winner
-      if (round >= 5) {
-        if (this.shootoutScores.home !== this.shootoutScores.away) {
-          this.penaltyScore = { ...this.shootoutScores };
-          this.state = MATCH_STATES.FINISHED;
-        }
-      }
-
-      // Check for mathematically decided (e.g., 3-0 after 3 kicks)
-      const remaining = Math.max(5 - round, 0);
-      if (Math.abs(this.shootoutScores.home - this.shootoutScores.away) > remaining) {
-        this.penaltyScore = { ...this.shootoutScores };
-        this.state = MATCH_STATES.FINISHED;
-      }
-    }
-
-    return events;
-  }
-
   // === Helper Methods ===
 
   _isPlayState() {
@@ -723,71 +441,6 @@ class LiveMatch {
       MATCH_STATES.EXTRA_TIME_1,
       MATCH_STATES.EXTRA_TIME_2
     ].includes(this.state);
-  }
-
-  _trackPossession() {
-    const homeChance = this.homeTeam.attackRating / (this.homeTeam.attackRating + this.awayTeam.attackRating);
-    if (Math.random() < homeChance) {
-      this.possessionTicks.home++;
-    } else {
-      this.possessionTicks.away++;
-    }
-  }
-
-  _defenseBlocks(team) {
-    return Math.random() < team.defenseRating / 110;
-  }
-
-  _goalkeeperSaves(team) {
-    return Math.random() < team.goalkeeperRating / 90;
-  }
-
-  _calculatePressure(attacking, defending) {
-    const diff = attacking.attackRating - defending.defenseRating;
-    if (diff >= 15) return 'high';
-    if (diff >= 5) return 'medium';
-    return 'low';
-  }
-
-  _determinePenaltyOutcome(defendingTeam) {
-    if (Math.random() < 0.7) {
-      if (Math.random() < defendingTeam.goalkeeperRating / 120) return 'saved';
-      return 'scored';
-    }
-    return 'missed';
-  }
-
-  _selectScorer(players) {
-    const outfield = players.filter(p => !p.isGoalkeeper);
-    if (!outfield.length) return null;
-
-    const totalAttack = outfield.reduce((sum, p) => sum + p.attack, 0);
-    let rand = Math.random() * totalAttack;
-
-    for (const player of outfield) {
-      rand -= player.attack;
-      if (rand <= 0) return player;
-    }
-    return outfield[0];
-  }
-
-  _selectAssister(players, scorerId) {
-    const candidates = players.filter(p => !p.isGoalkeeper && p.playerId !== scorerId);
-    if (!candidates.length || Math.random() < 0.3) return null;
-
-    const totalAttack = candidates.reduce((sum, p) => sum + p.attack, 0);
-    let rand = Math.random() * totalAttack;
-
-    for (const player of candidates) {
-      rand -= player.attack;
-      if (rand <= 0) return player;
-    }
-    return candidates[0];
-  }
-
-  _generateBundleId(eventType, minute) {
-    this.bundleCounter++;
-    return `${eventType}_${minute}_${this.bundleCounter}`;
   }
 
   _createEvent(type, minute, data = {}) {
@@ -802,6 +455,26 @@ class LiveMatch {
       awayTeam: { id: this.awayTeam.id, name: this.awayTeam.name },
       ...data
     };
+  }
+
+  _collectRecapStats(recap, events) {
+    for (const evt of events) {
+      if ([EVENT_TYPES.GOAL, EVENT_TYPES.PENALTY_SCORED].includes(evt.type)) recap.goals++;
+      if ([EVENT_TYPES.SHOT_SAVED, EVENT_TYPES.SHOT_MISSED].includes(evt.type)) recap.shots++;
+      if (evt.type === EVENT_TYPES.CHANCE_CREATED) recap.bigChances++;
+      if ([EVENT_TYPES.YELLOW_CARD, EVENT_TYPES.RED_CARD].includes(evt.type)) recap.cards++;
+      if (evt.type === EVENT_TYPES.CORNER) recap.corners++;
+    }
+  }
+
+  _createFastForwardRecap(fromMinute, toMinute, recap) {
+    const summary = `${fromMinute}'-${toMinute}' recap: ${recap.goals} goals, ${recap.shots} shots, ${recap.bigChances} big chances, ${recap.cards} cards, ${recap.corners} corners.`;
+    return this._createEvent(EVENT_TYPES.MATCH_RECAP, toMinute, {
+      fromMinute,
+      toMinute,
+      recap,
+      description: summary
+    });
   }
 
   // === Persistence ===
@@ -833,7 +506,7 @@ class LiveMatch {
     const homePossession = totalTicks > 0 ? (this.possessionTicks.home / totalTicks * 100) : 50;
     const awayPossession = 100 - homePossession;
 
-    // Determine if penalties were played (check if either score is non-zero or any kicks taken)
+    // Determine if penalties were played
     const penaltiesPlayed = this.penaltyScore.home > 0 || this.penaltyScore.away > 0 ||
                             this.shootoutTaken.home > 0 || this.shootoutTaken.away > 0;
 
@@ -869,27 +542,12 @@ class LiveMatch {
       penaltiesPlayed: penaltiesPlayed
     });
 
-    // NOTE: Team stats (wins, losses, goals) are now updated here immediately
-    // TournamentManager should NOT update these stats again
+    // Update team stats
     try {
       const homeWon = winnerId === this.homeTeam.id;
 
-      // Update stats for home team
-      await Team.updateMatchStats(
-        this.homeTeam.id,
-        homeWon,
-        this.score.home,
-        this.score.away
-      );
-
-      // Update stats for away team
-      await Team.updateMatchStats(
-        this.awayTeam.id,
-        !homeWon,
-        this.score.away,
-        this.score.home
-      );
-
+      await Team.updateMatchStats(this.homeTeam.id, homeWon, this.score.home, this.score.away);
+      await Team.updateMatchStats(this.awayTeam.id, !homeWon, this.score.away, this.score.home);
     } catch (err) {
       console.error('[LiveMatch] Failed to update team stats:', err);
     }
@@ -900,14 +558,11 @@ class LiveMatch {
     }
   }
 
-  /**
-   * Update next round fixture with winner (fills TBD slot)
-   */
   async _advanceWinnerToNextRound(winnerId) {
     const bracketInfo = BRACKET_STRUCTURE[this.bracketSlot];
     if (!bracketInfo) return;
 
-    const position = bracketInfo.position; // 'home' or 'away'
+    const position = bracketInfo.position;
 
     try {
       const nextFixture = await Fixture.getByBracketSlot(this.tournamentId, this.feedsInto);
@@ -934,28 +589,30 @@ class LiveMatch {
     const tm = this.timings;
 
     if (t < tm.firstHalfEnd) {
-      return 1 + Math.floor(t * 45 / tm.firstHalfEnd);
+      return 1 + Math.floor(t * MATCH_MINUTES.FIRST_HALF_END / tm.firstHalfEnd);
     }
     if (t < tm.halftimeEnd) {
-      return 45;
+      return MATCH_MINUTES.FIRST_HALF_END;
     }
     if (t < tm.secondHalfEnd) {
-      return 46 + Math.floor((t - tm.halftimeEnd) * 45 / (tm.secondHalfEnd - tm.halftimeEnd));
+      return MATCH_MINUTES.SECOND_HALF_START + Math.floor((t - tm.halftimeEnd) * MATCH_MINUTES.FIRST_HALF_END / (tm.secondHalfEnd - tm.halftimeEnd));
     }
 
-    if (!tm.et1End) return 90;
+    if (!tm.et1End) return MATCH_MINUTES.SECOND_HALF_END;
+
+    const etHalfMinutes = MATCH_MINUTES.ET_FIRST_HALF_END - MATCH_MINUTES.SECOND_HALF_END; // 15
 
     if (t < tm.et1End) {
-      return 91 + Math.floor((t - tm.secondHalfEnd) * 15 / (tm.et1End - tm.secondHalfEnd));
+      return MATCH_MINUTES.ET_FIRST_HALF_START + Math.floor((t - tm.secondHalfEnd) * etHalfMinutes / (tm.et1End - tm.secondHalfEnd));
     }
     if (t < tm.etHalftimeEnd) {
-      return 105;
+      return MATCH_MINUTES.ET_FIRST_HALF_END;
     }
     if (t < tm.et2End) {
-      return 106 + Math.floor((t - tm.etHalftimeEnd) * 15 / (tm.et2End - tm.etHalftimeEnd));
+      return MATCH_MINUTES.ET_SECOND_HALF_START + Math.floor((t - tm.etHalftimeEnd) * etHalfMinutes / (tm.et2End - tm.etHalftimeEnd));
     }
 
-    return 120;
+    return MATCH_MINUTES.ET_SECOND_HALF_END;
   }
 
   getScore() {
@@ -987,9 +644,6 @@ class LiveMatch {
     return this.state;
   }
 
-  /**
-   * Wait for DB finalization to complete (prevents race condition)
-   */
   async awaitFinalization() {
     if (this._finalizationPromise) {
       await this._finalizationPromise;
@@ -1002,62 +656,18 @@ class LiveMatch {
     const isDraw = this.score.home === this.score.away;
     const isKnockout = this.rules.knockout !== false;
 
-    // For knockout matches with a draw, we need to resolve the match properly
     if (isDraw && isKnockout) {
-      // If we haven't played penalties yet, simulate them instantly
       if (this.penaltyScore.home === 0 && this.penaltyScore.away === 0) {
         console.log(`[LiveMatch ${this.fixtureId}] forceEnd: Knockout draw - simulating instant penalties`);
-        this._simulateInstantPenalties();
+        PenaltyShootout.simulateInstant(this.shootoutScores, this.shootoutTaken, this.penaltyScore);
       }
     }
 
     this.state = MATCH_STATES.FINISHED;
 
-    // CRITICAL: Finalize match to database - without this, winner_team_id stays NULL
-    // This was the cause of the "draw bug" - forceEnd() bypassed _handleMatchEnd()
-    // which meant _finalizeMatch() was never called
     this._finalizationPromise = this._finalizeMatch().catch(err => {
       console.error(`[LiveMatch ${this.fixtureId}] forceEnd finalize error:`, err);
     });
-  }
-
-  /**
-   * Simulate an instant penalty shootout for forced match endings
-   * Used when a knockout match needs to end but is still a draw
-   */
-  _simulateInstantPenalties() {
-    // Simulate standard 5 rounds
-    for (let round = 0; round < 5; round++) {
-      // Home team takes a kick
-      if (Math.random() < 0.75) { // 75% success rate
-        this.shootoutScores.home++;
-      }
-      this.shootoutTaken.home++;
-
-      // Away team takes a kick
-      if (Math.random() < 0.75) {
-        this.shootoutScores.away++;
-      }
-      this.shootoutTaken.away++;
-
-      // Check for early winner (mathematically decided)
-      const remaining = 5 - (round + 1);
-      if (Math.abs(this.shootoutScores.home - this.shootoutScores.away) > remaining) {
-        break;
-      }
-    }
-
-    // Sudden death if still tied after 5 rounds
-    while (this.shootoutScores.home === this.shootoutScores.away) {
-      if (Math.random() < 0.75) this.shootoutScores.home++;
-      this.shootoutTaken.home++;
-      if (Math.random() < 0.75) this.shootoutScores.away++;
-      this.shootoutTaken.away++;
-    }
-
-    // Set final penalty score
-    this.penaltyScore = { ...this.shootoutScores };
-    console.log(`[LiveMatch ${this.fixtureId}] Instant penalties result: ${this.penaltyScore.home}-${this.penaltyScore.away}`);
   }
 
   forceSetScore(home, away) {
@@ -1066,10 +676,36 @@ class LiveMatch {
     this._persistScore();
   }
 
+  /**
+   * Process one shootout tick (backward-compatible proxy)
+   */
+  _processShootoutTick() {
+    // Sync state to sub-module before processing (test code may reassign these objects)
+    this._shootout.ctx.shootoutScores = this.shootoutScores;
+    this._shootout.ctx.shootoutTaken = this.shootoutTaken;
+    this._shootout.ctx.penaltyScore = this.penaltyScore;
+    this._shootout.currentShooter = this.currentShooter;
+
+    const { events, finished } = this._shootout.processTick(
+      this.tickElapsed,
+      this.timings.et2End || this.tickElapsed
+    );
+
+    // Sync state back from sub-module
+    this.currentShooter = this._shootout.currentShooter;
+    this.shootoutScores = this._shootout.ctx.shootoutScores;
+    this.shootoutTaken = this._shootout.ctx.shootoutTaken;
+    this.penaltyScore = this._shootout.ctx.penaltyScore;
+
+    if (finished) {
+      this.state = MATCH_STATES.FINISHED;
+    }
+    return events;
+  }
+
   // === Recovery ===
 
   static async recover(fixtureId, startTime, rules = {}) {
-    // Load fixture data
     const fixture = await Fixture.getById(fixtureId);
     const homeTeam = await Team.getRatingById(fixture.homeTeamId);
     const awayTeam = await Team.getRatingById(fixture.awayTeamId);
@@ -1077,7 +713,6 @@ class LiveMatch {
     const match = new LiveMatch(fixtureId, homeTeam, awayTeam, startTime, rules);
     await match.loadPlayers();
 
-    // Rebuild score from events
     const events = await MatchEvent.getByFixtureId(fixtureId);
     for (const evt of events) {
       if (evt.eventType === 'goal' || evt.eventType === 'penalty_scored') {

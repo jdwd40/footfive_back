@@ -1,0 +1,15 @@
+---
+description: Read Living Architecture at conversation start
+alwaysApply: true
+---
+
+# Living Architecture Rule
+
+**At the start of every conversation**, read `LIVING_ARCHITECTURE.md` to understand the project structure, file map, and dependencies.
+
+`LIVING_ARCHITECTURE.md` maps every file in the project with its purpose and dependencies. Use it to:
+- Navigate the codebase
+- Understand where to add or modify code
+- Follow the request flow and simulation flow
+
+When adding, removing, or renaming files, **update `LIVING_ARCHITECTURE.md`** and ensure it passes the pre-commit check.
