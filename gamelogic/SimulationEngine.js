@@ -1,3 +1,8 @@
+/**
+ * @deprecated Legacy batch simulation engine. Use LiveMatch for real-time simulation.
+ * Only used by POST /api/fixtures/:id/simulate endpoint.
+ * Consider removing once that endpoint is no longer needed.
+ */
 const db = require('../db/connection');
 const Fixture = require('../models/FixtureModel');
 const MatchEvent = require('../models/MatchEventModel');

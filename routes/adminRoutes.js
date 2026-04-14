@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const {
+  devAdminOnly,
   startSimulation,
   stopSimulation,
-  forceTournamentStart,
+  startTournament,
   cancelTournament,
   skipToRound,
   forceScore,
@@ -15,14 +16,17 @@ const {
   clearEvents
 } = require('../controllers/adminController');
 
+// All routes require dev admin access
+router.use(devAdminOnly);
+
 // Simulation loop controls
 router.post('/simulation/start', startSimulation);   // POST /api/admin/simulation/start
 router.post('/simulation/stop', stopSimulation);     // POST /api/admin/simulation/stop
 
 // Tournament controls
-router.post('/tournament/start', forceTournamentStart);   // POST /api/admin/tournament/start
-router.post('/tournament/cancel', cancelTournament);      // POST /api/admin/tournament/cancel
-router.post('/tournament/skip-to-round', skipToRound);    // POST /api/admin/tournament/skip-to-round
+router.post('/tournament/start', startTournament);       // POST /api/admin/tournament/start
+router.post('/tournament/cancel', cancelTournament);     // POST /api/admin/tournament/cancel
+router.post('/tournament/skip-to-round', skipToRound);   // POST /api/admin/tournament/skip-to-round
 
 // Match controls
 router.post('/match/:fixtureId/force-score', forceScore);   // POST /api/admin/match/:id/force-score

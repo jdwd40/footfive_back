@@ -4,9 +4,9 @@ const cors = require('cors');
 const routes = require('./routes');
 
 // Simulation system
-const { getSimulationLoop, resetSimulationLoop } = require('./Gamelogic/simulation/SimulationLoop');
-const { TournamentManager } = require('./Gamelogic/simulation/TournamentManager');
-const { getEventBus, resetEventBus } = require('./Gamelogic/simulation/EventBus');
+const { getSimulationLoop, resetSimulationLoop } = require('./gamelogic/simulation/SimulationLoop');
+const { TournamentManager } = require('./gamelogic/simulation/TournamentManager');
+const { getEventBus, resetEventBus } = require('./gamelogic/simulation/EventBus');
 
 app.use(express.json()); // for parsing application/json
 

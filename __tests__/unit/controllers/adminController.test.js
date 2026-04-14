@@ -2,7 +2,7 @@ const {
   devAdminOnly,
   startSimulation,
   stopSimulation,
-  forceTournamentStart,
+  startTournament,
   cancelTournament,
   skipToRound,
   forceScore,
@@ -46,15 +46,15 @@ const mockEventBus = {
   getRecentEvents: jest.fn().mockReturnValue([])
 };
 
-jest.mock('../../../Gamelogic/simulation/SimulationLoop', () => ({
+jest.mock('../../../gamelogic/simulation/SimulationLoop', () => ({
   getSimulationLoop: jest.fn(() => mockLoop)
 }));
 
-jest.mock('../../../Gamelogic/simulation/EventBus', () => ({
+jest.mock('../../../gamelogic/simulation/EventBus', () => ({
   getEventBus: jest.fn(() => mockEventBus)
 }));
 
-jest.mock('../../../Gamelogic/simulation/TournamentManager', () => ({
+jest.mock('../../../gamelogic/simulation/TournamentManager', () => ({
   TournamentManager: jest.fn().mockImplementation(() => ({
     getState: jest.fn().mockReturnValue({ state: 'IDLE' }),
     forceStart: jest.fn().mockResolvedValue({ state: 'ROUND_OF_16' }),
@@ -154,11 +154,11 @@ describe('adminController', () => {
     });
   });
 
-  describe('forceTournamentStart', () => {
+  describe('startTournament', () => {
     it('should return error if simulation not initialized', async () => {
       mockLoop.tournamentManager = null;
 
-      await forceTournamentStart(mockReq, mockRes);
+      await startTournament(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(mockRes.json).toHaveBeenCalledWith({
@@ -167,17 +167,23 @@ describe('adminController', () => {
       });
     });
 
-    it('returns success and state when tournament manager exists', async () => {
+    it('should start tournament', async () => {
       const mockTM = {
-        startNow: jest.fn().mockResolvedValue({ state: 'ROUND_ACTIVE' })
+        startTournament: jest.fn().mockResolvedValue({ tournamentId: 123, state: 'ROUND_OF_16', teamsCount: 16 }),
+        getLiveMatches: jest.fn().mockReturnValue([{ fixtureId: 1 }])
       };
       mockLoop.tournamentManager = mockTM;
 
-      await forceTournamentStart(mockReq, mockRes);
+      await startTournament(mockReq, mockRes);
 
+      expect(mockTM.startTournament).toHaveBeenCalled();
+      expect(mockLoop.registerMatches).toHaveBeenCalled();
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
-        state: { state: 'ROUND_ACTIVE' }
+        message: 'Tournament started',
+        tournamentId: 123,
+        state: 'ROUND_OF_16',
+        teamsCount: 16
       });
     });
   });
@@ -233,17 +239,13 @@ describe('adminController', () => {
       });
     });
 
-    it('returns 400 and error when match not found', () => {
+    it('throws when match not found', () => {
       mockReq.params = { fixtureId: '999' };
       mockReq.body = { home: 1, away: 0 };
       mockLoop.forceSetScore.mockImplementationOnce(() => {
         throw new Error('Match 999 not found');
       });
-      forceScore(mockReq, mockRes);
-      expect(mockRes.status).toHaveBeenCalledWith(400);
-      expect(mockRes.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: expect.any(String) })
-      );
+      expect(() => forceScore(mockReq, mockRes)).toThrow('Match 999 not found');
     });
   });
 

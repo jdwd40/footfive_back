@@ -5,7 +5,7 @@
  */
 
 const request = require('supertest');
-const { resetSimulationLoop, resetEventBus } = require('../../Gamelogic/simulation');
+const { resetSimulationLoop, resetEventBus } = require('../../gamelogic/simulation');
 const { createTestApp, setupBeforeEach, cleanupAfterEach, sseClient } = require('../setup/testHelpers');
 
 describe('Admin and Live integration', () => {
@@ -125,7 +125,7 @@ describe('Admin and Live integration', () => {
         expect(events.some((e) => e.type === 'connected')).toBe(true);
         const scoreEvent = events.find((e) => e.type === 'score_update' && e.fixtureId === fixtureId);
         expect(scoreEvent).toBeDefined();
-        expect(scoreEvent.score).toEqual({ home: 2, away: 1 });
+        expect(scoreEvent.payload?.score).toEqual({ home: 2, away: 1 });
       } finally {
         server.close();
       }
@@ -153,7 +153,7 @@ describe('Admin and Live integration', () => {
           (e) => e.type === 'score_update' && (e.fixtureId === fixtureId || e.fixtureId === Number(fixtureId))
         );
         expect(catchupScore).toBeDefined();
-        expect(catchupScore.score).toEqual({ home: 1, away: 0 });
+        expect(catchupScore.payload?.score).toEqual({ home: 1, away: 0 });
       } finally {
         server.close();
       }

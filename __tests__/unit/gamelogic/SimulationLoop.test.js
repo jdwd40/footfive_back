@@ -1,4 +1,5 @@
-const { SimulationLoop, getSimulationLoop, resetSimulationLoop } = require('../../../Gamelogic/simulation/SimulationLoop');
+const { SimulationLoop, getSimulationLoop, resetSimulationLoop } = require('../../../gamelogic/simulation/SimulationLoop');
+const EventEmitter = require('events');
 
 describe('SimulationLoop', () => {
   let loop;
@@ -229,6 +230,29 @@ describe('SimulationLoop', () => {
       loop.tick();
 
       expect(mockEventBus.emit).toHaveBeenCalledWith({ type: 'goal' });
+    });
+
+    it('should forward tournament manager events to event bus', () => {
+      class MockTournamentManager extends EventEmitter {
+        constructor() {
+          super();
+          this.tournamentId = 200;
+        }
+      }
+      const mockTournamentManager = new MockTournamentManager();
+      mockTournamentManager.tick = jest.fn();
+      mockTournamentManager.recover = jest.fn().mockResolvedValue(false);
+
+      const mockEventBus = { emit: jest.fn() };
+      loop.init({ tournamentManager: mockTournamentManager, eventBus: mockEventBus });
+
+      mockTournamentManager.emit('round_start', { tournamentId: 200, roundName: 'Quarter-finals' });
+
+      expect(mockEventBus.emit).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'round_start',
+        scope: 'tournament',
+        tournamentId: 200
+      }));
     });
   });
 
