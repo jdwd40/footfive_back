@@ -100,20 +100,28 @@ async function skipToRound(req, res) {
 }
 
 function forceScore(req, res) {
-  const loop = getSimulationLoop();
-  const { home, away } = req.body;
-  const fixtureId = parseInt(req.params.fixtureId);
+  try {
+    const loop = getSimulationLoop();
+    const { home, away } = req.body;
+    const fixtureId = parseInt(req.params.fixtureId, 10);
 
-  loop.forceSetScore(fixtureId, home, away);
-  res.json({ success: true, score: { home, away } });
+    loop.forceSetScore(fixtureId, home, away);
+    res.json({ success: true, score: { home, away } });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 }
 
 function forceEndMatch(req, res) {
-  const loop = getSimulationLoop();
-  const fixtureId = parseInt(req.params.fixtureId);
+  try {
+    const loop = getSimulationLoop();
+    const fixtureId = parseInt(req.params.fixtureId, 10);
 
-  loop.forceEndMatch(fixtureId);
-  res.json({ success: true });
+    loop.forceEndMatch(fixtureId);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 }
 
 function pauseSimulation(req, res) {

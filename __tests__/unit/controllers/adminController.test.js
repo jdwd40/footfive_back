@@ -239,13 +239,15 @@ describe('adminController', () => {
       });
     });
 
-    it('throws when match not found', () => {
+    it('returns 400 and error when match not found', () => {
       mockReq.params = { fixtureId: '999' };
       mockReq.body = { home: 1, away: 0 };
       mockLoop.forceSetScore.mockImplementationOnce(() => {
         throw new Error('Match 999 not found');
       });
-      expect(() => forceScore(mockReq, mockRes)).toThrow('Match 999 not found');
+      forceScore(mockReq, mockRes);
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Match 999 not found' });
     });
   });
 
@@ -254,6 +256,16 @@ describe('adminController', () => {
       mockReq.params = { fixtureId: '1' };
       forceEndMatch(mockReq, mockRes);
       expect(mockRes.json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('returns 400 and error when match not found', () => {
+      mockReq.params = { fixtureId: '999' };
+      mockLoop.forceEndMatch.mockImplementationOnce(() => {
+        throw new Error('Match 999 not found');
+      });
+      forceEndMatch(mockReq, mockRes);
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Match 999 not found' });
     });
   });
 
