@@ -9,7 +9,7 @@ const liveRoutes = require('./liveRoutes');
 const adminRoutes = require('./adminRoutes');
 
 router.get('/', (req, res) => {
-    res.send({ "msg:": "ok" });
+    res.send({ msg: 'ok' });
 });
 
 router.use('/teams', teamRoutes);

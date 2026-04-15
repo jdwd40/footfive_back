@@ -22,20 +22,12 @@ describe('Main API Routes', () => {
   });
 
   describe('Root endpoint', () => {
-    it('GET /api should be available', async () => {
+    it('GET /api returns 200 and ok message', async () => {
       const response = await request(app)
         .get('/api')
         .expect(200);
-      
-      expect(response.body).toHaveProperty('msg:');
-    });
-
-    it('should return ok message', async () => {
-      const response = await request(app)
-        .get('/api')
-        .expect(200);
-      
-      expect(response.body['msg:']).toBe('ok');
+      expect(response.body).toHaveProperty('msg');
+      expect(response.body.msg).toBe('ok');
     });
   });
 
@@ -80,18 +72,12 @@ describe('Main API Routes', () => {
   });
 
   describe('Content-Type', () => {
-    it('should return JSON for all API endpoints', async () => {
-      await request(app)
-        .get('/api')
-        .expect('Content-Type', /json/);
-      
-      await request(app)
-        .get('/api/teams')
-        .expect('Content-Type', /json/);
-      
-      await request(app)
-        .get('/api/players')
-        .expect('Content-Type', /json/);
+    it('should return JSON for documented GET endpoints', async () => {
+      const jsonRoutes = ['/api', '/api/teams', '/api/players', '/api/diagnostic'];
+      for (const route of jsonRoutes) {
+        const res = await request(app).get(route);
+        expect(res.headers['content-type']).toMatch(/json/);
+      }
     });
   });
 

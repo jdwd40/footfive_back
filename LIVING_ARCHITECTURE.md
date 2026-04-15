@@ -149,6 +149,7 @@
 | `__tests__/integration/controllers/teamController.test.js` | Team controller + DB. | teamController, db |
 | `__tests__/integration/controllers/playerController.test.js` | Player controller + DB. | playerController, db |
 | `__tests__/integration/controllers/diagnosticController.test.js` | Diagnostic controller. | diagnosticController |
+| `__tests__/integration/adminLiveIntegration.test.js` | Admin + live end-to-end flow. | adminController, liveController |
 
 ---
 
@@ -183,6 +184,7 @@
 | `ARCHITECTURE.md` | System architecture, diagrams, data flow. |
 | `PROJECT_STRUCTURE.md` | Directory layout, module dependencies. |
 | `API_REFERENCE.md` | API endpoints documentation. |
+| `AGENTS.md` | Agent guidelines and collaboration notes. |
 
 ---
 
@@ -207,6 +209,9 @@
 | `docs/TOURNAMENT_SCHEDULING.md` | Tournament scheduling. |
 | `docs/CODE_REVIEW_REPORT.md` | Code review notes. |
 | `docs/fix-live-match-display.plan.md` | Fix plan for live match display. |
+| `docs/TEST_AUDIT.md` | Test suite audit. |
+| `docs/TEST_COVERAGE.md` | Test coverage notes. |
+| `docs/claude_vps_instructions.md` | VPS-specific Claude instructions. |
 
 ---
 

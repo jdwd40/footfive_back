@@ -23,7 +23,6 @@ describe('PlayerModel', () => {
       
       const player = await Player.fetchById(testPlayer.player_id);
       
-      expect(player).toBeDefined();
       expect(player.playerId).toBe(testPlayer.player_id);
       expect(player.teamId).toBe(testPlayer.team_id);
       expect(player.name).toBe(testPlayer.name);

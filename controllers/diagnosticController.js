@@ -3,14 +3,16 @@ const { seed } = require('../db/seed');
 
 exports.getDatabaseStatus = async (req, res) => {
     try {
-        // Check if tables exist
+        // Check if tables exist (include tournament_state for live simulation)
         const tablesQuery = `
             SELECT table_name 
             FROM information_schema.tables 
             WHERE table_schema = 'public' 
-            AND table_name IN ('teams', 'players')
+            AND table_name IN ('teams', 'players', 'tournament_state')
         `;
         const tables = await db.query(tablesQuery);
+        const tableList = tables.rows.map(t => t.table_name);
+        const tournamentStateExists = tableList.includes('tournament_state');
 
         // Count teams and players
         let teamCount = 0;
@@ -56,7 +58,8 @@ exports.getDatabaseStatus = async (req, res) => {
             message: "Database diagnostic complete",
             database: process.env.PGDATABASE || 'Not set',
             environment: process.env.NODE_ENV || 'Not set',
-            tables: tables.rows.map(t => t.table_name),
+            tables: tableList,
+            tournament_state_exists: tournamentStateExists,
             counts: {
                 teams: teamCount,
                 players: playerCount

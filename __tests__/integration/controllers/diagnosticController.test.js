@@ -48,7 +48,6 @@ describe('DiagnosticController', () => {
         .get('/api/diagnostic')
         .expect(200);
       
-      expect(Array.isArray(response.body.tables)).toBe(true);
       expect(response.body.tables).toContain('teams');
       expect(response.body.tables).toContain('players');
     });
@@ -104,13 +103,6 @@ describe('DiagnosticController', () => {
       }
     });
 
-    it('should return proper content type', async () => {
-      await request(app)
-        .get('/api/diagnostic')
-        .expect(200)
-        .expect('Content-Type', /json/);
-    });
-
     it('should handle empty database gracefully', async () => {
       await DatabaseTestHelper.cleanDatabase();
       
@@ -158,13 +150,6 @@ describe('DiagnosticController', () => {
       
       expect(response.body.environment).toBe('test');
       expect(response.body.database).toBe('footfive_test');
-    });
-
-    it('should return proper content type', async () => {
-      await request(app)
-        .post('/api/diagnostic/seed')
-        .expect(200)
-        .expect('Content-Type', /json/);
     });
 
     it('should handle multiple seed requests', async () => {

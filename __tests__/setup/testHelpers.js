@@ -74,7 +74,8 @@ const createTestPlayer = async (teamId, overrides = {}) => {
 };
 
 /**
- * Get test app for API testing
+ * Get test app for API testing (real routes, no mocking of loop/eventBus).
+ * Same as createTestApp() with no options.
  */
 const getTestApp = () => {
   const express = require('express');
@@ -89,6 +90,105 @@ const getTestApp = () => {
   return app;
 };
 
+/**
+ * Build Express app with real routes and minimal/real dependencies for integration tests.
+ * Use resetSimulationLoop() and resetEventBus() in beforeEach/afterEach when testing
+ * admin/live endpoints to avoid cross-test state leakage.
+ *
+ * @param {Object} [options]
+ * @param {boolean} [options.devAdmin=true] - If true, callers should set process.env.DEV_ADMIN='true' so admin routes accept requests.
+ * @returns {import('express').Application}
+ */
+const createTestApp = (options = {}) => {
+  const app = getTestApp();
+  if (options.devAdmin !== false) {
+    process.env.DEV_ADMIN = 'true';
+  }
+  return app;
+};
+
+/**
+ * Parse SSE data lines from chunk; returns { parsed: object[], buffer: string }.
+ * Handles multiline and incomplete lines safely.
+ */
+function parseSSELines(buffer, chunk) {
+  const str = buffer + chunk.toString();
+  const lines = str.split('\n');
+  const remainder = lines.pop() || '';
+  const parsed = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('data: ')) {
+      const payload = line.slice(6).trim();
+      if (payload === '') continue;
+      try {
+        parsed.push(JSON.parse(payload));
+      } catch (_) {
+        // skip non-JSON data lines
+      }
+    }
+  }
+  return { parsed, buffer: remainder };
+}
+
+/**
+ * Connect to an SSE endpoint, collect events until timeout, and return parsed payloads.
+ * Uses native http so the app must be listening (e.g. app.listen(0)).
+ *
+ * @param {string} baseUrl - e.g. 'http://127.0.0.1:3456'
+ * @param {string} path - e.g. '/api/live/events'
+ * @param {{ timeoutMs?: number, afterSeq?: number, fixtureId?: number, tournamentId?: number }} [opts]
+ * @returns {Promise<{ events: Array<object>, close: function }>}
+ */
+function sseClient(baseUrl, path, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 3000;
+  const params = new URLSearchParams();
+  if (opts.afterSeq != null) params.set('afterSeq', String(opts.afterSeq));
+  if (opts.fixtureId != null) params.set('fixtureId', String(opts.fixtureId));
+  if (opts.tournamentId != null) params.set('tournamentId', String(opts.tournamentId));
+  const search = params.toString();
+  const pathWithQuery = search ? `${path}${path.includes('?') ? '&' : '?'}${search}` : path;
+
+  const url = new URL(pathWithQuery, baseUrl);
+  const http = require('http');
+  const events = [];
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeoutId;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      req.destroy();
+      resolve(result);
+    };
+    const req = http.get(
+      { hostname: url.hostname, port: url.port || 80, path: url.pathname + url.search, headers: { Accept: 'text/event-stream' } },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          return finish({ events: [], close: () => {} });
+        }
+        let buffer = '';
+        timeoutId = setTimeout(() => finish({ events, close: () => {} }), timeoutMs);
+        res.on('data', (chunk) => {
+          const { parsed, buffer: nextBuffer } = parseSSELines(buffer, chunk);
+          buffer = nextBuffer;
+          events.push(...parsed);
+        });
+        res.on('end', () => finish({ events, close: () => {} }));
+        res.on('error', (err) => {
+          if (!settled) { settled = true; if (timeoutId) clearTimeout(timeoutId); req.destroy(); reject(err); }
+        });
+      }
+    );
+    req.on('error', (err) => {
+      if (!settled) { settled = true; reject(err); }
+    });
+  });
+}
+
 module.exports = {
   DatabaseTestHelper,
   setupBeforeEach,
@@ -96,6 +196,8 @@ module.exports = {
   setupWithFullData,
   createTestTeam,
   createTestPlayer,
-  getTestApp
+  getTestApp,
+  createTestApp,
+  sseClient
 };
 

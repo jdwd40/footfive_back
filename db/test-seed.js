@@ -1,12 +1,21 @@
+const fs = require('fs');
+const path = require('path');
 const db = require('./test-connection'); // Use test database connection
 const format = require('pg-format');
 const teamsData = require('./data/teams');
 
+const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
+const MIGRATION_ORDER = ['001_match_system.sql', '002_add_event_types.sql', '003_bracket_system.sql', '004_tournament_state.sql'];
+
 const setupTestDatabase = async () => {
     try {
         console.log('Setting up test database...');
-        
-        // Drop existing tables
+        // Drop all app tables so migrations run from clean state (idempotent across runs)
+        await db.query('DROP TABLE IF EXISTS tournament_state CASCADE;');
+        await db.query('DROP TABLE IF EXISTS match_events CASCADE;');
+        await db.query('DROP TABLE IF EXISTS match_reports CASCADE;');
+        await db.query('DROP TABLE IF EXISTS fixture_odds CASCADE;');
+        await db.query('DROP TABLE IF EXISTS fixtures CASCADE;');
         await db.query('DROP TABLE IF EXISTS players CASCADE;');
         await db.query('DROP TABLE IF EXISTS teams CASCADE;');
 
@@ -44,6 +53,19 @@ const setupTestDatabase = async () => {
     } catch (error) {
         console.error('Error setting up test database:', error);
         throw error;
+    }
+};
+
+/**
+ * Run migration SQL files against test DB (after setupTestDatabase).
+ * Ensures fixtures, match_events, tournament_state etc. exist for integration tests.
+ */
+const runTestMigrations = async () => {
+    for (const file of MIGRATION_ORDER) {
+        const filePath = path.join(MIGRATIONS_DIR, file);
+        if (!fs.existsSync(filePath)) continue;
+        const sql = fs.readFileSync(filePath, 'utf8');
+        await db.query(sql);
     }
 };
 
@@ -91,7 +113,18 @@ const seedTestData = async (customTeamsData = null) => {
 const cleanupTestDatabase = async () => {
     try {
         console.log('Cleaning up test database...');
-        await db.query('TRUNCATE TABLE players, teams RESTART IDENTITY CASCADE;');
+        // Truncate in dependency order so each test starts from clean state
+        await db.query(`
+            TRUNCATE TABLE
+                tournament_state,
+                match_events,
+                match_reports,
+                fixture_odds,
+                fixtures,
+                players,
+                teams
+            RESTART IDENTITY CASCADE;
+        `);
         console.log('Test database cleaned up successfully!');
         return true;
     } catch (error) {
@@ -111,6 +144,7 @@ const closeTestConnection = async () => {
 
 module.exports = {
     setupTestDatabase,
+    runTestMigrations,
     seedTestData,
     cleanupTestDatabase,
     closeTestConnection,
