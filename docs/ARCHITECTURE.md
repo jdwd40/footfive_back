@@ -18,13 +18,13 @@ FootFive is a real-time football (5-a-side) tournament simulation backend built 
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │                    Routes Layer                          │    │
 │  │  /api/teams  /api/players  /api/fixtures  /api/live     │    │
-│  │  /api/jcup   /api/admin    /api/diagnostic              │    │
+│  │  /api/admin  /api/diagnostic                            │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                              │                                   │
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │                  Controllers Layer                       │    │
 │  │  teamController, playerController, fixtureController    │    │
-│  │  liveController, adminController, jCupController        │    │
+│  │  liveController, adminController, diagnosticController  │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                              │                                   │
 │  ┌─────────────────────────────────────────────────────────┐    │
@@ -222,7 +222,7 @@ Current design supports single-server deployment. For scaling:
 
 ## Security
 
-- **Admin Routes**: Protected by `devAdminOnly` middleware (dev environment only)
+- **Admin Routes**: Protected by `devAdminOnly` (`DEV_ADMIN=true` or matching `x-admin-secret` / `ADMIN_SECRET`)
 - **CORS**: Configured for allowed origins (localhost, VPS IP, domain)
 - **Input Validation**: Parameterized SQL queries prevent injection
 - **No Authentication**: Public read access (appropriate for game stats)

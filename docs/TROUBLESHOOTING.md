@@ -120,6 +120,24 @@ npm run migrate
 
 ---
 
+### `tournament_state` missing in production
+
+**Error**: `POST /api/admin/tournament/start` returns 500 with `relation "tournament_state" does not exist`.
+
+**Cause**: Migration `004_tournament_state.sql` was never applied to the **same** database the app uses, often because `NODE_ENV` or `.env.*` differed between the shell that ran `npm run migrate` and the running process.
+
+**Solution**:
+1. On the server, confirm how the app is started (`pm2`, `systemd`, etc.) and which `NODE_ENV` and `PGDATABASE` it uses.
+2. From the app directory, run the migration with that same `NODE_ENV` so `db/connection.js` loads the correct `.env` file:
+   ```bash
+   NODE_ENV=production npm run migrate 004_tournament_state.sql
+   ```
+   (Use `development` if that is what the process uses.)
+3. Verify with `GET /api/diagnostic` — `tournament_state_exists` should be `true`.
+4. Restart the app process.
+
+---
+
 ### Seeding Fails
 
 **Error**: `duplicate key value violates unique constraint`

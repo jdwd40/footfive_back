@@ -425,28 +425,9 @@ GET /api/live/events/recent
 
 ---
 
-## JCup (Legacy)
+## Admin
 
-### Initialize Tournament
-```http
-GET /api/jcup/init
-```
-
-### Play Round
-```http
-GET /api/jcup/play
-```
-
-### End Tournament
-```http
-POST /api/jcup/end
-```
-
----
-
-## Admin (Development Only)
-
-All admin routes require `NODE_ENV !== 'production'`.
+All admin routes require `devAdminOnly`: set `DEV_ADMIN=true`, or send header `x-admin-secret` matching `ADMIN_SECRET` (see `controllers/adminController.js`).
 
 ### Simulation Controls
 

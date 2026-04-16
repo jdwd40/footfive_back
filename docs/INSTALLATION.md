@@ -514,16 +514,17 @@ After installation, you can:
 1. **Explore the API** - Check available endpoints in the codebase
 2. **Run the test suite** - `npm test` to verify everything works
 3. **Use the test server** - Open `http://localhost:3001` to simulate matches
-4. **Review documentation** - Check `backend_documentation.md` for API details
+4. **Review documentation** - See [README.md](README.md) (index), [API_REFERENCE.md](API_REFERENCE.md), and [../LIVING_ARCHITECTURE.md](../LIVING_ARCHITECTURE.md)
 
 ---
 
 ## Support & Documentation
 
-- **Main Documentation:** `backend_documentation.md`
-- **Testing Guide:** `TESTING.md`
-- **Test Server Guide:** `test-server/README.md`
-- **Backend Changes (historical):** `obsolete/backend_changes.md`
+- **Documentation index:** [docs/README.md](README.md)
+- **API reference:** [docs/API_REFERENCE.md](API_REFERENCE.md)
+- **File map:** [LIVING_ARCHITECTURE.md](../LIVING_ARCHITECTURE.md) (repository root)
+- **Testing:** [docs/old/TESTING.md](old/TESTING.md) and [AGENTS.md](../AGENTS.md)
+- **Test Server Guide:** `test-server/README.md` (if present in your checkout)
 
 ---
 

@@ -27,7 +27,7 @@ Created `tournament_state` table for persisting tournament lifecycle state acros
 
 ## File Changes
 
-### `Gamelogic/simulation/TournamentManager.js` — Full rewrite
+### `gamelogic/simulation/TournamentManager.js` — Full rewrite
 
 **State machine replaced:**
 
@@ -81,13 +81,13 @@ Now does exactly one thing: if `state === INTER_ROUND_DELAY` and `now >= this.ne
 
 ---
 
-### `Gamelogic/simulation/SimulationLoop.js` — Minor update
+### `gamelogic/simulation/SimulationLoop.js` — Minor update
 
 `checkMatchCompletion()` changed from batching finished matches into an array and calling `onMatchesComplete(array)` to calling `onMatchFinalized(result)` individually per finished match, with `.catch()` error handling on each async call.
 
 ---
 
-### `Gamelogic/simulation/index.js` — Export update
+### `gamelogic/simulation/index.js` — Export update
 
 Removed `SCHEDULE` export. Added `BRACKET_STRUCTURE`, `ROUND_ORDER`, `ROUND_SLOT_MAP`, `INTER_ROUND_DELAY_MS`, `deriveMatchTimings`.
 

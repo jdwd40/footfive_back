@@ -1,27 +1,37 @@
-# FootFive Documentation
+# FootFive documentation
 
-## Active Documentation
+## Setup and operations
 
-### Setup & Operations
 | Document | Description |
 |----------|-------------|
-| [GETTING_STARTED.md](GETTING_STARTED.md) | Quick start guide |
-| [INSTALLATION.md](INSTALLATION.md) | Detailed installation instructions |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | VPS deployment & GitHub Actions |
-| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues and solutions |
-| [TESTING.md](TESTING.md) | Jest test suite guide |
+| [INSTALLATION.md](INSTALLATION.md) | Install PostgreSQL, env files, migrate, seed |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common failures (port, DB, migrations, simulation) |
+| [old/DEPLOYMENT.md](old/DEPLOYMENT.md) | Legacy VPS / deployment notes |
+| [old/TESTING.md](old/TESTING.md) | Jest layout and commands (also see repo `AGENTS.md`) |
 
-### API & Architecture
+## Architecture and API
+
 | Document | Description |
 |----------|-------------|
-| [../API_REFERENCE.md](../API_REFERENCE.md) | Full API reference (root) |
-| [new_endpoints.md](new_endpoints.md) | Fixtures API endpoints |
-| [bolt_endpoints.md](bolt_endpoints.md) | API endpoints for Bolt frontend |
-| [bolt_prompt.md](bolt_prompt.md) | Bolt AI frontend instructions |
-| [backend_documentation.md](backend_documentation.md) | Backend overview & architecture |
-| [highlight.md](highlight.md) | Highlights system documentation |
+| [../LIVING_ARCHITECTURE.md](../LIVING_ARCHITECTURE.md) | Every source file and how it connects |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System overview, diagrams, simulation flow |
+| [API_REFERENCE.md](API_REFERENCE.md) | HTTP endpoints (verify against `routes/` when in doubt) |
+| [new_endpoints.md](new_endpoints.md) | Fixtures-focused endpoint notes |
+| [TOURNAMENT_SCHEDULING.md](TOURNAMENT_SCHEDULING.md) | Wall-clock tournament schedule |
 
-### Obsolete
+## Features and integrations
+
 | Document | Description |
 |----------|-------------|
-| [obsolete/](obsolete/) | Historical docs (bug reports, completed plans, old reports) |
+| [events_system_fonrt_end_use.md](events_system_fonrt_end_use.md) | Events / SSE usage for frontends |
+| [LIVE_MATCH_VIEW_APP.md](LIVE_MATCH_VIEW_APP.md) | Live match view notes |
+| [match-events-enhancement.md](match-events-enhancement.md) | Match event enhancements |
+| [old/highlight.md](old/highlight.md) | Highlights system (legacy doc) |
+
+## Project history and tests
+
+| Document | Description |
+|----------|-------------|
+| [latest_changes.md](latest_changes.md) | Recent change log |
+| [TEST_AUDIT.md](TEST_AUDIT.md) | Test suite audit |
+| [TEST_COVERAGE.md](TEST_COVERAGE.md) | Coverage notes |
