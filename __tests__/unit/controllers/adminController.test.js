@@ -119,8 +119,11 @@ describe('adminController', () => {
 
       devAdminOnly(mockReq, mockRes, mockNext);
 
-      expect(mockRes.status).toHaveBeenCalledWith(404);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Not found' });
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'Admin access required',
+        hint: 'Set DEV_ADMIN=true in development or provide x-admin-secret header'
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
@@ -130,7 +133,11 @@ describe('adminController', () => {
 
       devAdminOnly(mockReq, mockRes, mockNext);
 
-      expect(mockRes.status).toHaveBeenCalledWith(404);
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'Admin access required',
+        hint: 'Set DEV_ADMIN=true in development or provide x-admin-secret header'
+      });
     });
   });
 

@@ -200,6 +200,7 @@
 | `docs/events_system_fonrt_end_use.md` | Events / SSE usage for frontends. |
 | `docs/LIVE_MATCH_VIEW_APP.md` | Live match view app notes. |
 | `docs/match-events-enhancement.md` | Match events enhancement. |
+| `docs/SIMULATION_PHASE12_UPGRADE.md` | Phase 1-2 simulation narrative upgrade and frontend changes. |
 | `docs/TOURNAMENT_SCHEDULING.md` | Tournament scheduling. |
 | `docs/TEST_AUDIT.md` | Test suite audit. |
 | `docs/TEST_COVERAGE.md` | Test coverage notes. |

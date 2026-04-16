@@ -82,7 +82,7 @@ Real Express app, real SimulationLoop and EventBus; loop/eventBus reset between 
 
 Mocks: SimulationLoop, EventBus, TournamentManager.
 
-- **devAdminOnly:** Allows when DEV_ADMIN=true or valid X-Admin-Secret; denies with 404 when neither; denies wrong secret.
+- **devAdminOnly:** Allows when DEV_ADMIN=true or valid X-Admin-Secret; denies with 403 + guidance when neither; denies wrong secret.
 - **startSimulation:** Init and start called; response `success` + `state`.
 - **stopSimulation:** Stop called; response `success`, `isRunning: false`.
 - **forceTournamentStart:** 400 with hint when simulation not initialized; success and state when TM present.
@@ -226,7 +226,7 @@ Real DB (test seed).
 | **Players** | Integration + unit | CRUD behaviour, validation, errors, empty DB; model fetch/update and validation |
 | **Teams** | Integration + unit | List, 3jcup, structure, errors; model getAll, ratings, jcups, runner-ups |
 | **Diagnostic** | Integration | Status, seed, counts, samples, errors |
-| **Admin controller** | Unit | devAdminOnly, validation, error mapping (400/404), response shapes |
+| **Admin controller** | Unit | devAdminOnly, validation, error mapping (400/403), response shapes |
 | **Live controller** | Unit | streamEvents wiring, getTournamentState/getMatchState/getStatus/getRecentEvents, 404 for unknown fixture |
 | **TournamentManager** | Unit | Setup, shuffle, rounds, fixtures, state, forceStart/cancel/skipToRound, getLiveMatches, _allMatchesFinished |
 | **EventBus** | Unit | Singleton, emit, buffer, getRecentEvents, SSE addClient/removeClient/broadcast/sendCatchup, persistence, clear |

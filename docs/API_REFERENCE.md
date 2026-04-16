@@ -427,7 +427,14 @@ GET /api/live/events/recent
 
 ## Admin
 
-All admin routes require `devAdminOnly`: set `DEV_ADMIN=true`, or send header `x-admin-secret` matching `ADMIN_SECRET` (see `controllers/adminController.js`).
+All admin routes require `devAdminOnly`: set `DEV_ADMIN=true`, or send header `x-admin-secret` matching `ADMIN_SECRET` (see `controllers/adminController.js`). Unauthorized requests return:
+
+```json
+{
+  "error": "Admin access required",
+  "hint": "Set DEV_ADMIN=true in development or provide x-admin-secret header"
+}
+```
 
 ### Simulation Controls
 
@@ -440,8 +447,17 @@ POST /api/admin/simulation/stop
 
 ```http
 POST /api/admin/tournament/start     # Force start tournament
+POST /api/admin/tournament/manual-start  # Backward-compatible alias
+POST /api/admin/start-tournament         # Backward-compatible alias
 POST /api/admin/tournament/cancel    # Cancel current tournament
 POST /api/admin/tournament/skip-to-round
+```
+
+Before calling tournament start, initialize simulation first:
+
+```http
+POST /api/admin/simulation/start
+POST /api/admin/tournament/start
 ```
 
 **Skip to Round Body**

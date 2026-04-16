@@ -26,6 +26,7 @@
 | [events_system_fonrt_end_use.md](events_system_fonrt_end_use.md) | Events / SSE usage for frontends |
 | [LIVE_MATCH_VIEW_APP.md](LIVE_MATCH_VIEW_APP.md) | Live match view notes |
 | [match-events-enhancement.md](match-events-enhancement.md) | Match event enhancements |
+| [SIMULATION_PHASE12_UPGRADE.md](SIMULATION_PHASE12_UPGRADE.md) | Phase 1-2 simulation narrative upgrade and frontend integration notes |
 | [old/highlight.md](old/highlight.md) | Highlights system (legacy doc) |
 
 ## Project history and tests

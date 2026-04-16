@@ -9,13 +9,13 @@ Tournaments are started manually via API and run with dynamic round progression.
 ### Endpoint
 
 ```
-GET /api/admin/tournament/start
+POST /api/admin/tournament/start
 ```
 
 ### Example
 
 ```bash
-curl http://localhost:9001/api/admin/tournament/start
+curl -X POST http://localhost:9001/api/admin/tournament/start
 ```
 
 ### Response
@@ -151,7 +151,9 @@ Plus 15 minutes of breaks (5 min × 3 breaks).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/admin/tournament/start` | Start a new tournament |
+| POST | `/api/admin/tournament/start` | Start a new tournament |
+| POST | `/api/admin/tournament/manual-start` | Backward-compatible start alias |
+| POST | `/api/admin/start-tournament` | Backward-compatible start alias |
 | POST | `/api/admin/tournament/cancel` | Cancel current tournament |
 | GET | `/api/admin/state` | Get current tournament state |
 

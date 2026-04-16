@@ -31,6 +31,47 @@ describe('Admin and Live integration', () => {
     process.env = originalEnv;
   });
 
+  describe('admin auth and route compatibility', () => {
+    it('returns 403 when admin auth is missing', async () => {
+      const protectedApp = createTestApp({ devAdmin: false });
+      const previousDevAdmin = process.env.DEV_ADMIN;
+      const previousAdminSecret = process.env.ADMIN_SECRET;
+      process.env.DEV_ADMIN = 'false';
+      delete process.env.ADMIN_SECRET;
+
+      try {
+        await request(protectedApp)
+          .post('/api/admin/simulation/start')
+          .send({})
+          .expect(403)
+          .expect((res) => {
+            expect(res.body).toEqual({
+              error: 'Admin access required',
+              hint: 'Set DEV_ADMIN=true in development or provide x-admin-secret header'
+            });
+          });
+      } finally {
+        process.env.DEV_ADMIN = previousDevAdmin;
+        if (typeof previousAdminSecret === 'undefined') {
+          delete process.env.ADMIN_SECRET;
+        } else {
+          process.env.ADMIN_SECRET = previousAdminSecret;
+        }
+      }
+    });
+
+    it('accepts legacy tournament start aliases', async () => {
+      await request(app).post('/api/admin/simulation/start').send({}).expect(200);
+
+      const manualStart = await request(app).post('/api/admin/tournament/manual-start').send({}).expect(200);
+      expect(manualStart.body).toMatchObject({ success: true, message: 'Tournament started' });
+
+      await request(app).post('/api/admin/tournament/cancel').send({}).expect(200);
+      const hyphenStart = await request(app).post('/api/admin/start-tournament').send({}).expect(200);
+      expect(hyphenStart.body).toMatchObject({ success: true, message: 'Tournament started' });
+    });
+  });
+
   describe('startSimulation changes state', () => {
     it('POST start then GET state shows simulation running', async () => {
       await request(app)
