@@ -95,7 +95,19 @@ describe('adminController', () => {
   });
 
   describe('devAdminOnly middleware', () => {
-    it('should allow access when DEV_ADMIN=true', () => {
+    it('should allow access when NODE_ENV is not production (no credentials)', () => {
+      process.env.NODE_ENV = 'development';
+      delete process.env.DEV_ADMIN;
+      delete process.env.ADMIN_SECRET;
+
+      devAdminOnly(mockReq, mockRes, mockNext);
+
+      expect(mockNext).toHaveBeenCalled();
+      expect(mockRes.status).not.toHaveBeenCalled();
+    });
+
+    it('should allow access when DEV_ADMIN=true in production', () => {
+      process.env.NODE_ENV = 'production';
       process.env.DEV_ADMIN = 'true';
 
       devAdminOnly(mockReq, mockRes, mockNext);
@@ -104,7 +116,9 @@ describe('adminController', () => {
       expect(mockRes.status).not.toHaveBeenCalled();
     });
 
-    it('should allow access with valid X-Admin-Secret', () => {
+    it('should allow access with valid X-Admin-Secret in production', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.DEV_ADMIN = 'false';
       process.env.ADMIN_SECRET = 'secret123';
       mockReq.headers['x-admin-secret'] = 'secret123';
 
@@ -113,7 +127,8 @@ describe('adminController', () => {
       expect(mockNext).toHaveBeenCalled();
     });
 
-    it('should deny access without dev mode or secret', () => {
+    it('should deny access in production without dev mode or secret', () => {
+      process.env.NODE_ENV = 'production';
       process.env.DEV_ADMIN = 'false';
       delete process.env.ADMIN_SECRET;
 
@@ -124,7 +139,8 @@ describe('adminController', () => {
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should deny access with wrong secret', () => {
+    it('should deny access in production with wrong secret', () => {
+      process.env.NODE_ENV = 'production';
       process.env.ADMIN_SECRET = 'secret123';
       mockReq.headers['x-admin-secret'] = 'wrongsecret';
 
@@ -186,6 +202,21 @@ describe('adminController', () => {
         teamsCount: 16
       });
     });
+
+    it('returns 400 for tournament already in progress validation error', async () => {
+      const mockTM = {
+        startTournament: jest.fn().mockRejectedValue(new Error('Cannot start tournament: already in state ROUND_OF_16')),
+        getLiveMatches: jest.fn().mockReturnValue([])
+      };
+      mockLoop.tournamentManager = mockTM;
+
+      await startTournament(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'Cannot start tournament: already in state ROUND_OF_16'
+      });
+    });
   });
 
   describe('cancelTournament', () => {
@@ -225,6 +256,20 @@ describe('adminController', () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(mockRes.json).toHaveBeenCalledWith({ error: 'round is required' });
+    });
+
+    it('returns 400 for invalid round validation error', async () => {
+      const mockTM = {
+        skipToRound: jest.fn().mockRejectedValue(new Error('Invalid round: INVALID')),
+        getLiveMatches: jest.fn().mockReturnValue([])
+      };
+      mockLoop.tournamentManager = mockTM;
+      mockReq.body = { round: 'INVALID' };
+
+      await skipToRound(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Invalid round: INVALID' });
     });
   });
 

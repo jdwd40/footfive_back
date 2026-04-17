@@ -3,9 +3,14 @@ const { getEventBus } = require('../gamelogic/simulation/EventBus');
 const { TournamentManager } = require('../gamelogic/simulation/TournamentManager');
 
 /**
- * Middleware: Dev admin only
+ * Middleware: Dev admin only (enforced when NODE_ENV is production).
+ * In non-production (local dev, tests), admin routes are open so the UI can start tournaments without env setup.
  */
 function devAdminOnly(req, res, next) {
+  if (process.env.NODE_ENV !== 'production') {
+    return next();
+  }
+
   if (process.env.DEV_ADMIN === 'true') {
     return next();
   }
@@ -64,6 +69,9 @@ async function startTournament(req, res) {
     });
   } catch (err) {
     console.error('[Admin] startTournament error:', err);
+    if (isClientValidationError(err)) {
+      return res.status(400).json({ error: err.message });
+    }
     res.status(500).json({ error: err.message });
   }
 }
@@ -95,8 +103,26 @@ async function skipToRound(req, res) {
     res.json({ success: true, state });
   } catch (err) {
     console.error('[Admin] skipToRound error:', err);
+    if (isClientValidationError(err)) {
+      return res.status(400).json({ error: err.message });
+    }
     res.status(500).json({ error: err.message });
   }
+}
+
+function isClientValidationError(err) {
+  if (!err) return false;
+
+  if (err.statusCode >= 400 && err.statusCode < 500) {
+    return true;
+  }
+
+  const message = String(err.message || '');
+  return (
+    message.startsWith('Invalid round:') ||
+    message.startsWith('Cannot start tournament: already in state') ||
+    message === 'Tournament already in progress'
+  );
 }
 
 function forceScore(req, res) {

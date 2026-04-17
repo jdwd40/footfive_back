@@ -16,7 +16,7 @@ const {
   clearEvents
 } = require('../controllers/adminController');
 
-// All routes require dev admin access
+// In production, routes require DEV_ADMIN=true or X-Admin-Secret; non-production is open for local dev.
 router.use(devAdminOnly);
 
 // Simulation loop controls
