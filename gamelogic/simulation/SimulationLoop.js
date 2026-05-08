@@ -382,6 +382,17 @@ class SimulationLoop extends EventEmitter {
   }
 
   /**
+   * Stage 1 helper: return the live LiveMatch snapshot, or null if no match
+   * with that fixtureId is currently registered. Read-only; never mutates
+   * simulation state.
+   */
+  getMatchStateSnapshot(fixtureId) {
+    const match = this.matches.get(fixtureId);
+    if (!match || typeof match.getMatchStateSnapshot !== 'function') return null;
+    return match.getMatchStateSnapshot();
+  }
+
+  /**
    * Force-end a match (admin)
    */
   forceEndMatch(fixtureId) {

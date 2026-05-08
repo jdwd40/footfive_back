@@ -21,7 +21,18 @@ class MatchEvent {
         this.bundleId = data.bundle_id;
         this.bundleStep = data.bundle_step;
         this.metadata = data.metadata;
+        this.seq = data.seq != null ? Number(data.seq) : null;
+        this.serverTimestamp = data.server_timestamp || null;
         this.createdAt = data.created_at;
+    }
+
+    // serverTimestamp arrives from EventBus as epoch-ms (Number); coerce to a
+    // value pg can store in TIMESTAMPTZ. null/undefined -> null (column default).
+    static _normalizeServerTimestamp(value) {
+        if (value == null) return null;
+        if (value instanceof Date) return value;
+        if (typeof value === 'number') return new Date(value);
+        return value; // assume ISO string or already-formatted; let pg handle
     }
 
     // Create a single event
@@ -30,8 +41,8 @@ class MatchEvent {
             INSERT INTO match_events
             (fixture_id, minute, second, added_time, event_type, team_id,
              player_id, assist_player_id, description, xg, outcome,
-             bundle_id, bundle_step, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+             bundle_id, bundle_step, metadata, seq, server_timestamp)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             RETURNING *
         `, [
             eventData.fixtureId,
@@ -47,7 +58,9 @@ class MatchEvent {
             eventData.outcome || null,
             eventData.bundleId || null,
             eventData.bundleStep || null,
-            JSON.stringify(eventData.metadata || {})
+            JSON.stringify(eventData.metadata || {}),
+            eventData.seq != null ? eventData.seq : null,
+            MatchEvent._normalizeServerTimestamp(eventData.serverTimestamp)
         ]);
 
         return new MatchEvent(result.rows[0]);
@@ -71,14 +84,16 @@ class MatchEvent {
             e.outcome || null,
             e.bundleId || null,
             e.bundleStep || null,
-            JSON.stringify(e.metadata || {})
+            JSON.stringify(e.metadata || {}),
+            e.seq != null ? e.seq : null,
+            MatchEvent._normalizeServerTimestamp(e.serverTimestamp)
         ]);
 
         const result = await db.query(format(`
             INSERT INTO match_events
             (fixture_id, minute, second, added_time, event_type, team_id,
              player_id, assist_player_id, description, xg, outcome,
-             bundle_id, bundle_step, metadata)
+             bundle_id, bundle_step, metadata, seq, server_timestamp)
             VALUES %L
             RETURNING *
         `, values));
@@ -214,7 +229,9 @@ class MatchEvent {
             outcome: this.outcome,
             bundleId: this.bundleId,
             bundleStep: this.bundleStep,
-            metadata: this.metadata
+            metadata: this.metadata,
+            seq: this.seq,
+            serverTimestamp: this.serverTimestamp
         };
     }
 }

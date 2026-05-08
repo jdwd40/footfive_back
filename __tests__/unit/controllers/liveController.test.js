@@ -57,7 +57,26 @@ jest.mock('../../../gamelogic/simulation/SimulationLoop', () => ({
           getScore: () => ({ home: 1, away: 0 }),
           getPenaltyScore: () => null,
           isFinished: () => false,
-          stats: { home: {}, away: {} }
+          stats: { home: {}, away: {} },
+          getMatchStateSnapshot: () => ({
+            fixtureId: 1,
+            state: 'FIRST_HALF',
+            phase: 'first_half',
+            currentMinute: 23,
+            tickElapsed: 50,
+            homeTeam: { id: 1, name: 'Home FC' },
+            awayTeam: { id: 2, name: 'Away United' },
+            score: { home: 1, away: 0 },
+            penaltyScore: null,
+            winnerId: null,
+            isFinished: false,
+            lastEventTickAt: 40,
+            lastEventMatchMinute: 18,
+            lastEventType: 'goal',
+            lastMajorEventTickAt: 40,
+            secondsSinceLastEvent: 10,
+            matchMinutesSinceLastEvent: 5
+          })
         };
       }
       return null;
@@ -150,6 +169,27 @@ describe('liveController', () => {
       getMatchState(mockReq, mockRes);
       expect(mockRes.status).toHaveBeenCalledWith(404);
       expect(mockRes.json).toHaveBeenCalledWith({ error: 'Match not found or not active' });
+    });
+
+    it('extends the response with the Stage 1 snapshot fields', () => {
+      mockReq.params = { fixtureId: '1' };
+      getMatchState(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
+        // Pre-Stage-1 keys preserved for the existing frontend
+        fixtureId: 1,
+        minute: 23,
+        stats: expect.any(Object),
+        // Stage 1 additions
+        phase: 'first_half',
+        currentMinute: 23,
+        lastEventTickAt: 40,
+        lastEventMatchMinute: 18,
+        lastEventType: 'goal',
+        lastMajorEventTickAt: 40,
+        secondsSinceLastEvent: 10,
+        matchMinutesSinceLastEvent: 5
+      }));
     });
   });
 

@@ -63,7 +63,26 @@ const EVENT_TYPES = {
   MATCHES_CREATED: 'matches_created',
   // Legacy SimulationEngine types
   PRESSURE: 'pressure',
-  BLOCKED: 'blocked'
+  BLOCKED: 'blocked',
+  // Stage 1: Foundation event types (not emitted yet)
+  POSSESSION: 'possession',
+  KEEPER_DISTRIBUTION: 'keeper_distribution',
+  BUILD_UP: 'build_up',
+  DEFENSIVE_ACTION: 'defensive_action',
+  SHOT: 'shot',
+  SAVE: 'save',
+  MISS: 'miss',
+  BLOCK: 'block',
+  COUNTER_ATTACK: 'counter_attack',
+  BREAKAWAY: 'breakaway',
+  MOMENTUM_SHIFT: 'momentum_shift',
+  FINAL_SCORE: 'final_score',
+  MATCH_WINNER: 'match_winner',
+  MATCH_DRAW: 'match_draw',
+  PENALTY_SHOOTOUT_START: 'penalty_shootout_start',
+  PENALTY_TAKER: 'penalty_taker',
+  PENALTY_SUDDEN_DEATH: 'penalty_sudden_death',
+  PENALTY_WINNER: 'penalty_winner'
 };
 
 // Key events that should be emitted even during fast-forward
@@ -129,6 +148,25 @@ const EVENT_TYPE_TO_CATEGORIES = {
   [EVENT_TYPES.TOURNAMENT_SETUP]: ['tournament'],
   [EVENT_TYPES.TOURNAMENT_CANCELLED]: ['tournament'],
   [EVENT_TYPES.MATCHES_CREATED]: ['tournament'],
+  // Stage 1: Foundation category mappings (not emitted yet)
+  [EVENT_TYPES.POSSESSION]: ['flow'],
+  [EVENT_TYPES.KEEPER_DISTRIBUTION]: ['flow'],
+  [EVENT_TYPES.BUILD_UP]: ['flow', 'attack'],
+  [EVENT_TYPES.DEFENSIVE_ACTION]: ['flow', 'defence'],
+  [EVENT_TYPES.SHOT]: ['flow', 'chance'],
+  [EVENT_TYPES.SAVE]: ['flow', 'defence'],
+  [EVENT_TYPES.MISS]: ['flow', 'chance'],
+  [EVENT_TYPES.BLOCK]: ['flow', 'defence'],
+  [EVENT_TYPES.COUNTER_ATTACK]: ['flow', 'attack'],
+  [EVENT_TYPES.BREAKAWAY]: ['flow', 'attack'],
+  [EVENT_TYPES.MOMENTUM_SHIFT]: ['flow'],
+  [EVENT_TYPES.FINAL_SCORE]: ['result', 'highlights'],
+  [EVENT_TYPES.MATCH_WINNER]: ['result', 'highlights'],
+  [EVENT_TYPES.MATCH_DRAW]: ['result', 'highlights'],
+  [EVENT_TYPES.PENALTY_SHOOTOUT_START]: ['shootout', 'highlights'],
+  [EVENT_TYPES.PENALTY_TAKER]: ['shootout'],
+  [EVENT_TYPES.PENALTY_SUDDEN_DEATH]: ['shootout', 'highlights'],
+  [EVENT_TYPES.PENALTY_WINNER]: ['shootout', 'result', 'highlights'],
   connected: ['system']
 };
 
@@ -159,7 +197,26 @@ const PERSISTABLE_MATCH_EVENT_TYPES = new Set([
   EVENT_TYPES.MATCH_START,
   EVENT_TYPES.MATCH_END,
   EVENT_TYPES.MATCH_RECAP,
-  EVENT_TYPES.KICKOFF
+  EVENT_TYPES.KICKOFF,
+  // Stage 1: Foundation persistable types (not emitted yet)
+  EVENT_TYPES.POSSESSION,
+  EVENT_TYPES.KEEPER_DISTRIBUTION,
+  EVENT_TYPES.BUILD_UP,
+  EVENT_TYPES.DEFENSIVE_ACTION,
+  EVENT_TYPES.SHOT,
+  EVENT_TYPES.SAVE,
+  EVENT_TYPES.MISS,
+  EVENT_TYPES.BLOCK,
+  EVENT_TYPES.COUNTER_ATTACK,
+  EVENT_TYPES.BREAKAWAY,
+  EVENT_TYPES.MOMENTUM_SHIFT,
+  EVENT_TYPES.FINAL_SCORE,
+  EVENT_TYPES.MATCH_WINNER,
+  EVENT_TYPES.MATCH_DRAW,
+  EVENT_TYPES.PENALTY_SHOOTOUT_START,
+  EVENT_TYPES.PENALTY_TAKER,
+  EVENT_TYPES.PENALTY_SUDDEN_DEATH,
+  EVENT_TYPES.PENALTY_WINNER
 ]);
 
 // === Default Match Rules ===
@@ -238,6 +295,19 @@ const MATCH_MINUTES = {
   ET_SECOND_HALF_END: 120
 };
 
+// === Event Categories ===
+const EVENT_CATEGORIES = {
+  FLOW: 'flow',
+  ATTACK: 'attack',
+  DEFENCE: 'defence',
+  CHANCE: 'chance',
+  GOAL: 'goals',
+  SET_PIECE: 'set_piece',
+  SHOOTOUT: 'shootout',
+  RESULT: 'result',
+  SYSTEM: 'system'
+};
+
 // === Simulation Probabilities ===
 const SIM = {
   FOUL_CHANCE: 0.05,
@@ -255,8 +325,27 @@ const SIM = {
   RED_CARD_THRESHOLD: 0.02,
   SHOOTOUT_TICK_INTERVAL: 3,
   SHOOTOUT_STANDARD_ROUNDS: 5,
-  INSTANT_PENALTY_SUCCESS: 0.75
+  INSTANT_PENALTY_SUCCESS: 0.75,
+  // Stage 2: max-silence flow events.
+  // Match-minute gap (not real seconds) before a single flow filler may fire.
+  // 1 match-minute ≈ 5 ticks at the default rules (240 ticks per 45 min half),
+  // so 2 match-minutes ≈ 10 real seconds of dead air.
+  MAX_SILENCE_MATCH_MINUTES: 2,
+  // After a key event (goal, halftime, etc.) wait this many match-minutes
+  // before considering a flow filler, so big moments aren't immediately
+  // followed by ambient commentary.
+  FLOW_COOLDOWN_AFTER_MAJOR_MATCH_MINUTES: 1
 };
+
+// Stage 2: which event types are flow/filler. Used by the silence detector
+// to pick a type and by tests/observability to identify ambient commentary.
+// Already in PERSISTABLE_MATCH_EVENT_TYPES (see Stage 0 migration 005).
+const FLOW_EVENT_TYPES = new Set([
+  EVENT_TYPES.POSSESSION,
+  EVENT_TYPES.BUILD_UP,
+  EVENT_TYPES.KEEPER_DISTRIBUTION,
+  EVENT_TYPES.DEFENSIVE_ACTION
+]);
 
 module.exports = {
   MATCH_STATES,
@@ -271,5 +360,7 @@ module.exports = {
   MATCH_MINUTES,
   SIM,
   EVENT_TYPE_TO_CATEGORIES,
-  PERSISTABLE_MATCH_EVENT_TYPES
+  EVENT_CATEGORIES,
+  PERSISTABLE_MATCH_EVENT_TYPES,
+  FLOW_EVENT_TYPES
 };

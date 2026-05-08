@@ -5,7 +5,7 @@ const format = require('pg-format');
 const teamsData = require('./data/teams');
 
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
-const MIGRATION_ORDER = ['001_match_system.sql', '002_add_event_types.sql', '003_bracket_system.sql', '004_tournament_state.sql'];
+const MIGRATION_ORDER = ['001_match_system.sql', '002_add_event_types.sql', '003_bracket_system.sql', '004_tournament_state.sql', '005_expand_match_event_types.sql'];
 
 const setupTestDatabase = async () => {
     try {

@@ -436,4 +436,291 @@ describe('LiveMatch', () => {
       expect(KEY_EVENTS.has(EVENT_TYPES.CORNER)).toBe(false);
     });
   });
+
+  describe('Stage 1: last-event tracking', () => {
+    it('initialises last-event fields to null', () => {
+      expect(match.lastEventTickAt).toBeNull();
+      expect(match.lastEventMatchMinute).toBeNull();
+      expect(match.lastEventType).toBeNull();
+      expect(match.lastMajorEventTickAt).toBeNull();
+    });
+
+    it('updates last-event fields when tick() returns events', () => {
+      // First tick on a SCHEDULED match always emits MATCH_START. The same
+      // tick may also emit play events (foul, shot, etc.) from
+      // EventGenerator.simulateMinute(1) depending on RNG, so we assert that
+      // tracking is *populated and consistent*, not that the last event is
+      // specifically MATCH_START.
+      const events = match.tick(startTime);
+      expect(events.length).toBeGreaterThan(0);
+
+      const last = events[events.length - 1];
+      expect(match.lastEventTickAt).toBe(match.tickElapsed);
+      expect(match.lastEventType).toBe(last.type);
+      expect(match.lastEventMatchMinute).toBe(last.minute);
+      expect(typeof match.lastEventMatchMinute).toBe('number');
+    });
+
+    it('records lastMajorEventTickAt only for KEY_EVENTS', () => {
+      // FOUL is not a key event; manually feed it through the recorder.
+      match.tickElapsed = 30;
+      match._recordLastEventStats([{ type: EVENT_TYPES.FOUL, minute: 5 }]);
+
+      expect(match.lastEventTickAt).toBe(30);
+      expect(match.lastEventType).toBe(EVENT_TYPES.FOUL);
+      expect(match.lastMajorEventTickAt).toBeNull();
+
+      // GOAL is a key event.
+      match.tickElapsed = 31;
+      match._recordLastEventStats([{ type: EVENT_TYPES.GOAL, minute: 6 }]);
+
+      expect(match.lastMajorEventTickAt).toBe(31);
+      expect(match.lastEventType).toBe(EVENT_TYPES.GOAL);
+      expect(match.lastEventMatchMinute).toBe(6);
+    });
+
+    it('does not change last-event fields when tick produces no events', () => {
+      // Force a paused-ish state: HALFTIME ticks generate no play events
+      // until the halftime->second_half transition, but KEY_EVENTS already
+      // emit on transition. Use _recordLastEventStats with an empty array
+      // to confirm the no-op path.
+      match.tickElapsed = 10;
+      match._recordLastEventStats([{ type: EVENT_TYPES.GOAL, minute: 5 }]);
+      const snapshot = {
+        tick: match.lastEventTickAt,
+        type: match.lastEventType,
+        major: match.lastMajorEventTickAt
+      };
+
+      match._recordLastEventStats([]);
+      match._recordLastEventStats(undefined);
+      match._recordLastEventStats(null);
+
+      expect(match.lastEventTickAt).toBe(snapshot.tick);
+      expect(match.lastEventType).toBe(snapshot.type);
+      expect(match.lastMajorEventTickAt).toBe(snapshot.major);
+    });
+
+    it('does not affect score, state, or finalization', () => {
+      const initialScore = { ...match.score };
+      const initialState = match.state;
+
+      // Drive purely the recorder with arbitrary events.
+      match._recordLastEventStats([
+        { type: EVENT_TYPES.GOAL, minute: 12 },
+        { type: EVENT_TYPES.SHOT_MISSED, minute: 13 }
+      ]);
+
+      expect(match.score).toEqual(initialScore);
+      expect(match.state).toBe(initialState);
+      expect(match.completionNotified).toBe(false);
+    });
+  });
+
+  describe('Stage 2: max-silence flow events', () => {
+    const { SIM, FLOW_EVENT_TYPES } = require('../../../gamelogic/constants');
+
+    // Helper: put the match in a play state with given silence (in ticks).
+    const armSilence = (m, { ticksSinceLast }) => {
+      m.state = MATCH_STATES.FIRST_HALF;
+      m.tickElapsed = 200; // ~minute 38 in default rules
+      // _maybeEmitFlowEvent compares match-minutes, not ticks — so derive
+      // lastEventMatchMinute from ticksSinceLast via the engine's ratio.
+      const ticksPerMinute = m.timings.firstHalfEnd / 45;
+      const minutesSinceLast = ticksSinceLast / ticksPerMinute;
+      m.lastEventMatchMinute = m.getMatchMinute() - minutesSinceLast;
+      m.lastEventTickAt = m.tickElapsed - ticksSinceLast;
+      m.lastEventType = EVENT_TYPES.FOUL; // not a key event
+      m.lastMajorEventTickAt = null;
+    };
+
+    it('does not emit a flow event before the silence threshold', () => {
+      // 1 match-minute of silence; threshold is 2 -> no flow.
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      armSilence(match, { ticksSinceLast: Math.floor(ticksPerMinute * 1) });
+
+      expect(match._maybeEmitFlowEvent()).toBeNull();
+    });
+
+    it('emits a single flow event after the silence threshold', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1)) });
+
+      const evt = match._maybeEmitFlowEvent();
+      expect(evt).not.toBeNull();
+      expect(FLOW_EVENT_TYPES.has(evt.type)).toBe(true);
+      expect(evt.fixtureId).toBe(fixtureId);
+      expect(typeof evt.minute).toBe('number');
+      expect(['home', 'away']).toContain(evt.side);
+      expect(evt.teamId === homeTeam.id || evt.teamId === awayTeam.id).toBe(true);
+      expect(typeof evt.description).toBe('string');
+      expect(evt.description.length).toBeGreaterThan(0);
+      expect(evt.importance).toBe('minor');
+      expect(['possession', 'build_up', 'defence']).toContain(evt.phase);
+      expect(evt.intensity).toBeGreaterThanOrEqual(1);
+      expect(evt.intensity).toBeLessThanOrEqual(4);
+      expect(evt.score).toEqual({ home: 0, away: 0 });
+    });
+
+    it('does not emit during non-play states (HALFTIME, FINISHED, SCHEDULED, PENALTIES)', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      const farPastThreshold = Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 5));
+
+      for (const nonPlay of [
+        MATCH_STATES.SCHEDULED,
+        MATCH_STATES.HALFTIME,
+        MATCH_STATES.ET_HALFTIME,
+        MATCH_STATES.PENALTIES,
+        MATCH_STATES.FINISHED
+      ]) {
+        armSilence(match, { ticksSinceLast: farPastThreshold });
+        match.state = nonPlay;
+        const events = match._processTick();
+        const flowEvents = events.filter(e => FLOW_EVENT_TYPES.has(e.type));
+        expect(flowEvents).toEqual([]);
+      }
+    });
+
+    it('does not change score when emitting a flow event', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1)) });
+      const before = { ...match.score };
+
+      const evt = match._maybeEmitFlowEvent();
+      expect(evt).not.toBeNull();
+      expect(match.score).toEqual(before);
+    });
+
+    it('updates last-event tracking after a flow event reaches the feed', () => {
+      // Run through a full tick so _recordLastEventStats fires too.
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 2)) });
+
+      // Mark this minute as already processed so EventGenerator won't add
+      // additional play events to the same tick (keeps the test focused).
+      match.processedMinutes.add(match.getMatchMinute());
+
+      const events = match.tick(startTime + match.tickElapsed * 1000);
+      const flow = events.find(e => FLOW_EVENT_TYPES.has(e.type));
+      expect(flow).toBeDefined();
+      expect(match.lastEventType).toBe(flow.type);
+      expect(match.lastEventTickAt).toBe(match.tickElapsed);
+    });
+
+    it('does not emit two flow events with the same type back-to-back when an alternative exists', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      const silentTicks = Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1));
+
+      armSilence(match, { ticksSinceLast: silentTicks });
+      const first = match._maybeEmitFlowEvent();
+      expect(first).not.toBeNull();
+
+      // Reset silence so a second flow can fire, but keep lastFlowEventType.
+      armSilence(match, { ticksSinceLast: silentTicks });
+      const second = match._maybeEmitFlowEvent();
+      expect(second).not.toBeNull();
+      expect(second.type).not.toBe(first.type);
+    });
+
+    it('respects the cooldown after a major event', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 5)) });
+
+      // Pretend a goal just fired half a match-minute ago (< 1-min cooldown).
+      const cooldownTicks = SIM.FLOW_COOLDOWN_AFTER_MAJOR_MATCH_MINUTES * ticksPerMinute;
+      match.lastMajorEventTickAt = match.tickElapsed - Math.floor(cooldownTicks / 2);
+
+      expect(match._maybeEmitFlowEvent()).toBeNull();
+    });
+
+    it('does not emit during fast-forward catch-up', () => {
+      // tick() with `now` far in the future enters the fast-forward branch.
+      // None of the events in the returned array should be flow events,
+      // because they aren't in KEY_EVENTS (filtered out by tick()).
+      const events = match.tick(startTime + 200 * 1000);
+      for (const e of events) {
+        expect(FLOW_EVENT_TYPES.has(e.type)).toBe(false);
+      }
+    });
+
+    it('flow event types are intentionally NOT in KEY_EVENTS', () => {
+      // Documented decision: flow filler is real-time-only and must not
+      // survive fast-forward — match_recap covers gaps instead.
+      for (const type of FLOW_EVENT_TYPES) {
+        expect(KEY_EVENTS.has(type)).toBe(false);
+      }
+    });
+  });
+
+  describe('Stage 1: getMatchStateSnapshot', () => {
+    it('returns the documented shape with no leaked internals', () => {
+      const snap = match.getMatchStateSnapshot();
+
+      expect(snap).toEqual(expect.objectContaining({
+        fixtureId,
+        state: MATCH_STATES.SCHEDULED,
+        phase: 'pre_match',
+        currentMinute: expect.any(Number),
+        tickElapsed: 0,
+        homeTeam: { id: homeTeam.id, name: homeTeam.name },
+        awayTeam: { id: awayTeam.id, name: awayTeam.name },
+        score: { home: 0, away: 0 },
+        penaltyScore: null,
+        winnerId: null,
+        isFinished: false,
+        lastEventTickAt: null,
+        lastEventMatchMinute: null,
+        lastEventType: null,
+        lastMajorEventTickAt: null,
+        secondsSinceLastEvent: null,
+        matchMinutesSinceLastEvent: null
+      }));
+
+      // Should not leak players / full stats / timings.
+      expect(snap).not.toHaveProperty('homePlayers');
+      expect(snap).not.toHaveProperty('awayPlayers');
+      expect(snap).not.toHaveProperty('stats');
+      expect(snap).not.toHaveProperty('timings');
+      expect(snap).not.toHaveProperty('processedMinutes');
+    });
+
+    it('reports phase by MATCH_STATES', () => {
+      match.state = MATCH_STATES.FIRST_HALF;
+      expect(match.getMatchStateSnapshot().phase).toBe('first_half');
+
+      match.state = MATCH_STATES.HALFTIME;
+      expect(match.getMatchStateSnapshot().phase).toBe('halftime');
+
+      match.state = MATCH_STATES.PENALTIES;
+      expect(match.getMatchStateSnapshot().phase).toBe('penalty_shootout');
+
+      match.state = MATCH_STATES.FINISHED;
+      expect(match.getMatchStateSnapshot().phase).toBe('finished');
+    });
+
+    it('computes secondsSinceLastEvent and matchMinutesSinceLastEvent once events have fired', () => {
+      match.state = MATCH_STATES.FIRST_HALF;
+      match.tickElapsed = 100;
+      match._recordLastEventStats([{ type: EVENT_TYPES.GOAL, minute: 18 }]);
+
+      // Move time forward without emitting anything.
+      match.tickElapsed = 130;
+
+      const snap = match.getMatchStateSnapshot();
+      expect(snap.lastEventType).toBe(EVENT_TYPES.GOAL);
+      expect(snap.lastEventMatchMinute).toBe(18);
+      expect(snap.secondsSinceLastEvent).toBe(30); // 130 - 100
+      // currentMinute at tick=130 is computed by getMatchMinute()
+      expect(snap.matchMinutesSinceLastEvent).toBe(snap.currentMinute - 18);
+    });
+
+    it('reports winnerId only after the match is finished', () => {
+      match.score = { home: 2, away: 1 };
+      match.state = MATCH_STATES.SECOND_HALF;
+      expect(match.getMatchStateSnapshot().winnerId).toBeNull();
+
+      match.state = MATCH_STATES.FINISHED;
+      expect(match.getMatchStateSnapshot().winnerId).toBe(homeTeam.id);
+    });
+  });
 });

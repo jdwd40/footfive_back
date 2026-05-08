@@ -367,6 +367,72 @@ describe('EventBus', () => {
 
       expect(eventBus.stats.eventsPersisted).toBe(2);
     });
+
+    it('should pass seq and serverTimestamp to MatchEvent.create', async () => {
+      eventBus.emit({
+        type: 'goal',
+        fixtureId: 1,
+        minute: 12,
+        teamId: 5
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(MatchEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+        seq: 0,
+        serverTimestamp: expect.any(Number)
+      }));
+    });
+
+    it('logs structured context (type, fixtureId, minute, code) on persistence failure', async () => {
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const dbError = new Error('new row for relation "match_events" violates check constraint "valid_event_type"');
+      dbError.code = '23514';
+      dbError.constraint = 'valid_event_type';
+      MatchEvent.create.mockRejectedValueOnce(dbError);
+
+      eventBus.emit({
+        type: 'goal',
+        fixtureId: 42,
+        minute: 17,
+        teamId: 5
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[EventBus] Failed to persist event',
+        expect.objectContaining({
+          type: 'goal',
+          fixtureId: 42,
+          minute: 17,
+          code: '23514',
+          constraint: 'valid_event_type',
+          message: expect.stringContaining('valid_event_type')
+        })
+      );
+
+      errorSpy.mockRestore();
+    });
+
+    it('does not crash the bus when persistence throws', async () => {
+      MatchEvent.create.mockRejectedValueOnce(new Error('boom'));
+
+      // Suppress the expected error log so the test output stays clean.
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      expect(() => {
+        eventBus.emit({ type: 'goal', fixtureId: 1, minute: 5 });
+      }).not.toThrow();
+
+      // A second emit should still go through (bus is not poisoned).
+      const second = eventBus.emit({ type: 'goal', fixtureId: 1, minute: 6 });
+      expect(second.seq).toBe(1);
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+      errorSpy.mockRestore();
+    });
   });
 
   describe('getStats', () => {
