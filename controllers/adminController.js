@@ -20,7 +20,10 @@ function devAdminOnly(req, res, next) {
     return next();
   }
 
-  return res.status(404).json({ error: 'Not found' });
+  return res.status(403).json({
+    error: 'Admin access required',
+    hint: 'Set DEV_ADMIN=true in development or provide x-admin-secret header'
+  });
 }
 
 async function startSimulation(req, res) {

@@ -25,6 +25,8 @@ router.post('/simulation/stop', stopSimulation);     // POST /api/admin/simulati
 
 // Tournament controls
 router.post('/tournament/start', startTournament);       // POST /api/admin/tournament/start
+router.post('/tournament/manual-start', startTournament); // POST /api/admin/tournament/manual-start (compat)
+router.post('/start-tournament', startTournament);        // POST /api/admin/start-tournament (compat)
 router.post('/tournament/cancel', cancelTournament);     // POST /api/admin/tournament/cancel
 router.post('/tournament/skip-to-round', skipToRound);   // POST /api/admin/tournament/skip-to-round
 

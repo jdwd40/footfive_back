@@ -160,6 +160,7 @@
 |------|---------|------------|
 | `__tests__/unit/controllers/adminController.test.js` | Admin controller (mocked). | adminController |
 | `__tests__/unit/controllers/liveController.test.js` | Live controller (mocked). | liveController |
+| `__tests__/unit/gamelogic/EventGenerator.test.js` | EventGenerator narrative/momentum sequence behavior. | EventGenerator |
 | `__tests__/unit/gamelogic/EventBus.test.js` | EventBus. | EventBus, MatchEventModel |
 | `__tests__/unit/gamelogic/LiveMatch.test.js` | LiveMatch simulation. | LiveMatch |
 | `__tests__/unit/gamelogic/SimulationLoop.test.js` | SimulationLoop. | SimulationLoop |
@@ -181,10 +182,8 @@
 
 | File | Purpose |
 |------|---------|
-| `README.md` | Project overview, quick start. |
-| `ARCHITECTURE.md` | System architecture, diagrams, data flow. |
-| `PROJECT_STRUCTURE.md` | Directory layout, module dependencies. |
-| `API_REFERENCE.md` | API endpoints documentation. |
+| `README.md` | Entry point: links to architecture map and docs index. |
+| `AGENTS.md` | Agent / VM runbook (env vars, commands). |
 
 ---
 
@@ -192,23 +191,20 @@
 
 | File | Purpose |
 |------|---------|
-| `docs/GETTING_STARTED.md` | Setup guide. |
+| `docs/README.md` | Documentation index. |
 | `docs/INSTALLATION.md` | Install instructions. |
-| `docs/TROUBLESHOOTING.md` | Common issues. |
-| `docs/backend_documentation.md` | Backend overview. |
-| `docs/backend_changes.md` | Change log. |
+| `docs/TROUBLESHOOTING.md` | Common issues (includes `tournament_state` / migration mismatch). |
+| `docs/ARCHITECTURE.md` | System architecture, diagrams, simulation flow. |
+| `docs/API_REFERENCE.md` | HTTP API reference. |
 | `docs/latest_changes.md` | Recent changes. |
-| `docs/new_endpoints.md` | New endpoint docs. |
-| `docs/bolt_endpoints.md` | Bolt-compatible endpoints. |
-| `docs/bolt_prompt.md` | Bolt AI prompt context. |
-| `docs/claude_instructions.md` | Claude-specific instructions. |
-| `docs/claude_phase1_validation_prompt.md` | Phase 1 validation prompt. |
-| `docs/events_system_fonrt_end_use.md` | Events system frontend usage. |
-| `docs/LIVE_MATCH_VIEW_APP.md` | Live match view app docs. |
+| `docs/new_endpoints.md` | Fixtures-focused endpoint notes. |
+| `docs/events_system_fonrt_end_use.md` | Events / SSE usage for frontends. |
+| `docs/LIVE_MATCH_VIEW_APP.md` | Live match view app notes. |
 | `docs/match-events-enhancement.md` | Match events enhancement. |
+| `docs/SIMULATION_PHASE12_UPGRADE.md` | Phase 1-2 simulation narrative upgrade and frontend changes. |
 | `docs/TOURNAMENT_SCHEDULING.md` | Tournament scheduling. |
-| `docs/CODE_REVIEW_REPORT.md` | Code review notes. |
-| `docs/fix-live-match-display.plan.md` | Fix plan for live match display. |
+| `docs/TEST_AUDIT.md` | Test suite audit. |
+| `docs/TEST_COVERAGE.md` | Test coverage notes. |
 
 ---
 
@@ -222,70 +218,11 @@
 
 ---
 
-## Documentation — docs/obsolete/
+## Documentation — db/
 
 | File | Purpose |
 |------|---------|
-| `docs/obsolete/CODE_REVIEW_REPORT.md` | Code review notes. |
-| `docs/obsolete/README.md` | Obsolete docs index. |
-| `docs/obsolete/TEST_FAILURE_REPORT.md` | Test failure report. |
-| `docs/obsolete/TEST_FIXES_SUMMARY.md` | Test fixes summary. |
-| `docs/obsolete/TEST_MIGRATION_REPORT.md` | Test migration report. |
-| `docs/obsolete/backend_changes.md` | Change log. |
-| `docs/obsolete/claude_instructions.md` | Claude-specific instructions. |
-| `docs/obsolete/claude_phase1_validation_prompt.md` | Phase 1 validation prompt. |
-| `docs/obsolete/critical_bug_01_draw_bug.md` | Draw bug analysis. |
-| `docs/obsolete/fix-live-match-display.plan.md` | Fix plan for live match display. |
-| `docs/obsolete/highlights_problem.md` | Highlights problem. |
-| `docs/obsolete/latest_changes.md` | Recent changes. |
-| `docs/obsolete/sse_fix.md` | SSE fix notes. |
-
----
-
-## LLM Opinions (Reference)
-
-| File | Purpose |
-|------|---------|
-| `llm-opinions/round1_conclusions.md` | Round 1 conclusions. |
-| `llm-opinions/auto_round1.md` | Auto round 1. |
-| `llm-opinions/claude_round1.md` | Claude round 1. |
-| `llm-opinions/gpt5_round1.md` | GPT-5 round 1. |
-| `llm-opinions/old/claude_highlight_opinions.md` | Claude highlight opinions. |
-| `llm-opinions/old/claude_highlight_opinion_round_2.md` | Claude round 2. |
-| `llm-opinions/old/claude_highlight_opinion_round_2_CORRECTED.md` | Claude round 2 corrected. |
-| `llm-opinions/old/claude_highlight_opinion_round_3.md` | Claude round 3. |
-| `llm-opinions/old/claude_highlight_opinion_round_3_CORRECTED.md` | Claude round 3 corrected. |
-| `llm-opinions/old/claude_highlight_opinion_round_4.md` | Claude round 4. |
-| `llm-opinions/old/claude_highlight_opinion_round_4_CORRECTED.md` | Claude round 4 corrected. |
-| `llm-opinions/old/codex_highlight_opinion.md` | Codex highlight opinion. |
-| `llm-opinions/old/codex_highlight_opinion_round_2.md` | Codex round 2. |
-| `llm-opinions/old/codex_highlight_opinion_round_3.md` | Codex round 3. |
-| `llm-opinions/old/codex_highlight_opinion_round_4.md` | Codex round 4. |
-| `llm-opinions/old/gemini_highlight_opinions.md` | Gemini highlight opinions. |
-| `llm-opinions/old/gemini_highlight_opinion_round_2.md` | Gemini round 2. |
-| `llm-opinions/old/gemini_highlight_opinion_round_3.md` | Gemini round 3. |
-| `llm-opinions/old/gemini_highlight_opinion_round_4.md` | Gemini round 4. |
-| `llm-opinions/old/llm_next_steps.md` | LLM next steps. |
-| `llm-opinions/old/CORRECTION_SUMMARY.md` | Correction summary. |
-
----
-
-## Report Docs
-
-| File | Purpose |
-|------|---------|
-| `report_docs/claude_game_report.md` | Claude game report. |
-| `report_docs/codex_game_report.md` | Codex game report. |
-| `report_docs/cursor_game_report.md` | Cursor game report. |
-
----
-
-## Validation & Sprints
-
-| File | Purpose |
-|------|---------|
-| `validation/phase1_validation_test_plan.md` | Phase 1 validation plan. |
-| `sprints/sprint_1.md` | Sprint 1 notes. |
+| `db/migrations/README.md` | How SQL migrations are run and ordered. |
 
 ---
 
@@ -328,4 +265,4 @@ listen.js → SimulationLoop.init() → TournamentManager
 
 ---
 
-*Last updated: 2025-02-12*
+*Last updated: 2026-04-15*
