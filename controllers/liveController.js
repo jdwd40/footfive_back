@@ -77,6 +77,11 @@ const getActiveMatches = (req, res) => {
 /**
  * Get single match snapshot
  * GET /api/live/matches/:fixtureId
+ *
+ * Stage 1: extended with the LiveMatch.getMatchStateSnapshot() payload
+ * (phase, lastEvent* fields, secondsSinceLastEvent, matchMinutesSinceLastEvent).
+ * The pre-Stage-1 keys (`minute`, `stats`) are preserved for the existing
+ * frontend; the new keys are additive.
  */
 const getMatchState = (req, res) => {
   const loop = getSimulationLoop();
@@ -88,6 +93,10 @@ const getMatchState = (req, res) => {
     return res.status(404).json({ error: 'Match not found or not active' });
   }
 
+  const snapshot = typeof match.getMatchStateSnapshot === 'function'
+    ? match.getMatchStateSnapshot()
+    : null;
+
   res.json({
     fixtureId,
     state: match.state,
@@ -98,7 +107,8 @@ const getMatchState = (req, res) => {
     awayTeam: { id: match.awayTeam.id, name: match.awayTeam.name },
     isFinished: match.isFinished(),
     tickElapsed: match.tickElapsed,
-    stats: match.stats
+    stats: match.stats,
+    ...(snapshot || {})
   });
 };
 

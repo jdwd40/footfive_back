@@ -18,6 +18,20 @@ const {
 const { EventGenerator } = require('./EventGenerator');
 const { PenaltyShootout } = require('./PenaltyShootout');
 
+// Stage 1: friendly phase string per MATCH_STATE for snapshot consumers
+// that prefer a normalised, lower-case label over the raw enum.
+const STATE_TO_PHASE = {
+  [MATCH_STATES.SCHEDULED]: 'pre_match',
+  [MATCH_STATES.FIRST_HALF]: 'first_half',
+  [MATCH_STATES.HALFTIME]: 'halftime',
+  [MATCH_STATES.SECOND_HALF]: 'second_half',
+  [MATCH_STATES.EXTRA_TIME_1]: 'extra_time_first_half',
+  [MATCH_STATES.ET_HALFTIME]: 'extra_time_halftime',
+  [MATCH_STATES.EXTRA_TIME_2]: 'extra_time_second_half',
+  [MATCH_STATES.PENALTIES]: 'penalty_shootout',
+  [MATCH_STATES.FINISHED]: 'finished'
+};
+
 /**
  * LiveMatch - Real-time match simulation driven by external ticks
  *
@@ -63,6 +77,15 @@ class LiveMatch {
     this.processedMinutes = new Set();
     this.emittedTransitions = new Set();
     this.completionNotified = false;
+
+    // Last-event observability (Stage 1: read-only, no behaviour change).
+    // Updated after each tick() based on events that actually reach the
+    // returned event list (i.e. the live feed). Internal/filtered events do
+    // not move these fields.
+    this.lastEventTickAt = null;       // tickElapsed value when the last event was emitted
+    this.lastEventMatchMinute = null;  // match minute carried by the last event
+    this.lastEventType = null;         // EVENT_TYPES value of the last emitted event
+    this.lastMajorEventTickAt = null;  // tickElapsed when the last KEY_EVENTS event fired
 
     // Stats
     this.stats = {
@@ -205,7 +228,28 @@ class LiveMatch {
       this.tickElapsed++;
     }
 
+    this._recordLastEventStats(events);
+
     return events;
+  }
+
+  /**
+   * Stage 1: refresh last-event tracking from the events the live feed will
+   * see this tick. Read-only side effect on observability fields only —
+   * never mutates score, state, or match flow.
+   */
+  _recordLastEventStats(events) {
+    if (!events || events.length === 0) return;
+
+    for (const evt of events) {
+      if (!evt || typeof evt.type !== 'string') continue;
+      this.lastEventTickAt = this.tickElapsed;
+      this.lastEventMatchMinute = evt.minute ?? this.lastEventMatchMinute;
+      this.lastEventType = evt.type;
+      if (KEY_EVENTS.has(evt.type)) {
+        this.lastMajorEventTickAt = this.tickElapsed;
+      }
+    }
   }
 
   /**
@@ -642,6 +686,45 @@ class LiveMatch {
 
   getState() {
     return this.state;
+  }
+
+  /**
+   * Stage 1: read-only match state snapshot.
+   *
+   * Returns the safe subset of LiveMatch state for live observability
+   * (admin tooling, future max-silence detection, frontend read endpoints).
+   * Deliberately excludes player arrays, full stats, timings, and any
+   * mutable internal collections.
+   */
+  getMatchStateSnapshot() {
+    const currentMinute = this.getMatchMinute();
+    const lastTick = this.lastEventTickAt;
+    const secondsSinceLastEvent = lastTick == null
+      ? null
+      : Math.max(0, this.tickElapsed - lastTick); // 1 tick = 1 real second
+    const matchMinutesSinceLastEvent = this.lastEventMatchMinute == null
+      ? null
+      : Math.max(0, currentMinute - this.lastEventMatchMinute);
+
+    return {
+      fixtureId: this.fixtureId,
+      state: this.state,
+      phase: STATE_TO_PHASE[this.state] || null,
+      currentMinute,
+      tickElapsed: this.tickElapsed,
+      homeTeam: { id: this.homeTeam.id, name: this.homeTeam.name },
+      awayTeam: { id: this.awayTeam.id, name: this.awayTeam.name },
+      score: { ...this.score },
+      penaltyScore: this.getPenaltyScore(),
+      winnerId: this.isFinished() ? this.getWinnerId() : null,
+      isFinished: this.isFinished(),
+      lastEventTickAt: this.lastEventTickAt,
+      lastEventMatchMinute: this.lastEventMatchMinute,
+      lastEventType: this.lastEventType,
+      lastMajorEventTickAt: this.lastMajorEventTickAt,
+      secondsSinceLastEvent,
+      matchMinutesSinceLastEvent
+    };
   }
 
   async awaitFinalization() {

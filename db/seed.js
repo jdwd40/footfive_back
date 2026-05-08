@@ -99,6 +99,8 @@ const seed = async (data) => {
     `);
 
     // Create match_events table
+    // NOTE: keep CHECK list and columns in sync with migrations 002 + 005.
+    // A fresh seed must produce the same schema as a migrated database.
     await db.query(`
         CREATE TABLE match_events (
             event_id SERIAL PRIMARY KEY,
@@ -116,6 +118,8 @@ const seed = async (data) => {
             bundle_id VARCHAR(50) DEFAULT NULL,
             bundle_step INTEGER DEFAULT NULL,
             metadata JSONB DEFAULT '{}',
+            seq BIGINT,
+            server_timestamp TIMESTAMPTZ,
             created_at TIMESTAMP DEFAULT NOW(),
             CONSTRAINT valid_event_type CHECK (
                 event_type IN (
@@ -127,7 +131,16 @@ const seed = async (data) => {
                     'halftime', 'fulltime',
                     'extra_time_start', 'extra_time_half', 'extra_time_end',
                     'shootout_start', 'shootout_goal', 'shootout_miss', 'shootout_save', 'shootout_end',
-                    'pressure', 'blocked'
+                    'pressure', 'blocked',
+                    'match_start', 'match_end', 'second_half_start',
+                    'chance_created', 'match_recap',
+                    'shootout_walkup', 'shootout_reaction',
+                    'possession', 'build_up', 'keeper_distribution', 'defensive_action',
+                    'shot', 'save', 'miss', 'block',
+                    'counter_attack', 'breakaway', 'momentum_shift',
+                    'final_score', 'match_winner', 'match_draw',
+                    'penalty_shootout_start', 'penalty_taker',
+                    'penalty_sudden_death', 'penalty_winner'
                 )
             )
         );
@@ -164,6 +177,7 @@ const seed = async (data) => {
         CREATE INDEX idx_events_team ON match_events(team_id);
         CREATE INDEX idx_events_player ON match_events(player_id);
         CREATE INDEX idx_events_bundle ON match_events(bundle_id);
+        CREATE INDEX idx_events_fixture_seq ON match_events(fixture_id, seq);
         CREATE INDEX idx_odds_fixture ON fixture_odds(fixture_id);
     `);
 

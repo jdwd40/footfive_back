@@ -115,6 +115,7 @@
 | `db/migrations/002_add_event_types.sql` | Additional event type enums. | 001 |
 | `db/migrations/003_bracket_system.sql` | Bracket positioning columns. | 001 |
 | `db/migrations/004_tournament_state.sql` | Tournament state table for event-driven scheduling. | — |
+| `db/migrations/005_expand_match_event_types.sql` | Expands match_events.valid_event_type CHECK; adds nullable seq + server_timestamp columns. | 001, 002 |
 
 ---
 
@@ -149,6 +150,7 @@
 | `__tests__/integration/controllers/teamController.test.js` | Team controller + DB. | teamController, db |
 | `__tests__/integration/controllers/playerController.test.js` | Player controller + DB. | playerController, db |
 | `__tests__/integration/controllers/diagnosticController.test.js` | Diagnostic controller. | diagnosticController |
+| `__tests__/integration/persistence/matchEventTypes.test.js` | Asserts every PERSISTABLE_MATCH_EVENT_TYPES inserts cleanly; verifies seq/server_timestamp round-trip. | MatchEventModel, db |
 
 ---
 

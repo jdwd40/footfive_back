@@ -282,7 +282,10 @@ class EventBus extends EventEmitter {
   }
 
   /**
-   * Persist event to database
+   * Persist event to database.
+   * Fire-and-forget from emit(); failures are logged with full context but
+   * never propagate, so a CHECK violation or transient DB error cannot crash
+   * the live simulation.
    */
   async _persistEvent(event) {
     try {
@@ -308,13 +311,26 @@ class EventBus extends EventEmitter {
           shootoutScore: payload.shootoutScore,
           round: payload.round,
           seq: event.seq
-        }
+        },
+        seq: event.seq,
+        serverTimestamp: event.serverTimestamp
       };
 
       await MatchEvent.create(dbEvent);
       this.stats.eventsPersisted++;
     } catch (err) {
-      console.error('[EventBus] Failed to persist event:', err.message);
+      // Surface enough context to diagnose CHECK violations and other DB
+      // errors without leaking the full event payload to logs. `code` is the
+      // pg error code (e.g. '23514' for CHECK violation).
+      console.error('[EventBus] Failed to persist event', {
+        type: event.type,
+        fixtureId: event.fixtureId,
+        minute: event.minute,
+        seq: event.seq,
+        code: err.code || null,
+        constraint: err.constraint || null,
+        message: err.message
+      });
     }
   }
 
