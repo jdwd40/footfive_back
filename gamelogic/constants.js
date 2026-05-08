@@ -334,7 +334,11 @@ const SIM = {
   // After a key event (goal, halftime, etc.) wait this many match-minutes
   // before considering a flow filler, so big moments aren't immediately
   // followed by ambient commentary.
-  FLOW_COOLDOWN_AFTER_MAJOR_MATCH_MINUTES: 1
+  FLOW_COOLDOWN_AFTER_MAJOR_MATCH_MINUTES: 1,
+  // Stage 2 tuning: when the silence gap is at least this many match-minutes,
+  // bias flow selection toward build_up + pressure-style descriptions so the
+  // feed visibly moves toward chances instead of looping generic possession.
+  LONG_SILENCE_MATCH_MINUTES: 5
 };
 
 // Stage 2: which event types are flow/filler. Used by the silence detector

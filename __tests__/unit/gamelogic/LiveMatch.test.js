@@ -555,10 +555,10 @@ describe('LiveMatch', () => {
       expect(evt.teamId === homeTeam.id || evt.teamId === awayTeam.id).toBe(true);
       expect(typeof evt.description).toBe('string');
       expect(evt.description.length).toBeGreaterThan(0);
-      expect(evt.importance).toBe('minor');
-      expect(['possession', 'build_up', 'defence']).toContain(evt.phase);
+      expect(['minor', 'medium']).toContain(evt.importance);
+      expect(['possession', 'build_up', 'attack', 'defence']).toContain(evt.phase);
       expect(evt.intensity).toBeGreaterThanOrEqual(1);
-      expect(evt.intensity).toBeLessThanOrEqual(4);
+      expect(evt.intensity).toBeLessThanOrEqual(5);
       expect(evt.score).toEqual({ home: 0, away: 0 });
     });
 
@@ -648,6 +648,147 @@ describe('LiveMatch', () => {
       // survive fast-forward — match_recap covers gaps instead.
       for (const type of FLOW_EVENT_TYPES) {
         expect(KEY_EVENTS.has(type)).toBe(false);
+      }
+    });
+
+    // --- Stage 2 tuning ---
+
+    it('build_up is in the flow event pool', () => {
+      expect(FLOW_EVENT_TYPES.has(EVENT_TYPES.BUILD_UP)).toBe(true);
+    });
+
+    it('build_up can be emitted after the silence threshold', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      // Force build_up by making everything else recently chosen.
+      // Repeatedly arm + emit until we see at least one build_up; the
+      // weighted picker biases ~40% toward build_up so this is fast.
+      let sawBuildUp = false;
+      for (let i = 0; i < 50 && !sawBuildUp; i++) {
+        match.lastFlowEventType = null;
+        armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1)) });
+        const evt = match._maybeEmitFlowEvent();
+        if (evt && evt.type === EVENT_TYPES.BUILD_UP) sawBuildUp = true;
+      }
+      expect(sawBuildUp).toBe(true);
+    });
+
+    it('build_up does not change score', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      const before = { ...match.score };
+      for (let i = 0; i < 20; i++) {
+        match.lastFlowEventType = null;
+        armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1)) });
+        const evt = match._maybeEmitFlowEvent();
+        if (evt && evt.type === EVENT_TYPES.BUILD_UP) {
+          expect(match.score).toEqual(before);
+          return;
+        }
+      }
+      // If build_up never fires in 20 tries the picker is broken; fail loud.
+      throw new Error('build_up never selected — picker likely broken');
+    });
+
+    it('build_up descriptions use real team names', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      for (let i = 0; i < 30; i++) {
+        match.lastFlowEventType = null;
+        armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1)) });
+        const evt = match._maybeEmitFlowEvent();
+        if (evt && evt.type === EVENT_TYPES.BUILD_UP) {
+          const mentionsHome = evt.description.includes(homeTeam.name);
+          const mentionsAway = evt.description.includes(awayTeam.name);
+          expect(mentionsHome || mentionsAway).toBe(true);
+          return;
+        }
+      }
+      throw new Error('build_up never selected — picker likely broken');
+    });
+
+    it('flow selection is not always possession or defensive_action', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      const seen = new Set();
+      for (let i = 0; i < 80; i++) {
+        match.lastFlowEventType = null;
+        armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1)) });
+        const evt = match._maybeEmitFlowEvent();
+        if (evt) seen.add(evt.type);
+      }
+      expect(seen.has(EVENT_TYPES.BUILD_UP)).toBe(true);
+      // Should also see at least one non-build_up to prove rotation works.
+      const nonBuild = [...seen].filter(t => t !== EVENT_TYPES.BUILD_UP);
+      expect(nonBuild.length).toBeGreaterThan(0);
+    });
+
+    it('long silence (>= 5 match-minutes) strongly favours build_up', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      let buildUps = 0;
+      const trials = 60;
+      for (let i = 0; i < trials; i++) {
+        match.lastFlowEventType = null;
+        armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.LONG_SILENCE_MATCH_MINUTES + 1)) });
+        const evt = match._maybeEmitFlowEvent();
+        if (evt && evt.type === EVENT_TYPES.BUILD_UP) buildUps++;
+      }
+      // Long-silence weight is 65 (build_up). With back-to-back avoidance
+      // the realised share is lower; expect at least 50% to catch
+      // regressions without flaking.
+      expect(buildUps / trials).toBeGreaterThan(0.5);
+    });
+
+    it('build_up event is structurally distinct (importance, phase, intensity)', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      for (let i = 0; i < 30; i++) {
+        match.lastFlowEventType = null;
+        armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1)) });
+        const evt = match._maybeEmitFlowEvent();
+        if (evt && evt.type === EVENT_TYPES.BUILD_UP) {
+          expect(evt.importance).toBe('medium');
+          expect(evt.phase).toBe('attack');
+          expect(evt.intensity).toBeGreaterThanOrEqual(2);
+          expect(evt.intensity).toBeLessThanOrEqual(5);
+          expect(['home', 'away']).toContain(evt.side);
+          expect(evt.teamId === homeTeam.id || evt.teamId === awayTeam.id).toBe(true);
+          return;
+        }
+      }
+      throw new Error('build_up never selected — picker likely broken');
+    });
+
+    it('DEBUG_MATCH_FLOW=true logs the selected flow event', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      const original = process.env.DEBUG_MATCH_FLOW;
+      const spy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        process.env.DEBUG_MATCH_FLOW = 'true';
+        armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1)) });
+        const evt = match._maybeEmitFlowEvent();
+        expect(evt).not.toBeNull();
+        const logged = spy.mock.calls.some(args =>
+          args[0] === '[match-flow]' &&
+          typeof args[1] === 'string' &&
+          args[1].includes(`"type":"${evt.type}"`)
+        );
+        expect(logged).toBe(true);
+      } finally {
+        if (original === undefined) delete process.env.DEBUG_MATCH_FLOW;
+        else process.env.DEBUG_MATCH_FLOW = original;
+        spy.mockRestore();
+      }
+    });
+
+    it('DEBUG_MATCH_FLOW unset suppresses the flow log', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      const original = process.env.DEBUG_MATCH_FLOW;
+      const spy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        delete process.env.DEBUG_MATCH_FLOW;
+        armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1)) });
+        match._maybeEmitFlowEvent();
+        const logged = spy.mock.calls.some(args => args[0] === '[match-flow]');
+        expect(logged).toBe(false);
+      } finally {
+        if (original !== undefined) process.env.DEBUG_MATCH_FLOW = original;
+        spy.mockRestore();
       }
     });
   });

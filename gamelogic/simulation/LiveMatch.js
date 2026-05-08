@@ -290,9 +290,10 @@ class LiveMatch {
       if (ticksSinceMajor < cooldownTicks) return null;
     }
 
+    const longSilence = minutesSinceLast >= SIM.LONG_SILENCE_MATCH_MINUTES;
     const subjectSide = this._chooseFlowSide();
-    const type = this._chooseFlowType();
-    const description = this._buildFlowDescription(type, subjectSide);
+    const type = this._chooseFlowType({ longSilence });
+    const description = this._buildFlowDescription(type, subjectSide, { longSilence });
 
     this.lastFlowEventType = type;
     this.lastFlowDescription = description;
@@ -307,22 +308,34 @@ class LiveMatch {
 
     const PHASE_BY_TYPE = {
       [EVENT_TYPES.POSSESSION]: 'possession',
-      [EVENT_TYPES.BUILD_UP]: 'build_up',
+      [EVENT_TYPES.BUILD_UP]: 'attack',
       [EVENT_TYPES.KEEPER_DISTRIBUTION]: 'build_up',
       [EVENT_TYPES.DEFENSIVE_ACTION]: 'defence'
     };
     const INTENSITY_BY_TYPE = {
       [EVENT_TYPES.POSSESSION]: 1,
-      [EVENT_TYPES.BUILD_UP]: 2,
+      [EVENT_TYPES.BUILD_UP]: longSilence ? 4 : 3,
       [EVENT_TYPES.KEEPER_DISTRIBUTION]: 1,
       [EVENT_TYPES.DEFENSIVE_ACTION]: 2
     };
+    const importance = type === EVENT_TYPES.BUILD_UP ? 'medium' : 'minor';
+
+    if (process.env.DEBUG_MATCH_FLOW === 'true') {
+      console.log('[match-flow]', JSON.stringify({
+        fixtureId: this.fixtureId,
+        minute: currentMinute,
+        gap: minutesSinceLast,
+        type,
+        side: eventSide,
+        description
+      }));
+    }
 
     return this._createEvent(type, currentMinute, {
       teamId: team.id,
       side: eventSide,
       description,
-      importance: 'minor',
+      importance,
       phase: PHASE_BY_TYPE[type],
       intensity: INTENSITY_BY_TYPE[type]
     });
@@ -340,16 +353,26 @@ class LiveMatch {
   }
 
   /**
-   * Pick a flow event type. Weighted toward possession/build_up; avoids
-   * picking the same type as the previous flow event when alternatives exist.
+   * Pick a flow event type. Weighted toward build_up so the live feed shows
+   * attacking flow rather than generic possession filler. Avoids back-to-back
+   * picks of the same type when alternatives exist. When the match has gone
+   * quiet for >= LONG_SILENCE_MATCH_MINUTES, the build_up weight is boosted
+   * so the feed visibly moves toward chances.
    */
-  _chooseFlowType() {
-    const candidates = [
-      { type: EVENT_TYPES.POSSESSION, weight: 40 },
-      { type: EVENT_TYPES.BUILD_UP, weight: 30 },
-      { type: EVENT_TYPES.DEFENSIVE_ACTION, weight: 15 },
-      { type: EVENT_TYPES.KEEPER_DISTRIBUTION, weight: 15 }
-    ];
+  _chooseFlowType({ longSilence = false } = {}) {
+    const candidates = longSilence
+      ? [
+          { type: EVENT_TYPES.BUILD_UP, weight: 65 },
+          { type: EVENT_TYPES.POSSESSION, weight: 15 },
+          { type: EVENT_TYPES.DEFENSIVE_ACTION, weight: 12 },
+          { type: EVENT_TYPES.KEEPER_DISTRIBUTION, weight: 8 }
+        ]
+      : [
+          { type: EVENT_TYPES.BUILD_UP, weight: 40 },
+          { type: EVENT_TYPES.POSSESSION, weight: 25 },
+          { type: EVENT_TYPES.DEFENSIVE_ACTION, weight: 20 },
+          { type: EVENT_TYPES.KEEPER_DISTRIBUTION, weight: 15 }
+        ];
     const filtered = candidates.filter(c => c.type !== this.lastFlowEventType);
     const pool = filtered.length > 0 ? filtered : candidates;
     const total = pool.reduce((s, c) => s + c.weight, 0);
@@ -370,7 +393,7 @@ class LiveMatch {
    * `${team}` in those templates is the defender and `${opponent}` is the
    * attacker — matching the eventSide flip in _maybeEmitFlowEvent.
    */
-  _buildFlowDescription(type, subjectSide) {
+  _buildFlowDescription(type, subjectSide, { longSilence = false } = {}) {
     const isDefensive = type === EVENT_TYPES.DEFENSIVE_ACTION;
     const defenderName = (isDefensive
       ? (subjectSide === 'home' ? this.awayTeam : this.homeTeam)
@@ -382,17 +405,33 @@ class LiveMatch {
     const team = isDefensive ? defenderName : attackerName;
     const opponent = isDefensive ? attackerName : defenderName;
 
+    // Long-silence build_up bank uses pressure-style phrasing — implies the
+    // match is moving toward chances without claiming a shot has happened.
+    const buildUpBank = longSilence
+      ? [
+          `${team} are starting to build some pressure.`,
+          `${team} are asking questions of the ${opponent} defence.`,
+          `${team} keep coming forward now.`,
+          `${team} are beginning to stretch ${opponent}.`,
+          `${team} move the ball quickly into the final third.`
+        ]
+      : [
+          `${team} push forward through midfield.`,
+          `${team} work it wide and look for a crossing chance.`,
+          `${team} switch the play looking for space against ${opponent}.`,
+          `${team} move the ball quickly into the final third.`,
+          `${team} are starting to build some pressure.`,
+          `${team} try to build down the flank.`,
+          `${team} are asking questions of the ${opponent} defence.`
+        ];
+
     const banks = {
       [EVENT_TYPES.POSSESSION]: [
         `${team} are keeping the ball well.`,
         `${team} circulate it patiently.`,
         `${team} hold possession in midfield.`
       ],
-      [EVENT_TYPES.BUILD_UP]: [
-        `${team} work it patiently through midfield.`,
-        `${team} try to build down the flank.`,
-        `${team} switch the play looking for space.`
-      ],
+      [EVENT_TYPES.BUILD_UP]: buildUpBank,
       [EVENT_TYPES.KEEPER_DISTRIBUTION]: [
         `${team} send it long from the back.`,
         `${team} keeper plays it short to start a move.`,
