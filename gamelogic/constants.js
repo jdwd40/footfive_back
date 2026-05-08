@@ -319,8 +319,27 @@ const SIM = {
   RED_CARD_THRESHOLD: 0.02,
   SHOOTOUT_TICK_INTERVAL: 3,
   SHOOTOUT_STANDARD_ROUNDS: 5,
-  INSTANT_PENALTY_SUCCESS: 0.75
+  INSTANT_PENALTY_SUCCESS: 0.75,
+  // Stage 2: max-silence flow events.
+  // Match-minute gap (not real seconds) before a single flow filler may fire.
+  // 1 match-minute ≈ 5 ticks at the default rules (240 ticks per 45 min half),
+  // so 2 match-minutes ≈ 10 real seconds of dead air.
+  MAX_SILENCE_MATCH_MINUTES: 2,
+  // After a key event (goal, halftime, etc.) wait this many match-minutes
+  // before considering a flow filler, so big moments aren't immediately
+  // followed by ambient commentary.
+  FLOW_COOLDOWN_AFTER_MAJOR_MATCH_MINUTES: 1
 };
+
+// Stage 2: which event types are flow/filler. Used by the silence detector
+// to pick a type and by tests/observability to identify ambient commentary.
+// Already in PERSISTABLE_MATCH_EVENT_TYPES (see Stage 0 migration 005).
+const FLOW_EVENT_TYPES = new Set([
+  EVENT_TYPES.POSSESSION,
+  EVENT_TYPES.BUILD_UP,
+  EVENT_TYPES.KEEPER_DISTRIBUTION,
+  EVENT_TYPES.DEFENSIVE_ACTION
+]);
 
 module.exports = {
   MATCH_STATES,
@@ -336,5 +355,6 @@ module.exports = {
   SIM,
   EVENT_TYPE_TO_CATEGORIES,
   EVENT_CATEGORIES,
-  PERSISTABLE_MATCH_EVENT_TYPES
+  PERSISTABLE_MATCH_EVENT_TYPES,
+  FLOW_EVENT_TYPES
 };

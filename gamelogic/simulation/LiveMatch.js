@@ -12,7 +12,8 @@ const {
   DEFAULT_RULES,
   BRACKET_STRUCTURE,
   MATCH_MINUTES,
-  SIM
+  SIM,
+  FLOW_EVENT_TYPES
 } = require('../constants');
 
 const { EventGenerator } = require('./EventGenerator');
@@ -86,6 +87,11 @@ class LiveMatch {
     this.lastEventMatchMinute = null;  // match minute carried by the last event
     this.lastEventType = null;         // EVENT_TYPES value of the last emitted event
     this.lastMajorEventTickAt = null;  // tickElapsed when the last KEY_EVENTS event fired
+
+    // Stage 2: max-silence flow filler bookkeeping. Avoids back-to-back
+    // identical flow events.
+    this.lastFlowEventType = null;
+    this.lastFlowDescription = null;
 
     // Stats
     this.stats = {
@@ -252,6 +258,160 @@ class LiveMatch {
     }
   }
 
+  // === Stage 2: max-silence flow filler ===
+
+  /**
+   * Decide whether the live feed has been quiet long enough to deserve a
+   * single ambient flow event. Returns the event object or null. Pure
+   * read-then-construct: never mutates score or state, only updates the
+   * flow-filler bookkeeping fields used to avoid back-to-back repeats.
+   *
+   * Caller in _processTick already gates on:
+   *   - events.length === 0 (no other event fired this tick)
+   *   - !isFastForwarding   (no filler during catch-up)
+   *   - _isPlayState()      (skip HALFTIME / ET_HALFTIME / PENALTIES / etc.)
+   */
+  _maybeEmitFlowEvent() {
+    if (this.lastEventMatchMinute == null) return null;
+
+    const currentMinute = this.getMatchMinute();
+    const minutesSinceLast = currentMinute - this.lastEventMatchMinute;
+    if (minutesSinceLast < SIM.MAX_SILENCE_MATCH_MINUTES) return null;
+
+    // Cooldown after a major event (goal, halftime, fulltime, etc.).
+    // Convert match-minute cooldown to ticks using the tick-per-match-minute
+    // ratio that's baked into _computeTimings.
+    if (this.lastMajorEventTickAt != null) {
+      const ticksPerMatchMinute =
+        this.timings.firstHalfEnd / MATCH_MINUTES.FIRST_HALF_END;
+      const cooldownTicks =
+        SIM.FLOW_COOLDOWN_AFTER_MAJOR_MATCH_MINUTES * ticksPerMatchMinute;
+      const ticksSinceMajor = this.tickElapsed - this.lastMajorEventTickAt;
+      if (ticksSinceMajor < cooldownTicks) return null;
+    }
+
+    const subjectSide = this._chooseFlowSide();
+    const type = this._chooseFlowType();
+    const description = this._buildFlowDescription(type, subjectSide);
+
+    this.lastFlowEventType = type;
+    this.lastFlowDescription = description;
+
+    // For defensive_action, the "subject" of the event is the defending team
+    // (the one without the ball). Other types are about the team in
+    // possession. Flip the side so teamId / side identify the correct team.
+    const eventSide = type === EVENT_TYPES.DEFENSIVE_ACTION
+      ? (subjectSide === 'home' ? 'away' : 'home')
+      : subjectSide;
+    const team = eventSide === 'home' ? this.homeTeam : this.awayTeam;
+
+    const PHASE_BY_TYPE = {
+      [EVENT_TYPES.POSSESSION]: 'possession',
+      [EVENT_TYPES.BUILD_UP]: 'build_up',
+      [EVENT_TYPES.KEEPER_DISTRIBUTION]: 'build_up',
+      [EVENT_TYPES.DEFENSIVE_ACTION]: 'defence'
+    };
+    const INTENSITY_BY_TYPE = {
+      [EVENT_TYPES.POSSESSION]: 1,
+      [EVENT_TYPES.BUILD_UP]: 2,
+      [EVENT_TYPES.KEEPER_DISTRIBUTION]: 1,
+      [EVENT_TYPES.DEFENSIVE_ACTION]: 2
+    };
+
+    return this._createEvent(type, currentMinute, {
+      teamId: team.id,
+      side: eventSide,
+      description,
+      importance: 'minor',
+      phase: PHASE_BY_TYPE[type],
+      intensity: INTENSITY_BY_TYPE[type]
+    });
+  }
+
+  /**
+   * Pick which team the flow event is about, weighted by tracked possession
+   * if available, else 50/50.
+   */
+  _chooseFlowSide() {
+    const total = this.possessionTicks.home + this.possessionTicks.away;
+    if (total === 0) return Math.random() < 0.5 ? 'home' : 'away';
+    const homeRatio = this.possessionTicks.home / total;
+    return Math.random() < homeRatio ? 'home' : 'away';
+  }
+
+  /**
+   * Pick a flow event type. Weighted toward possession/build_up; avoids
+   * picking the same type as the previous flow event when alternatives exist.
+   */
+  _chooseFlowType() {
+    const candidates = [
+      { type: EVENT_TYPES.POSSESSION, weight: 40 },
+      { type: EVENT_TYPES.BUILD_UP, weight: 30 },
+      { type: EVENT_TYPES.DEFENSIVE_ACTION, weight: 15 },
+      { type: EVENT_TYPES.KEEPER_DISTRIBUTION, weight: 15 }
+    ];
+    const filtered = candidates.filter(c => c.type !== this.lastFlowEventType);
+    const pool = filtered.length > 0 ? filtered : candidates;
+    const total = pool.reduce((s, c) => s + c.weight, 0);
+    let r = Math.random() * total;
+    for (const c of pool) {
+      r -= c.weight;
+      if (r <= 0) return c.type;
+    }
+    return pool[pool.length - 1].type;
+  }
+
+  /**
+   * Pick a description from the type-specific bank, avoiding the immediately
+   * previous description when the bank has more than one entry.
+   *
+   * For POSSESSION / BUILD_UP / KEEPER_DISTRIBUTION the subject team has the
+   * ball. For DEFENSIVE_ACTION the subject team is the defender, so
+   * `${team}` in those templates is the defender and `${opponent}` is the
+   * attacker — matching the eventSide flip in _maybeEmitFlowEvent.
+   */
+  _buildFlowDescription(type, subjectSide) {
+    const isDefensive = type === EVENT_TYPES.DEFENSIVE_ACTION;
+    const defenderName = (isDefensive
+      ? (subjectSide === 'home' ? this.awayTeam : this.homeTeam)
+      : (subjectSide === 'home' ? this.homeTeam : this.awayTeam)).name;
+    const attackerName = (isDefensive
+      ? (subjectSide === 'home' ? this.homeTeam : this.awayTeam)
+      : (subjectSide === 'home' ? this.awayTeam : this.homeTeam)).name;
+
+    const team = isDefensive ? defenderName : attackerName;
+    const opponent = isDefensive ? attackerName : defenderName;
+
+    const banks = {
+      [EVENT_TYPES.POSSESSION]: [
+        `${team} are keeping the ball well.`,
+        `${team} circulate it patiently.`,
+        `${team} hold possession in midfield.`
+      ],
+      [EVENT_TYPES.BUILD_UP]: [
+        `${team} work it patiently through midfield.`,
+        `${team} try to build down the flank.`,
+        `${team} switch the play looking for space.`
+      ],
+      [EVENT_TYPES.KEEPER_DISTRIBUTION]: [
+        `${team} send it long from the back.`,
+        `${team} keeper plays it short to start a move.`,
+        `${team} reset with a goal kick.`
+      ],
+      [EVENT_TYPES.DEFENSIVE_ACTION]: [
+        `${opponent} shut the move down.`,
+        `${team} clear their lines and reset.`,
+        `${opponent} press to win it back.`
+      ]
+    };
+
+    const bank = banks[type] || [];
+    if (bank.length === 0) return `${team} keep the tempo steady.`;
+    const filtered = bank.filter(d => d !== this.lastFlowDescription);
+    const pool = filtered.length > 0 ? filtered : bank;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
   /**
    * Process a single tick
    */
@@ -295,6 +455,17 @@ class LiveMatch {
         const shootoutTransitionEvents = this._handleStateTransition(stateBeforePenalties);
         events.push(...shootoutTransitionEvents);
       }
+    }
+
+    // Stage 2: emit a single flow filler when the live feed has gone quiet.
+    // Only runs when nothing else fired this tick, we're in active play, and
+    // we're not catching up via fast-forward. This intentionally does not
+    // touch score, state, or any other simulation field.
+    if (events.length === 0 &&
+        !this.isFastForwarding &&
+        this._isPlayState()) {
+      const flow = this._maybeEmitFlowEvent();
+      if (flow) events.push(flow);
     }
 
     return events;

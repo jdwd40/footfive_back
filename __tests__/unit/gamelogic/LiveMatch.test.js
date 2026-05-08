@@ -517,6 +517,141 @@ describe('LiveMatch', () => {
     });
   });
 
+  describe('Stage 2: max-silence flow events', () => {
+    const { SIM, FLOW_EVENT_TYPES } = require('../../../gamelogic/constants');
+
+    // Helper: put the match in a play state with given silence (in ticks).
+    const armSilence = (m, { ticksSinceLast }) => {
+      m.state = MATCH_STATES.FIRST_HALF;
+      m.tickElapsed = 200; // ~minute 38 in default rules
+      // _maybeEmitFlowEvent compares match-minutes, not ticks — so derive
+      // lastEventMatchMinute from ticksSinceLast via the engine's ratio.
+      const ticksPerMinute = m.timings.firstHalfEnd / 45;
+      const minutesSinceLast = ticksSinceLast / ticksPerMinute;
+      m.lastEventMatchMinute = m.getMatchMinute() - minutesSinceLast;
+      m.lastEventTickAt = m.tickElapsed - ticksSinceLast;
+      m.lastEventType = EVENT_TYPES.FOUL; // not a key event
+      m.lastMajorEventTickAt = null;
+    };
+
+    it('does not emit a flow event before the silence threshold', () => {
+      // 1 match-minute of silence; threshold is 2 -> no flow.
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      armSilence(match, { ticksSinceLast: Math.floor(ticksPerMinute * 1) });
+
+      expect(match._maybeEmitFlowEvent()).toBeNull();
+    });
+
+    it('emits a single flow event after the silence threshold', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1)) });
+
+      const evt = match._maybeEmitFlowEvent();
+      expect(evt).not.toBeNull();
+      expect(FLOW_EVENT_TYPES.has(evt.type)).toBe(true);
+      expect(evt.fixtureId).toBe(fixtureId);
+      expect(typeof evt.minute).toBe('number');
+      expect(['home', 'away']).toContain(evt.side);
+      expect(evt.teamId === homeTeam.id || evt.teamId === awayTeam.id).toBe(true);
+      expect(typeof evt.description).toBe('string');
+      expect(evt.description.length).toBeGreaterThan(0);
+      expect(evt.importance).toBe('minor');
+      expect(['possession', 'build_up', 'defence']).toContain(evt.phase);
+      expect(evt.intensity).toBeGreaterThanOrEqual(1);
+      expect(evt.intensity).toBeLessThanOrEqual(4);
+      expect(evt.score).toEqual({ home: 0, away: 0 });
+    });
+
+    it('does not emit during non-play states (HALFTIME, FINISHED, SCHEDULED, PENALTIES)', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      const farPastThreshold = Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 5));
+
+      for (const nonPlay of [
+        MATCH_STATES.SCHEDULED,
+        MATCH_STATES.HALFTIME,
+        MATCH_STATES.ET_HALFTIME,
+        MATCH_STATES.PENALTIES,
+        MATCH_STATES.FINISHED
+      ]) {
+        armSilence(match, { ticksSinceLast: farPastThreshold });
+        match.state = nonPlay;
+        const events = match._processTick();
+        const flowEvents = events.filter(e => FLOW_EVENT_TYPES.has(e.type));
+        expect(flowEvents).toEqual([]);
+      }
+    });
+
+    it('does not change score when emitting a flow event', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1)) });
+      const before = { ...match.score };
+
+      const evt = match._maybeEmitFlowEvent();
+      expect(evt).not.toBeNull();
+      expect(match.score).toEqual(before);
+    });
+
+    it('updates last-event tracking after a flow event reaches the feed', () => {
+      // Run through a full tick so _recordLastEventStats fires too.
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 2)) });
+
+      // Mark this minute as already processed so EventGenerator won't add
+      // additional play events to the same tick (keeps the test focused).
+      match.processedMinutes.add(match.getMatchMinute());
+
+      const events = match.tick(startTime + match.tickElapsed * 1000);
+      const flow = events.find(e => FLOW_EVENT_TYPES.has(e.type));
+      expect(flow).toBeDefined();
+      expect(match.lastEventType).toBe(flow.type);
+      expect(match.lastEventTickAt).toBe(match.tickElapsed);
+    });
+
+    it('does not emit two flow events with the same type back-to-back when an alternative exists', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      const silentTicks = Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 1));
+
+      armSilence(match, { ticksSinceLast: silentTicks });
+      const first = match._maybeEmitFlowEvent();
+      expect(first).not.toBeNull();
+
+      // Reset silence so a second flow can fire, but keep lastFlowEventType.
+      armSilence(match, { ticksSinceLast: silentTicks });
+      const second = match._maybeEmitFlowEvent();
+      expect(second).not.toBeNull();
+      expect(second.type).not.toBe(first.type);
+    });
+
+    it('respects the cooldown after a major event', () => {
+      const ticksPerMinute = match.timings.firstHalfEnd / 45;
+      armSilence(match, { ticksSinceLast: Math.ceil(ticksPerMinute * (SIM.MAX_SILENCE_MATCH_MINUTES + 5)) });
+
+      // Pretend a goal just fired half a match-minute ago (< 1-min cooldown).
+      const cooldownTicks = SIM.FLOW_COOLDOWN_AFTER_MAJOR_MATCH_MINUTES * ticksPerMinute;
+      match.lastMajorEventTickAt = match.tickElapsed - Math.floor(cooldownTicks / 2);
+
+      expect(match._maybeEmitFlowEvent()).toBeNull();
+    });
+
+    it('does not emit during fast-forward catch-up', () => {
+      // tick() with `now` far in the future enters the fast-forward branch.
+      // None of the events in the returned array should be flow events,
+      // because they aren't in KEY_EVENTS (filtered out by tick()).
+      const events = match.tick(startTime + 200 * 1000);
+      for (const e of events) {
+        expect(FLOW_EVENT_TYPES.has(e.type)).toBe(false);
+      }
+    });
+
+    it('flow event types are intentionally NOT in KEY_EVENTS', () => {
+      // Documented decision: flow filler is real-time-only and must not
+      // survive fast-forward — match_recap covers gaps instead.
+      for (const type of FLOW_EVENT_TYPES) {
+        expect(KEY_EVENTS.has(type)).toBe(false);
+      }
+    });
+  });
+
   describe('Stage 1: getMatchStateSnapshot', () => {
     it('returns the documented shape with no leaked internals', () => {
       const snap = match.getMatchStateSnapshot();
