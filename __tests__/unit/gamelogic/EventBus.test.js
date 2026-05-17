@@ -113,6 +113,98 @@ describe('EventBus', () => {
     });
   });
 
+  describe('chain metadata pass-through (Stage B contract)', () => {
+    // The flow-chain work documented in LIVING_ARCHITECTURE.md relies on
+    // EventBus passing six chain fields untouched: bundle_id / bundle_step
+    // (DB columns) plus chain_type, chain_terminal, pacing.delay_ms,
+    // pacing.hold_ms (JSONB metadata). Stage B does not add chain emit
+    // logic - it just freezes the pipeline contract these tests assert.
+    const chainPayload = {
+      bundleId: 'attack_42_34_1',
+      bundleStep: 2,
+      chain_type: 'attack',
+      chain_terminal: false,
+      pacing: { delay_ms: 1200, hold_ms: 1100 },
+      teamId: 7,
+      description: 'Forward pushes past the defender'
+    };
+
+    it('preserves chain payload fields in the buffered event', () => {
+      const emitted = eventBus.emit({
+        type: 'goal_build_up',
+        fixtureId: 42,
+        minute: 34,
+        payload: { ...chainPayload }
+      });
+
+      expect(emitted.payload.bundleId).toBe('attack_42_34_1');
+      expect(emitted.payload.bundleStep).toBe(2);
+      expect(emitted.payload.chain_type).toBe('attack');
+      expect(emitted.payload.chain_terminal).toBe(false);
+      expect(emitted.payload.pacing).toEqual({ delay_ms: 1200, hold_ms: 1100 });
+
+      // Same object should be in the replay buffer for sendCatchup.
+      const recent = eventBus.getRecentEvents({ fixtureId: 42 });
+      expect(recent).toHaveLength(1);
+      expect(recent[0].payload.chain_type).toBe('attack');
+      expect(recent[0].payload.pacing.delay_ms).toBe(1200);
+    });
+
+    it('also accepts chain fields at top level (flat emit form)', () => {
+      // Emitters may put chain keys directly on the raw event; _extractPayload
+      // copies non-base keys into payload. Both forms must be equivalent.
+      const emitted = eventBus.emit({
+        type: 'counter_attack',
+        fixtureId: 42,
+        minute: 50,
+        bundleId: 'counter_42_50_1',
+        bundleStep: 0,
+        chain_type: 'counter',
+        chain_terminal: false,
+        pacing: { delay_ms: 600, hold_ms: 1000 }
+      });
+
+      expect(emitted.payload.bundleId).toBe('counter_42_50_1');
+      expect(emitted.payload.chain_type).toBe('counter');
+      expect(emitted.payload.pacing.hold_ms).toBe(1000);
+    });
+
+    it('serialises chain metadata to SSE clients verbatim', () => {
+      // Smallest meaningful broadcast check: register a fake response,
+      // emit a chain event, parse the data: line, and confirm the chain
+      // fields round-trip into the JSON payload sent to clients.
+      const writes = [];
+      const fakeRes = {
+        writeHead: jest.fn(),
+        flushHeaders: jest.fn(),
+        write: (chunk) => { writes.push(String(chunk)); return true; },
+        end: jest.fn(),
+        on: jest.fn(),
+        writable: true,
+        socket: { setNoDelay: jest.fn() }
+      };
+
+      eventBus.addClient(fakeRes, { fixtureId: 42 });
+      // Drop the initial "connected" frame.
+      writes.length = 0;
+
+      eventBus.emit({
+        type: 'goal_build_up',
+        fixtureId: 42,
+        minute: 34,
+        payload: { ...chainPayload }
+      });
+
+      const dataLine = writes.find(w => w.startsWith('data: '));
+      expect(dataLine).toBeDefined();
+      const parsed = JSON.parse(dataLine.slice('data: '.length).trim());
+      expect(parsed.payload.chain_type).toBe('attack');
+      expect(parsed.payload.chain_terminal).toBe(false);
+      expect(parsed.payload.pacing).toEqual({ delay_ms: 1200, hold_ms: 1100 });
+      expect(parsed.payload.bundleId).toBe('attack_42_34_1');
+    });
+  });
+
   describe('getRecentEvents', () => {
     beforeEach(() => {
       eventBus.emit({ type: 'goal', fixtureId: 1, tournamentId: 100 });

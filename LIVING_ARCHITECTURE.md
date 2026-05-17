@@ -116,6 +116,7 @@
 | `db/migrations/003_bracket_system.sql` | Bracket positioning columns. | 001 |
 | `db/migrations/004_tournament_state.sql` | Tournament state table for event-driven scheduling. | — |
 | `db/migrations/005_expand_match_event_types.sql` | Expands match_events.valid_event_type CHECK; adds nullable seq + server_timestamp columns. | 001, 002 |
+| `db/migrations/006_expand_match_event_types.sql` | Stage A of flow-chain work. Adds chain narrative types (midfield_battle, goal_build_up, attack_breakdown, counter_breakdown, kickoff_restart, penalty_walkup, penalty_run_up) to valid_event_type CHECK. | 001, 002, 005 |
 
 ---
 
@@ -248,6 +249,52 @@ listen.js → SimulationLoop.init() → TournamentManager
 
 ---
 
+## Event Chain Metadata Convention
+
+Stage B of flow-chain work. Emitters (EventGenerator, PenaltyShootout) tie related events into ordered chains via six fields. The pipeline already passes them through unchanged — DB columns are reused, JSONB metadata is splatted from `payload`, SSE serializes the enriched event verbatim, and the replay buffer holds the same object. **No EventBus / MatchEventModel / liveController changes are required to add chains.**
+
+### Where each field lives
+
+| Field | Storage | Source on emit | Notes |
+|-------|---------|----------------|-------|
+| `chain_id` | DB column `bundle_id` (VARCHAR(50)) | `payload.bundleId` | Reuses existing `bundle_id`. Format: `<type>_<fixtureId>_<minute>_<seq>` e.g. `attack_42_34_1`. Indexed (`idx_events_bundle`). |
+| `chain_step` | DB column `bundle_step` (INTEGER) | `payload.bundleStep` | Reuses existing `bundle_step`. 0-indexed within the chain. |
+| `chain_type` | JSONB `metadata.chain_type` | `payload.chain_type` | One of: `midfield` \| `attack` \| `counter` \| `penalty`. |
+| `chain_terminal` | JSONB `metadata.chain_terminal` | `payload.chain_terminal` | `true` on the final step (goal, miss/save, breakdown). Lets consumers close out the chain UI without waiting. |
+| `pacing.delay_ms` | JSONB `metadata.pacing.delay_ms` | `payload.pacing.delay_ms` | Advisory ms the FE should wait before revealing this step. Defaults in `gamelogic/constants.js` `CHAIN_PACING`. |
+| `pacing.hold_ms` | JSONB `metadata.pacing.hold_ms` | `payload.pacing.hold_ms` | Advisory ms the FE should hold this step on screen. Same source. |
+
+### Pass-through guarantee
+
+- `EventBus._extractPayload` splats `rawEvent.payload` into the canonical `payload` object and also copies any non-base top-level keys, so emitters may pass chain fields either nested or flat.
+- `EventBus._persistEvent` writes `payload.bundleId` → `bundle_id`, `payload.bundleStep` → `bundle_step`, and `{ ...payload }` → `metadata` JSONB. `chain_type`, `chain_terminal`, `pacing` are stored as JSON keys with no schema change.
+- `EventBus._sendToClient` JSON-stringifies the full enriched event. SSE consumers receive `payload.chain_type` etc. exactly as emitted.
+- `EventBus.eventBuffer` holds the same enriched event used for replay (`sendCatchup`, `getRecentEvents`), so reconnecting clients receive identical chain metadata.
+- `MatchEvent.toJSON` exposes `bundleId`, `bundleStep`, and the full `metadata` object to REST responses.
+
+### Rules
+
+1. Every event in a chain shares the same `chain_id` (= `bundle_id`).
+2. `chain_step` is monotonically increasing per chain, starting at 0.
+3. Exactly one event per chain has `chain_terminal: true`.
+4. `chain_type` is constant across a chain.
+5. `pacing` is advisory — backend never sleeps on it. Frontend may ignore it.
+6. Existing non-chain events (`build_up_play`, lone `corner`, `foul`, etc.) MUST NOT set these fields. Absence ⇒ not part of a chain.
+7. `bundle_id` namespacing avoids collisions across fixtures: include `fixtureId` in the ID string.
+
+### Reserved chain types (Stage A migration 006)
+
+| chain_type | Step types (in order) | Terminal candidates |
+|------------|-----------------------|---------------------|
+| `midfield` | `midfield_battle` (single step) | `midfield_battle` |
+| `attack` | `goal_build_up` × 1–2, then `shot_saved`/`shot_missed`/`shot_blocked`/`goal`, optional `kickoff_restart` | `attack_breakdown`, terminal shot, `kickoff_restart` |
+| `counter` | `counter_attack`, then `shot_*` or `goal`, optional `kickoff_restart` | `counter_breakdown`, terminal shot, `kickoff_restart` |
+| `penalty` | `penalty_awarded`, `penalty_walkup`, `penalty_run_up`, `penalty_scored`/`penalty_missed`/`penalty_saved`, optional `kickoff_restart` | outcome event, `kickoff_restart` |
+
+Behaviour wiring lives in Stages C–F. This stage only fixes the contract.
+
+---
+
 ## Scripts
 
 | File | Purpose | Depends On |
@@ -265,4 +312,4 @@ listen.js → SimulationLoop.init() → TournamentManager
 
 ---
 
-*Last updated: 2026-04-15*
+*Last updated: 2026-05-17*
