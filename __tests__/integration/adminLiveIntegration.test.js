@@ -34,8 +34,10 @@ describe('Admin and Live integration', () => {
   describe('admin auth and route compatibility', () => {
     it('returns 403 when admin auth is missing', async () => {
       const protectedApp = createTestApp({ devAdmin: false });
+      const previousNodeEnv = process.env.NODE_ENV;
       const previousDevAdmin = process.env.DEV_ADMIN;
       const previousAdminSecret = process.env.ADMIN_SECRET;
+      process.env.NODE_ENV = 'production';
       process.env.DEV_ADMIN = 'false';
       delete process.env.ADMIN_SECRET;
 
@@ -49,8 +51,9 @@ describe('Admin and Live integration', () => {
               error: 'Admin access required',
               hint: 'Set DEV_ADMIN=true in development or provide x-admin-secret header'
             });
-          });
+        });
       } finally {
+        process.env.NODE_ENV = previousNodeEnv;
         process.env.DEV_ADMIN = previousDevAdmin;
         if (typeof previousAdminSecret === 'undefined') {
           delete process.env.ADMIN_SECRET;

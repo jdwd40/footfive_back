@@ -99,7 +99,7 @@ const seed = async (data) => {
     `);
 
     // Create match_events table
-    // NOTE: keep CHECK list and columns in sync with migrations 002 + 005.
+    // NOTE: keep CHECK list and columns in sync with migrations 002, 005, and 006.
     // A fresh seed must produce the same schema as a migrated database.
     await db.query(`
         CREATE TABLE match_events (
@@ -140,7 +140,10 @@ const seed = async (data) => {
                     'counter_attack', 'breakaway', 'momentum_shift',
                     'final_score', 'match_winner', 'match_draw',
                     'penalty_shootout_start', 'penalty_taker',
-                    'penalty_sudden_death', 'penalty_winner'
+                    'penalty_sudden_death', 'penalty_winner',
+                    'midfield_battle', 'goal_build_up', 'attack_breakdown',
+                    'counter_breakdown', 'kickoff_restart',
+                    'penalty_walkup', 'penalty_run_up'
                 )
             )
         );

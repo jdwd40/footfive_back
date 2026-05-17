@@ -13,7 +13,8 @@ const db = require('../../../db/connection');
 const MatchEvent = require('../../../models/MatchEventModel');
 const {
   EVENT_TYPES,
-  PERSISTABLE_MATCH_EVENT_TYPES
+  PERSISTABLE_MATCH_EVENT_TYPES,
+  CHAIN_PACING
 } = require('../../../gamelogic/constants');
 const {
   setupBeforeEach,
@@ -135,6 +136,77 @@ describe('match_events persistence: event-type CHECK constraint', () => {
     );
     expect(Number(fetched.rows[0].seq)).toBe(42);
     expect(new Date(fetched.rows[0].server_timestamp).toISOString()).toBe(ts.toISOString());
+  });
+
+  it('accepts every Stage-A chained-narrative type (migration 006)', async () => {
+    // Stage-A types are also in PERSISTABLE_MATCH_EVENT_TYPES so the loop
+    // above already covers them, but a dedicated assertion makes a CHECK
+    // regression on this slice land in a single, named test.
+    const stageATypes = [
+      EVENT_TYPES.MIDFIELD_BATTLE,
+      EVENT_TYPES.GOAL_BUILD_UP,
+      EVENT_TYPES.ATTACK_BREAKDOWN,
+      EVENT_TYPES.COUNTER_BREAKDOWN,
+      EVENT_TYPES.KICKOFF_RESTART,
+      EVENT_TYPES.PENALTY_WALKUP,
+      EVENT_TYPES.PENALTY_RUN_UP
+    ];
+
+    for (const eventType of stageATypes) {
+      const created = await MatchEvent.create({
+        fixtureId,
+        minute: 33,
+        eventType,
+        teamId: teamAId,
+        description: `chain ${eventType}`,
+        metadata: {
+          chain_type: 'attack',
+          chain_step: 1,
+          chain_terminal: false,
+          pacing: { delay_ms: 1000, hold_ms: 1200 }
+        }
+      });
+      expect(created.eventType).toBe(eventType);
+    }
+  });
+
+  it('reuses existing counter_attack type for counter chain step 1', async () => {
+    // counter_attack is already in the CHECK (migration 005) and Stage-A
+    // does NOT redefine it. This guards against an accidental duplicate
+    // or removal in a future cleanup.
+    expect(EVENT_TYPES.COUNTER_ATTACK).toBe('counter_attack');
+    const created = await MatchEvent.create({
+      fixtureId,
+      minute: 44,
+      eventType: EVENT_TYPES.COUNTER_ATTACK,
+      teamId: teamAId,
+      description: 'counter break',
+      metadata: { chain_type: 'counter', chain_step: 0 }
+    });
+    expect(created.eventType).toBe('counter_attack');
+  });
+
+  it('exposes CHAIN_PACING defaults for every Stage-A chain type', () => {
+    // Designers tune pacing here, emitters read from here. Guard the
+    // shape so a typo in constants.js (e.g. delayMs vs delay_ms) fails
+    // loud rather than at runtime in a chained emit.
+    const requiredKeys = [
+      'midfield_battle',
+      'goal_build_up',
+      'attack_breakdown',
+      'counter_attack',
+      'counter_breakdown',
+      'shot_terminal',
+      'goal_terminal',
+      'kickoff_restart',
+      'penalty_walkup',
+      'penalty_run_up'
+    ];
+    for (const key of requiredKeys) {
+      expect(CHAIN_PACING[key]).toBeDefined();
+      expect(typeof CHAIN_PACING[key].delay_ms).toBe('number');
+      expect(typeof CHAIN_PACING[key].hold_ms).toBe('number');
+    }
   });
 
   it('createBatch persists seq and server_timestamp for each row', async () => {

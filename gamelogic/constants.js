@@ -82,7 +82,17 @@ const EVENT_TYPES = {
   PENALTY_SHOOTOUT_START: 'penalty_shootout_start',
   PENALTY_TAKER: 'penalty_taker',
   PENALTY_SUDDEN_DEATH: 'penalty_sudden_death',
-  PENALTY_WINNER: 'penalty_winner'
+  PENALTY_WINNER: 'penalty_winner',
+  // Stage A: chained-narrative types (migration 006). Emitters wired in
+  // later stages; CHECK + persistability ready now so silent rejects
+  // can't bite when EventGenerator starts producing them.
+  MIDFIELD_BATTLE: 'midfield_battle',
+  GOAL_BUILD_UP: 'goal_build_up',
+  ATTACK_BREAKDOWN: 'attack_breakdown',
+  COUNTER_BREAKDOWN: 'counter_breakdown',
+  KICKOFF_RESTART: 'kickoff_restart',
+  PENALTY_WALKUP: 'penalty_walkup',
+  PENALTY_RUN_UP: 'penalty_run_up'
 };
 
 // Key events that should be emitted even during fast-forward
@@ -167,6 +177,14 @@ const EVENT_TYPE_TO_CATEGORIES = {
   [EVENT_TYPES.PENALTY_TAKER]: ['shootout'],
   [EVENT_TYPES.PENALTY_SUDDEN_DEATH]: ['shootout', 'highlights'],
   [EVENT_TYPES.PENALTY_WINNER]: ['shootout', 'result', 'highlights'],
+  // Stage A: chained-narrative types
+  [EVENT_TYPES.MIDFIELD_BATTLE]: ['flow'],
+  [EVENT_TYPES.GOAL_BUILD_UP]: ['flow', 'attack'],
+  [EVENT_TYPES.ATTACK_BREAKDOWN]: ['flow', 'defence'],
+  [EVENT_TYPES.COUNTER_BREAKDOWN]: ['flow', 'defence'],
+  [EVENT_TYPES.KICKOFF_RESTART]: ['flow'],
+  [EVENT_TYPES.PENALTY_WALKUP]: ['flow'],
+  [EVENT_TYPES.PENALTY_RUN_UP]: ['flow'],
   connected: ['system']
 };
 
@@ -216,7 +234,16 @@ const PERSISTABLE_MATCH_EVENT_TYPES = new Set([
   EVENT_TYPES.PENALTY_SHOOTOUT_START,
   EVENT_TYPES.PENALTY_TAKER,
   EVENT_TYPES.PENALTY_SUDDEN_DEATH,
-  EVENT_TYPES.PENALTY_WINNER
+  EVENT_TYPES.PENALTY_WINNER,
+  // Stage A: chained-narrative types (migration 006). Persistable from
+  // day one so the matchEventTypes integration test exercises the CHECK.
+  EVENT_TYPES.MIDFIELD_BATTLE,
+  EVENT_TYPES.GOAL_BUILD_UP,
+  EVENT_TYPES.ATTACK_BREAKDOWN,
+  EVENT_TYPES.COUNTER_BREAKDOWN,
+  EVENT_TYPES.KICKOFF_RESTART,
+  EVENT_TYPES.PENALTY_WALKUP,
+  EVENT_TYPES.PENALTY_RUN_UP
 ]);
 
 // === Default Match Rules ===
@@ -351,6 +378,26 @@ const FLOW_EVENT_TYPES = new Set([
   EVENT_TYPES.DEFENSIVE_ACTION
 ]);
 
+// Stage A: pacing hints written into event.metadata.pacing so the frontend
+// can stagger chained-narrative reveals. Values are advisory ms delays
+// between successive chain steps; EventGenerator stamps them at emit time.
+// Tweak here, not in the emitter, so designers can re-tune without touching
+// game-logic code.
+const CHAIN_PACING = {
+  midfield_battle: { delay_ms: 0,    hold_ms: 1400 },
+  goal_build_up:   { delay_ms: 1200, hold_ms: 1100 },
+  attack_breakdown:{ delay_ms: 900,  hold_ms: 1300 },
+  counter_attack:  { delay_ms: 600,  hold_ms: 1000 },
+  counter_breakdown:{ delay_ms: 800, hold_ms: 1200 },
+  // Shot/goal reveals — applied to existing shot_*/goal events when they
+  // terminate a chain. Non-chained shots ignore this.
+  shot_terminal:   { delay_ms: 1400, hold_ms: 1600 },
+  goal_terminal:   { delay_ms: 1600, hold_ms: 2200 },
+  kickoff_restart: { delay_ms: 1800, hold_ms: 900  },
+  penalty_walkup:  { delay_ms: 600,  hold_ms: 1500 },
+  penalty_run_up:  { delay_ms: 1200, hold_ms: 1200 }
+};
+
 module.exports = {
   MATCH_STATES,
   EVENT_TYPES,
@@ -366,5 +413,6 @@ module.exports = {
   EVENT_TYPE_TO_CATEGORIES,
   EVENT_CATEGORIES,
   PERSISTABLE_MATCH_EVENT_TYPES,
-  FLOW_EVENT_TYPES
+  FLOW_EVENT_TYPES,
+  CHAIN_PACING
 };
