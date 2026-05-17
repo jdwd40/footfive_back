@@ -35,3 +35,4 @@ Thumbs.db
 .npm
 *.log
 *.log.*
+coverage/
