@@ -304,7 +304,9 @@ class EventBus extends EventEmitter {
         xg: payload.xg || null,
         outcome: payload.outcome || null,
         bundleId: payload.bundleId || null,
-        bundleStep: payload.bundleStep || null,
+        // Stage F2: nullish-coalesce so bundleStep: 0 (the first step of any
+        // chain) is preserved when the row reaches MatchEvent.create.
+        bundleStep: payload.bundleStep ?? null,
         metadata: {
           ...payload,
           score: payload.score,

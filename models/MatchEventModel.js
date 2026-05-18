@@ -57,7 +57,10 @@ class MatchEvent {
             eventData.xg || null,
             eventData.outcome || null,
             eventData.bundleId || null,
-            eventData.bundleStep || null,
+            // Stage F2: nullish-coalesce so bundleStep: 0 (the first step of
+            // any chain) survives instead of being collapsed to null by
+            // falsy-OR.
+            eventData.bundleStep ?? null,
             JSON.stringify(eventData.metadata || {}),
             eventData.seq != null ? eventData.seq : null,
             MatchEvent._normalizeServerTimestamp(eventData.serverTimestamp)
@@ -83,7 +86,8 @@ class MatchEvent {
             e.xg || null,
             e.outcome || null,
             e.bundleId || null,
-            e.bundleStep || null,
+            // Stage F2: see note in create() — preserve bundleStep: 0.
+            e.bundleStep ?? null,
             JSON.stringify(e.metadata || {}),
             e.seq != null ? e.seq : null,
             MatchEvent._normalizeServerTimestamp(e.serverTimestamp)

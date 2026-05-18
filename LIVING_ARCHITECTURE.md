@@ -163,6 +163,7 @@
 | `__tests__/unit/controllers/adminController.test.js` | Admin controller (mocked). | adminController |
 | `__tests__/unit/controllers/liveController.test.js` | Live controller (mocked). | liveController |
 | `__tests__/unit/gamelogic/EventGenerator.test.js` | EventGenerator narrative/momentum sequence behavior. | EventGenerator |
+| `__tests__/unit/gamelogic/PenaltyShootout.test.js` | PenaltyShootout chain metadata, reaction gating, winner/sudden-death guards. | PenaltyShootout |
 | `__tests__/unit/gamelogic/EventBus.test.js` | EventBus. | EventBus, MatchEventModel |
 | `__tests__/unit/gamelogic/LiveMatch.test.js` | LiveMatch simulation. | LiveMatch |
 | `__tests__/unit/gamelogic/SimulationLoop.test.js` | SimulationLoop. | SimulationLoop |

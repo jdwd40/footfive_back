@@ -247,7 +247,14 @@ const PERSISTABLE_MATCH_EVENT_TYPES = new Set([
   // Stage D: in-match penalty chain start. Already in the DB CHECK
   // (migration 002) but was filtered out by _isPersistableEvent until
   // emitters started using it.
-  EVENT_TYPES.PENALTY_AWARDED
+  EVENT_TYPES.PENALTY_AWARDED,
+  // Stage F2: shootout chain lead-in / reaction. Already in the DB CHECK
+  // (migration 005 + 006). Promoting them here lets the shootout chain
+  // be reconstructed from match_events alone, not just the in-memory
+  // replay buffer. The result events (shootout_goal/save/miss) have been
+  // persistable since Stage 0.
+  EVENT_TYPES.SHOOTOUT_WALKUP,
+  EVENT_TYPES.SHOOTOUT_REACTION
 ]);
 
 // === Default Match Rules ===
@@ -410,7 +417,12 @@ const CHAIN_PACING = {
   // penalty_outcome covers all three terminal results (scored/saved/missed)
   // so designers tune the reveal in one place.
   penalty_awarded: { delay_ms: 800,  hold_ms: 1600 },
-  penalty_outcome: { delay_ms: 1400, hold_ms: 2000 }
+  penalty_outcome: { delay_ms: 1400, hold_ms: 2000 },
+  // Stage F: shootout kick reveal pacing. The shootout chain is per-kick:
+  // walkup → result → optional reaction, each kick its own bundle.
+  shootout_walkup:   { delay_ms: 800,  hold_ms: 1400 },
+  shootout_terminal: { delay_ms: 1400, hold_ms: 2000 },
+  shootout_reaction: { delay_ms: 1000, hold_ms: 1800 }
 };
 
 module.exports = {

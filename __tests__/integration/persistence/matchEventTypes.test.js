@@ -82,10 +82,14 @@ describe('match_events persistence: event-type CHECK constraint', () => {
     }
   });
 
-  it('accepts shootout_walkup and shootout_reaction (emitted but not in PERSISTABLE)', async () => {
-    // These types are emitted by PenaltyShootout today and the CHECK should
-    // not block them, even though _isPersistableEvent currently filters them
-    // out before they reach the DB.
+  it('accepts shootout_walkup and shootout_reaction (Stage F2: now in PERSISTABLE)', async () => {
+    // Stage F2 promoted both types into PERSISTABLE_MATCH_EVENT_TYPES so the
+    // shootout chain can be reconstructed from match_events alone, not just
+    // the live SSE/replay buffer. The DB CHECK has accepted them since
+    // migration 005, so promotion is the only change.
+    expect(PERSISTABLE_MATCH_EVENT_TYPES.has(EVENT_TYPES.SHOOTOUT_WALKUP)).toBe(true);
+    expect(PERSISTABLE_MATCH_EVENT_TYPES.has(EVENT_TYPES.SHOOTOUT_REACTION)).toBe(true);
+
     for (const eventType of ['shootout_walkup', 'shootout_reaction']) {
       await expect(
         MatchEvent.create({
@@ -98,6 +102,98 @@ describe('match_events persistence: event-type CHECK constraint', () => {
         })
       ).resolves.toBeDefined();
     }
+  });
+
+  it('round-trips a full shootout chain (walkup → result → reaction) with chain metadata', async () => {
+    // Stage F2 lets the shootout chain be reconstructed from the DB alone.
+    // Persist all three steps of one kick bundle and verify bundleId,
+    // bundleStep, chain_type, chain_terminal, and pacing survive the round
+    // trip via match_events.metadata JSONB.
+    const bundleId = `shootout_${fixtureId}_3_7`;
+    expect(bundleId.length).toBeLessThanOrEqual(50);
+
+    const walkupPacing = { delay_ms: 800, hold_ms: 1400 };
+    const terminalPacing = { delay_ms: 1400, hold_ms: 2000 };
+    const reactionPacing = { delay_ms: 1000, hold_ms: 1800 };
+
+    await MatchEvent.create({
+      fixtureId,
+      minute: 120,
+      eventType: EVENT_TYPES.SHOOTOUT_WALKUP,
+      teamId: teamAId,
+      description: 'H1 walks up for Metro City.',
+      bundleId,
+      bundleStep: 0,
+      metadata: {
+        chain_type: 'shootout',
+        chain_terminal: false,
+        pacing: walkupPacing
+      }
+    });
+
+    await MatchEvent.create({
+      fixtureId,
+      minute: 120,
+      eventType: EVENT_TYPES.SHOOTOUT_GOAL,
+      teamId: teamAId,
+      description: 'H1 takes the penalty... and SCORES! Metro City land the decisive penalty.',
+      bundleId,
+      bundleStep: 1,
+      metadata: {
+        chain_type: 'shootout',
+        chain_terminal: false,
+        pacing: terminalPacing
+      }
+    });
+
+    await MatchEvent.create({
+      fixtureId,
+      minute: 120,
+      eventType: EVENT_TYPES.SHOOTOUT_REACTION,
+      teamId: teamAId,
+      description: 'Metro City edge ahead in the shootout.',
+      bundleId,
+      bundleStep: 2,
+      metadata: {
+        chain_type: 'shootout',
+        chain_terminal: true,
+        pacing: reactionPacing
+      }
+    });
+
+    const rows = await db.query(
+      `SELECT event_type, bundle_id, bundle_step, metadata
+       FROM match_events
+       WHERE bundle_id = $1
+       ORDER BY bundle_step ASC`,
+      [bundleId]
+    );
+
+    expect(rows.rows).toHaveLength(3);
+    const [walkup, result, reaction] = rows.rows;
+
+    expect(walkup.event_type).toBe(EVENT_TYPES.SHOOTOUT_WALKUP);
+    expect(Number(walkup.bundle_step)).toBe(0);
+    expect(walkup.metadata.chain_type).toBe('shootout');
+    expect(walkup.metadata.chain_terminal).toBe(false);
+    expect(walkup.metadata.pacing).toEqual(walkupPacing);
+
+    expect(result.event_type).toBe(EVENT_TYPES.SHOOTOUT_GOAL);
+    expect(Number(result.bundle_step)).toBe(1);
+    expect(result.metadata.chain_type).toBe('shootout');
+    expect(result.metadata.chain_terminal).toBe(false);
+    expect(result.metadata.pacing).toEqual(terminalPacing);
+
+    expect(reaction.event_type).toBe(EVENT_TYPES.SHOOTOUT_REACTION);
+    expect(Number(reaction.bundle_step)).toBe(2);
+    expect(reaction.metadata.chain_type).toBe('shootout');
+    expect(reaction.metadata.chain_terminal).toBe(true);
+    expect(reaction.metadata.pacing).toEqual(reactionPacing);
+
+    // Exactly one terminal per bundle.
+    const terminals = rows.rows.filter((r) => r.metadata.chain_terminal === true);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].event_type).toBe(EVENT_TYPES.SHOOTOUT_REACTION);
   });
 
   it('still rejects an unknown event_type (CHECK constraint is intact)', async () => {
