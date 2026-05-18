@@ -434,19 +434,75 @@ class EventGenerator {
   }
 
   /**
-   * Stage C: penalty path emits a single legacy event with no chain
-   * metadata at all (no bundleId / bundleStep / chain_type / chain_terminal /
-   * pacing). Penalty chains are Stage D.
+   * Stage D: in-match penalty chain.
+   *   penalty_awarded → penalty_walkup → penalty_run_up → result (terminal)
+   *
+   * Score and stats only change on the terminal step; the three lead-in
+   * steps are narrative-only. Penalty shootout flow is unaffected — it
+   * lives in PenaltyShootout.js and uses the separate SHOOTOUT_* event
+   * types, not these PENALTY_* types.
+   *
+   * kickoff_restart after a goal is reserved for a later stage; this stage
+   * does not emit it.
    */
   _handlePenalty(attackingTeam, defendingTeam, side, minute) {
     const events = [];
-    const players = side === 'home' ? this.ctx.homePlayers : this.ctx.awayPlayers;
+    const attackingPlayers = side === 'home' ? this.ctx.homePlayers : this.ctx.awayPlayers;
+    const defendingPlayers = side === 'home' ? this.ctx.awayPlayers : this.ctx.homePlayers;
 
     this.ctx.stats[side].shots++;
     this.ctx.stats[side].xg += SIM.PENALTY_XG;
 
+    const taker = this._selectScorer(attackingPlayers);
+    const keeper = this._selectKeeper(defendingPlayers);
+    const takerName = taker?.name || `${attackingTeam.name} taker`;
+    const keeperName = keeper?.name || `${defendingTeam.name} keeper`;
+
+    const bundleId = this._generateChainBundleId('penalty', minute);
+    let step = 0;
+
+    events.push(this._createEvent(EVENT_TYPES.PENALTY_AWARDED, minute, {
+      teamId: attackingTeam.id,
+      description: `Foul! The ref points to the spot. Penalty awarded to ${attackingTeam.name}.`,
+      bundleId,
+      bundleStep: step++,
+      chain_type: 'penalty',
+      chain_terminal: false,
+      pacing: { ...CHAIN_PACING.penalty_awarded },
+      tags: ['setPiece', 'penalty'],
+      narrative: `${attackingTeam.name} have a chance from the spot.`
+    }));
+
+    events.push(this._createEvent(EVENT_TYPES.PENALTY_WALKUP, minute, {
+      teamId: attackingTeam.id,
+      playerId: taker?.playerId,
+      displayName: taker?.name,
+      description: `${takerName} steps up for ${attackingTeam.name}.`,
+      bundleId,
+      bundleStep: step++,
+      chain_type: 'penalty',
+      chain_terminal: false,
+      pacing: { ...CHAIN_PACING.penalty_walkup },
+      tags: ['setPiece', 'penalty'],
+      narrative: `${takerName} places the ball on the spot.`
+    }));
+
+    events.push(this._createEvent(EVENT_TYPES.PENALTY_RUN_UP, minute, {
+      teamId: attackingTeam.id,
+      playerId: taker?.playerId,
+      displayName: taker?.name,
+      description: `${takerName} takes the penalty...`,
+      bundleId,
+      bundleStep: step++,
+      chain_type: 'penalty',
+      chain_terminal: false,
+      pacing: { ...CHAIN_PACING.penalty_run_up },
+      tags: ['setPiece', 'penalty'],
+      narrative: `${takerName} begins the run-up.`
+    }));
+
     const outcome = this._determinePenaltyOutcome(defendingTeam);
-    const taker = this._selectScorer(players);
+    const terminalPacing = { ...CHAIN_PACING.penalty_outcome };
 
     if (outcome === 'scored') {
       this.ctx.score[side]++;
@@ -457,11 +513,16 @@ class EventGenerator {
         teamId: attackingTeam.id,
         playerId: taker?.playerId,
         displayName: taker?.name,
-        description: `PENALTY GOAL! ${attackingTeam.name}`,
+        description: `GOAL! He sends the keeper the wrong way.`,
         xg: SIM.PENALTY_XG,
         outcome: 'scored',
+        bundleId,
+        bundleStep: step++,
+        chain_type: 'penalty',
+        chain_terminal: true,
+        pacing: terminalPacing,
         tags: ['setPiece', 'penalty'],
-        narrative: `${attackingTeam.name} keep composure from the spot.`,
+        narrative: `${takerName} keeps composure to convert from the spot.`,
         momentumSnapshot: { ...this.phaseState.momentum }
       }));
 
@@ -473,29 +534,47 @@ class EventGenerator {
         teamId: attackingTeam.id,
         playerId: taker?.playerId,
         displayName: taker?.name,
-        description: `Penalty saved! ${defendingTeam.name} keep it out.`,
+        keeperPlayerId: keeper?.playerId,
+        keeperName: keeper?.name,
+        description: `SAVED! ${keeperName} makes the stop for ${defendingTeam.name}.`,
         xg: SIM.PENALTY_XG,
         outcome: 'saved',
+        bundleId,
+        bundleStep: step++,
+        chain_type: 'penalty',
+        chain_terminal: true,
+        pacing: terminalPacing,
         tags: ['setPiece', 'penalty'],
-        narrative: `${defendingTeam.name} produce a huge stop from the spot.`,
+        narrative: `${keeperName} produces a huge stop from the spot.`,
         momentumSnapshot: { ...this.phaseState.momentum }
       }));
     } else {
       this._updateMomentum(side, 'missed');
+      const goesWide = Math.random() < 0.5;
       events.push(this._createEvent(EVENT_TYPES.PENALTY_MISSED, minute, {
         teamId: attackingTeam.id,
         playerId: taker?.playerId,
         displayName: taker?.name,
-        description: `Penalty missed by ${taker?.name || attackingTeam.name}.`,
+        description: goesWide ? `He misses! It goes wide.` : `He misses! It goes over.`,
         xg: SIM.PENALTY_XG,
         outcome: 'missed',
+        bundleId,
+        bundleStep: step++,
+        chain_type: 'penalty',
+        chain_terminal: true,
+        pacing: terminalPacing,
         tags: ['setPiece', 'penalty'],
-        narrative: `${attackingTeam.name} squander the opportunity from the spot.`,
+        narrative: `${takerName} squanders the opportunity from the spot.`,
         momentumSnapshot: { ...this.phaseState.momentum }
       }));
     }
 
     return events;
+  }
+
+  _selectKeeper(players) {
+    if (!Array.isArray(players)) return null;
+    return players.find((p) => p.isGoalkeeper) || null;
   }
 
   _handleFoul(minute) {

@@ -213,46 +213,155 @@ describe('EventGenerator', () => {
     });
   });
 
-  describe('Stage C: penalty events stay legacy (no partial chain metadata)', () => {
-    const forcePenalty = () => {
+  describe('Stage D: in-match penalty chain', () => {
+    const forcePenalty = (outcomeOverride = null) => {
       const ctx = buildContext();
       const generator = new EventGenerator(ctx, createEvent, jest.fn());
       generator.lastMidfieldEmittedMinute = 99;
       jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
       // 'high' pressure tier so penaltyChance = HIGH_PRESSURE_PENALTY_CHANCE (0.08).
       jest.spyOn(generator, '_calculatePressure').mockReturnValue('high');
-      // 0 < 0.08 forces the penalty diversion; rest of Math.random calls
-      // resolve the penalty outcome deterministically.
+      if (outcomeOverride) {
+        jest.spyOn(generator, '_determinePenaltyOutcome').mockReturnValue(outcomeOverride);
+      }
+      // 0 < 0.08 forces the penalty diversion.
       jest.spyOn(Math, 'random').mockReturnValue(0);
       return { ctx, generator };
     };
 
-    it('penalty diversion returns a single legacy event with no chain metadata', () => {
-      const { generator } = forcePenalty();
+    it('emits penalty_awarded → penalty_walkup → penalty_run_up → result in order', () => {
+      const { generator } = forcePenalty('scored');
       const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
 
-      expect(events).toHaveLength(1);
-      const penalty = events[0];
-      expect([
-        EVENT_TYPES.PENALTY_SCORED,
-        EVENT_TYPES.PENALTY_SAVED,
-        EVENT_TYPES.PENALTY_MISSED
-      ]).toContain(penalty.type);
-
-      // No attack-chain bundle id / step leak through.
-      expect(penalty.bundleId).toBeUndefined();
-      expect(penalty.bundleStep).toBeUndefined();
-      // No Stage C chain metadata.
-      expect(penalty.chain_type).toBeUndefined();
-      expect(penalty.chain_terminal).toBeUndefined();
-      expect(penalty.pacing).toBeUndefined();
+      expect(events.map((e) => e.type)).toEqual([
+        EVENT_TYPES.PENALTY_AWARDED,
+        EVENT_TYPES.PENALTY_WALKUP,
+        EVENT_TYPES.PENALTY_RUN_UP,
+        EVENT_TYPES.PENALTY_SCORED
+      ]);
     });
 
-    it('penalty diversion never emits attack chain steps alongside the penalty', () => {
-      const { generator } = forcePenalty();
+    it('bundleStep is monotonically increasing across the chain', () => {
+      const { generator } = forcePenalty('saved');
       const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
 
-      const chainStepTypes = [
+      const steps = events.map((e) => e.bundleStep);
+      expect(steps).toEqual([0, 1, 2, 3]);
+      for (let i = 1; i < steps.length; i++) {
+        expect(steps[i]).toBeGreaterThan(steps[i - 1]);
+      }
+    });
+
+    it('shares a single bundleId across the chain', () => {
+      const { generator } = forcePenalty('missed');
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
+
+      const bundleIds = new Set(events.map((e) => e.bundleId));
+      expect(bundleIds.size).toBe(1);
+      const [id] = bundleIds;
+      expect(id).toMatch(/^penalty_42_50_\d+$/);
+      expect(id.length).toBeLessThanOrEqual(50);
+    });
+
+    it('marks exactly one event as chain_terminal: true (the result event)', () => {
+      const { generator } = forcePenalty('scored');
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
+
+      const terminals = events.filter((e) => e.chain_terminal === true);
+      expect(terminals).toHaveLength(1);
+      expect(terminals[0].type).toBe(EVENT_TYPES.PENALTY_SCORED);
+
+      const nonTerminals = events.filter((e) => e.chain_terminal === false);
+      expect(nonTerminals.map((e) => e.type)).toEqual([
+        EVENT_TYPES.PENALTY_AWARDED,
+        EVENT_TYPES.PENALTY_WALKUP,
+        EVENT_TYPES.PENALTY_RUN_UP
+      ]);
+    });
+
+    it('every chain event has chain_type "penalty" and pacing metadata', () => {
+      const { generator } = forcePenalty('scored');
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
+
+      for (const evt of events) {
+        expect(evt.chain_type).toBe('penalty');
+        expect(evt.pacing).toBeDefined();
+        expect(typeof evt.pacing.delay_ms).toBe('number');
+        expect(typeof evt.pacing.hold_ms).toBe('number');
+      }
+    });
+
+    it('penalty_scored changes the score exactly once and calls persistScore once', () => {
+      const ctx = buildContext();
+      const persistScore = jest.fn();
+      const generator = new EventGenerator(ctx, createEvent, persistScore);
+      generator.lastMidfieldEmittedMinute = 99;
+      jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+      jest.spyOn(generator, '_calculatePressure').mockReturnValue('high');
+      jest.spyOn(generator, '_determinePenaltyOutcome').mockReturnValue('scored');
+      jest.spyOn(Math, 'random').mockReturnValue(0);
+
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
+
+      expect(ctx.score).toEqual({ home: 1, away: 0 });
+      expect(persistScore).toHaveBeenCalledTimes(1);
+
+      // No non-terminal step should have outcome 'scored'.
+      const prematureScores = events.filter(
+        (e) => e.type !== EVENT_TYPES.PENALTY_SCORED && e.outcome === 'scored'
+      );
+      expect(prematureScores).toHaveLength(0);
+    });
+
+    it('penalty_saved does not change the score', () => {
+      const ctx = buildContext();
+      const persistScore = jest.fn();
+      const generator = new EventGenerator(ctx, createEvent, persistScore);
+      generator.lastMidfieldEmittedMinute = 99;
+      jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+      jest.spyOn(generator, '_calculatePressure').mockReturnValue('high');
+      jest.spyOn(generator, '_determinePenaltyOutcome').mockReturnValue('saved');
+      jest.spyOn(Math, 'random').mockReturnValue(0);
+
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
+      expect(events.some((e) => e.type === EVENT_TYPES.PENALTY_SAVED)).toBe(true);
+      expect(ctx.score).toEqual({ home: 0, away: 0 });
+      expect(persistScore).not.toHaveBeenCalled();
+    });
+
+    it('penalty_missed does not change the score', () => {
+      const ctx = buildContext();
+      const persistScore = jest.fn();
+      const generator = new EventGenerator(ctx, createEvent, persistScore);
+      generator.lastMidfieldEmittedMinute = 99;
+      jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+      jest.spyOn(generator, '_calculatePressure').mockReturnValue('high');
+      jest.spyOn(generator, '_determinePenaltyOutcome').mockReturnValue('missed');
+      jest.spyOn(Math, 'random').mockReturnValue(0);
+
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
+      expect(events.some((e) => e.type === EVENT_TYPES.PENALTY_MISSED)).toBe(true);
+      expect(ctx.score).toEqual({ home: 0, away: 0 });
+      expect(persistScore).not.toHaveBeenCalled();
+    });
+
+    it('penalty_walkup and penalty_run_up never carry a scored outcome', () => {
+      const { generator } = forcePenalty('scored');
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
+      const lead = events.filter((e) =>
+        e.type === EVENT_TYPES.PENALTY_WALKUP || e.type === EVENT_TYPES.PENALTY_RUN_UP
+      );
+      expect(lead).toHaveLength(2);
+      for (const evt of lead) {
+        expect(evt.outcome).toBeUndefined();
+      }
+    });
+
+    it('no attack-chain metadata leaks into the penalty chain', () => {
+      const { generator } = forcePenalty('saved');
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
+
+      const attackChainTypes = [
         EVENT_TYPES.MIDFIELD_BATTLE,
         EVENT_TYPES.GOAL_BUILD_UP,
         EVENT_TYPES.ATTACK_BREAKDOWN,
@@ -264,17 +373,46 @@ describe('EventGenerator', () => {
         EVENT_TYPES.COUNTER_BREAKDOWN
       ];
       for (const evt of events) {
-        expect(chainStepTypes).not.toContain(evt.type);
+        expect(attackChainTypes).not.toContain(evt.type);
+        expect(evt.chain_type).not.toBe('attack');
+        expect(evt.chain_type).not.toBe('counter');
+        expect(evt.chain_type).not.toBe('midfield');
+        expect(evt.bundleId).toMatch(/^penalty_/);
       }
+    });
 
-      // Defensive sweep: no event in the penalty branch carries any chain field.
-      for (const evt of events) {
-        expect(evt.chain_type).toBeUndefined();
-        expect(evt.chain_terminal).toBeUndefined();
-        expect(evt.pacing).toBeUndefined();
-        expect(evt.bundleId).toBeUndefined();
-        expect(evt.bundleStep).toBeUndefined();
+    it('all penalty-chain event types are persistable', () => {
+      const types = [
+        EVENT_TYPES.PENALTY_AWARDED,
+        EVENT_TYPES.PENALTY_WALKUP,
+        EVENT_TYPES.PENALTY_RUN_UP,
+        EVENT_TYPES.PENALTY_SCORED,
+        EVENT_TYPES.PENALTY_SAVED,
+        EVENT_TYPES.PENALTY_MISSED
+      ];
+      for (const type of types) {
+        expect(PERSISTABLE_MATCH_EVENT_TYPES.has(type)).toBe(true);
       }
+    });
+
+    it('uses safe fallbacks when the keeper player is missing', () => {
+      const ctx = buildContext();
+      // Strip the away goalkeeper so the keeper lookup must fall back.
+      ctx.awayPlayers = ctx.awayPlayers.filter((p) => !p.isGoalkeeper);
+
+      const generator = new EventGenerator(ctx, createEvent, jest.fn());
+      generator.lastMidfieldEmittedMinute = 99;
+      jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+      jest.spyOn(generator, '_calculatePressure').mockReturnValue('high');
+      jest.spyOn(generator, '_determinePenaltyOutcome').mockReturnValue('saved');
+      jest.spyOn(Math, 'random').mockReturnValue(0);
+
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
+      const saved = events.find((e) => e.type === EVENT_TYPES.PENALTY_SAVED);
+      expect(saved).toBeDefined();
+      // Fallback string references the defending team rather than "Unknown".
+      expect(saved.description).toContain(awayTeam.name);
+      expect(saved.description).not.toMatch(/unknown/i);
     });
   });
 

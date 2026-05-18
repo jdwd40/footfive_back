@@ -243,7 +243,11 @@ const PERSISTABLE_MATCH_EVENT_TYPES = new Set([
   EVENT_TYPES.COUNTER_BREAKDOWN,
   EVENT_TYPES.KICKOFF_RESTART,
   EVENT_TYPES.PENALTY_WALKUP,
-  EVENT_TYPES.PENALTY_RUN_UP
+  EVENT_TYPES.PENALTY_RUN_UP,
+  // Stage D: in-match penalty chain start. Already in the DB CHECK
+  // (migration 002) but was filtered out by _isPersistableEvent until
+  // emitters started using it.
+  EVENT_TYPES.PENALTY_AWARDED
 ]);
 
 // === Default Match Rules ===
@@ -401,7 +405,12 @@ const CHAIN_PACING = {
   goal_terminal:   { delay_ms: 1600, hold_ms: 2200 },
   kickoff_restart: { delay_ms: 1800, hold_ms: 900  },
   penalty_walkup:  { delay_ms: 600,  hold_ms: 1500 },
-  penalty_run_up:  { delay_ms: 1200, hold_ms: 1200 }
+  penalty_run_up:  { delay_ms: 1200, hold_ms: 1200 },
+  // Stage D: pacing for the two penalty-chain steps that did not exist yet.
+  // penalty_outcome covers all three terminal results (scored/saved/missed)
+  // so designers tune the reveal in one place.
+  penalty_awarded: { delay_ms: 800,  hold_ms: 1600 },
+  penalty_outcome: { delay_ms: 1400, hold_ms: 2000 }
 };
 
 module.exports = {
