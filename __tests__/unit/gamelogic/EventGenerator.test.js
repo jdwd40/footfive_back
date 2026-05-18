@@ -233,7 +233,10 @@ describe('EventGenerator', () => {
       const { generator } = forcePenalty('scored');
       const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
 
-      expect(events.map((e) => e.type)).toEqual([
+      // Stage E may append a kickoff_restart after penalty_scored; the
+      // penalty chain itself is just the four events with chain_type "penalty".
+      const chainEvents = events.filter((e) => e.chain_type === 'penalty');
+      expect(chainEvents.map((e) => e.type)).toEqual([
         EVENT_TYPES.PENALTY_AWARDED,
         EVENT_TYPES.PENALTY_WALKUP,
         EVENT_TYPES.PENALTY_RUN_UP,
@@ -283,7 +286,9 @@ describe('EventGenerator', () => {
       const { generator } = forcePenalty('scored');
       const events = generator._handleAttack(homeTeam, awayTeam, 'home', 50, baseSequenceContext);
 
-      for (const evt of events) {
+      const chainEvents = events.filter((e) => e.chain_type === 'penalty');
+      expect(chainEvents.length).toBeGreaterThan(0);
+      for (const evt of chainEvents) {
         expect(evt.chain_type).toBe('penalty');
         expect(evt.pacing).toBeDefined();
         expect(typeof evt.pacing.delay_ms).toBe('number');
@@ -413,6 +418,225 @@ describe('EventGenerator', () => {
       // Fallback string references the defending team rather than "Unknown".
       expect(saved.description).toContain(awayTeam.name);
       expect(saved.description).not.toMatch(/unknown/i);
+    });
+  });
+
+  describe('Stage E: kickoff_restart follow-up', () => {
+    const setupGoalScenario = (minute = 30) => {
+      const ctx = buildContext();
+      const persistScore = jest.fn();
+      const generator = new EventGenerator(ctx, createEvent, persistScore);
+      generator.lastMidfieldEmittedMinute = 99;
+      jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+      jest.spyOn(generator, '_goalkeeperSaves').mockReturnValue(false);
+      // 0.5 → no penalty, no shot_blocked, on_target=true; keeper save mocked false → GOAL.
+      jest.spyOn(Math, 'random').mockReturnValue(0.5);
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', minute, baseSequenceContext);
+      return { ctx, generator, persistScore, events, minute };
+    };
+
+    const setupPenaltyScenario = (outcome, minute = 50) => {
+      const ctx = buildContext();
+      const persistScore = jest.fn();
+      const generator = new EventGenerator(ctx, createEvent, persistScore);
+      generator.lastMidfieldEmittedMinute = 99;
+      jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+      jest.spyOn(generator, '_calculatePressure').mockReturnValue('high');
+      jest.spyOn(generator, '_determinePenaltyOutcome').mockReturnValue(outcome);
+      jest.spyOn(Math, 'random').mockReturnValue(0);
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', minute, baseSequenceContext);
+      return { ctx, generator, persistScore, events, minute };
+    };
+
+    it('a normal goal emits exactly one kickoff_restart immediately after the goal', () => {
+      const { events } = setupGoalScenario(30);
+      const goalIdx = events.findIndex((e) => e.type === EVENT_TYPES.GOAL);
+      expect(goalIdx).toBeGreaterThan(-1);
+      expect(events[goalIdx + 1]?.type).toBe(EVENT_TYPES.KICKOFF_RESTART);
+      const restarts = events.filter((e) => e.type === EVENT_TYPES.KICKOFF_RESTART);
+      expect(restarts).toHaveLength(1);
+    });
+
+    it('the restart event references the team that just conceded', () => {
+      // home scored on away, so away restarts.
+      const { events } = setupGoalScenario(30);
+      const restart = events.find((e) => e.type === EVENT_TYPES.KICKOFF_RESTART);
+      expect(restart.teamId).toBe(awayTeam.id);
+      expect(restart.description).toContain(awayTeam.name);
+      expect(restart.description).toContain('restart from the halfway spot');
+    });
+
+    it('penalty_scored emits exactly one kickoff_restart immediately after', () => {
+      const { events } = setupPenaltyScenario('scored', 50);
+      const scoredIdx = events.findIndex((e) => e.type === EVENT_TYPES.PENALTY_SCORED);
+      expect(scoredIdx).toBeGreaterThan(-1);
+      expect(events[scoredIdx + 1]?.type).toBe(EVENT_TYPES.KICKOFF_RESTART);
+      const restarts = events.filter((e) => e.type === EVENT_TYPES.KICKOFF_RESTART);
+      expect(restarts).toHaveLength(1);
+    });
+
+    it('penalty_saved does not emit kickoff_restart', () => {
+      const { events } = setupPenaltyScenario('saved', 50);
+      expect(events.some((e) => e.type === EVENT_TYPES.PENALTY_SAVED)).toBe(true);
+      expect(events.some((e) => e.type === EVENT_TYPES.KICKOFF_RESTART)).toBe(false);
+    });
+
+    it('penalty_missed does not emit kickoff_restart', () => {
+      const { events } = setupPenaltyScenario('missed', 50);
+      expect(events.some((e) => e.type === EVENT_TYPES.PENALTY_MISSED)).toBe(true);
+      expect(events.some((e) => e.type === EVENT_TYPES.KICKOFF_RESTART)).toBe(false);
+    });
+
+    it('shot_saved / shot_missed / shot_blocked do not emit kickoff_restart', () => {
+      // shot_saved
+      {
+        const ctx = buildContext();
+        const generator = new EventGenerator(ctx, createEvent, jest.fn());
+        generator.lastMidfieldEmittedMinute = 99;
+        jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+        jest.spyOn(generator, '_goalkeeperSaves').mockReturnValue(true);
+        jest.spyOn(Math, 'random').mockReturnValue(0.5);
+        const events = generator._handleAttack(homeTeam, awayTeam, 'home', 30, baseSequenceContext);
+        expect(events.some((e) => e.type === EVENT_TYPES.SHOT_SAVED)).toBe(true);
+        expect(events.some((e) => e.type === EVENT_TYPES.KICKOFF_RESTART)).toBe(false);
+        Math.random.mockRestore();
+      }
+      // shot_missed
+      {
+        const ctx = buildContext();
+        const generator = new EventGenerator(ctx, createEvent, jest.fn());
+        generator.lastMidfieldEmittedMinute = 99;
+        jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+        jest.spyOn(Math, 'random').mockReturnValue(0.9);
+        const events = generator._handleAttack(homeTeam, awayTeam, 'home', 30, baseSequenceContext);
+        expect(events.some((e) => e.type === EVENT_TYPES.SHOT_MISSED)).toBe(true);
+        expect(events.some((e) => e.type === EVENT_TYPES.KICKOFF_RESTART)).toBe(false);
+        Math.random.mockRestore();
+      }
+      // shot_blocked
+      {
+        const ctx = buildContext();
+        const generator = new EventGenerator(ctx, createEvent, jest.fn());
+        generator.lastMidfieldEmittedMinute = 99;
+        jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+        const rand = jest.spyOn(Math, 'random');
+        rand
+          .mockReturnValueOnce(0.9)  // penalty check
+          .mockReturnValueOnce(0.5)  // baseXg multiplier
+          .mockReturnValueOnce(0.05) // SHOT_BLOCKED_CHANCE roll → blocked
+          .mockReturnValue(0.5);
+        const events = generator._handleAttack(homeTeam, awayTeam, 'home', 30, baseSequenceContext);
+        expect(events.some((e) => e.type === EVENT_TYPES.SHOT_BLOCKED)).toBe(true);
+        expect(events.some((e) => e.type === EVENT_TYPES.KICKOFF_RESTART)).toBe(false);
+      }
+    });
+
+    it('suppresses kickoff_restart on goals at period-end minutes (45, 90, 105, 120)', () => {
+      for (const minute of [45, 90, 105, 120]) {
+        const ctx = buildContext();
+        const generator = new EventGenerator(ctx, createEvent, jest.fn());
+        generator.lastMidfieldEmittedMinute = 99;
+        jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+        jest.spyOn(generator, '_goalkeeperSaves').mockReturnValue(false);
+        jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+        const events = generator._handleAttack(homeTeam, awayTeam, 'home', minute, baseSequenceContext);
+        expect(events.some((e) => e.type === EVENT_TYPES.GOAL)).toBe(true);
+        expect(events.some((e) => e.type === EVENT_TYPES.KICKOFF_RESTART)).toBe(false);
+        Math.random.mockRestore();
+      }
+    });
+
+    it('suppresses kickoff_restart on penalty_scored at period-end minutes', () => {
+      for (const minute of [45, 90, 105, 120]) {
+        const ctx = buildContext();
+        const generator = new EventGenerator(ctx, createEvent, jest.fn());
+        generator.lastMidfieldEmittedMinute = 99;
+        jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+        jest.spyOn(generator, '_calculatePressure').mockReturnValue('high');
+        jest.spyOn(generator, '_determinePenaltyOutcome').mockReturnValue('scored');
+        jest.spyOn(Math, 'random').mockReturnValue(0);
+
+        const events = generator._handleAttack(homeTeam, awayTeam, 'home', minute, baseSequenceContext);
+        expect(events.some((e) => e.type === EVENT_TYPES.PENALTY_SCORED)).toBe(true);
+        expect(events.some((e) => e.type === EVENT_TYPES.KICKOFF_RESTART)).toBe(false);
+        Math.random.mockRestore();
+      }
+    });
+
+    it('kickoff_restart does not borrow attack or penalty chain metadata', () => {
+      // After a normal goal: the attack chain's terminal stays the goal.
+      const { events: goalEvents } = setupGoalScenario(30);
+      const goalRestart = goalEvents.find((e) => e.type === EVENT_TYPES.KICKOFF_RESTART);
+      expect(goalRestart.bundleId).toBeUndefined();
+      expect(goalRestart.bundleStep).toBeUndefined();
+      expect(goalRestart.chain_type).toBeUndefined();
+      expect(goalRestart.chain_terminal).toBeUndefined();
+
+      const goalTerminals = goalEvents.filter((e) => e.chain_terminal === true);
+      expect(goalTerminals).toHaveLength(1);
+      expect(goalTerminals[0].type).toBe(EVENT_TYPES.GOAL);
+
+      // After a penalty_scored: the penalty chain's terminal stays penalty_scored.
+      const { events: penaltyEvents } = setupPenaltyScenario('scored', 50);
+      const penaltyRestart = penaltyEvents.find((e) => e.type === EVENT_TYPES.KICKOFF_RESTART);
+      expect(penaltyRestart.bundleId).toBeUndefined();
+      expect(penaltyRestart.bundleStep).toBeUndefined();
+      expect(penaltyRestart.chain_type).toBeUndefined();
+      expect(penaltyRestart.chain_terminal).toBeUndefined();
+
+      const penaltyTerminals = penaltyEvents.filter((e) => e.chain_terminal === true);
+      expect(penaltyTerminals).toHaveLength(1);
+      expect(penaltyTerminals[0].type).toBe(EVENT_TYPES.PENALTY_SCORED);
+    });
+
+    it('kickoff_restart carries optional pacing metadata only', () => {
+      const { events } = setupGoalScenario(30);
+      const restart = events.find((e) => e.type === EVENT_TYPES.KICKOFF_RESTART);
+      expect(restart.pacing).toBeDefined();
+      expect(typeof restart.pacing.delay_ms).toBe('number');
+      expect(typeof restart.pacing.hold_ms).toBe('number');
+    });
+
+    it('does not change the score on or around the restart', () => {
+      const { ctx: goalCtx, persistScore: goalPersist } = setupGoalScenario(30);
+      expect(goalCtx.score).toEqual({ home: 1, away: 0 });
+      expect(goalPersist).toHaveBeenCalledTimes(1);
+
+      const { ctx: penaltyCtx, persistScore: penaltyPersist } = setupPenaltyScenario('scored', 50);
+      expect(penaltyCtx.score).toEqual({ home: 1, away: 0 });
+      expect(penaltyPersist).toHaveBeenCalledTimes(1);
+
+      const { ctx: savedCtx, persistScore: savedPersist } = setupPenaltyScenario('saved', 50);
+      expect(savedCtx.score).toEqual({ home: 0, away: 0 });
+      expect(savedPersist).not.toHaveBeenCalled();
+
+      const { ctx: missedCtx, persistScore: missedPersist } = setupPenaltyScenario('missed', 50);
+      expect(missedCtx.score).toEqual({ home: 0, away: 0 });
+      expect(missedPersist).not.toHaveBeenCalled();
+    });
+
+    it('kickoff_restart is in PERSISTABLE_MATCH_EVENT_TYPES', () => {
+      expect(PERSISTABLE_MATCH_EVENT_TYPES.has(EVENT_TYPES.KICKOFF_RESTART)).toBe(true);
+    });
+
+    it('PenaltyShootout module does not emit KICKOFF_RESTART or PENALTY_* chain types', () => {
+      // Regression guard: Stage E only wires kickoff_restart into the
+      // in-match goal / penalty_scored paths inside EventGenerator. The
+      // PenaltyShootout module is intentionally untouched, so confirm its
+      // source never references KICKOFF_RESTART or any in-match penalty
+      // chain event type.
+      const fs = require('fs');
+      const path = require('path');
+      const src = fs.readFileSync(
+        path.resolve(__dirname, '../../../gamelogic/simulation/PenaltyShootout.js'),
+        'utf8'
+      );
+      expect(src).not.toContain('KICKOFF_RESTART');
+      expect(src).not.toContain('kickoff_restart');
+      expect(src).not.toContain('PENALTY_AWARDED');
+      expect(src).not.toContain('PENALTY_WALKUP');
+      expect(src).not.toContain('PENALTY_RUN_UP');
     });
   });
 

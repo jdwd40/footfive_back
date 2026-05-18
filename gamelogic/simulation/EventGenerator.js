@@ -9,7 +9,18 @@
  * payload keys (`score`, `shootoutScore`, `round`, `seq`) are stomped by the
  * pipeline and must not be reused for chain data.
  */
-const { EVENT_TYPES, SIM, CHAIN_PACING } = require('../constants');
+const { EVENT_TYPES, SIM, CHAIN_PACING, MATCH_MINUTES } = require('../constants');
+
+// Stage E: in-match goals that land on the very last minute of a half don't
+// get a kickoff_restart, because the half-time / full-time / extra-time
+// transition will already be the next emitted event. Anything that isn't
+// one of these is mid-play and the match continues.
+const PERIOD_END_MINUTES = new Set([
+  MATCH_MINUTES.FIRST_HALF_END,    // 45  → halftime imminent
+  MATCH_MINUTES.SECOND_HALF_END,   // 90  → fulltime (or ET start)
+  MATCH_MINUTES.ET_FIRST_HALF_END, // 105 → ET halftime
+  MATCH_MINUTES.ET_SECOND_HALF_END // 120 → match end (or shootout)
+]);
 
 class EventGenerator {
   /**
@@ -262,6 +273,9 @@ class EventGenerator {
         }));
 
         this._persistScore();
+
+        // Stage E: restart from the halfway spot, suppressed at period ends.
+        events.push(...this._buildKickoffRestart(defendingTeam, minute));
       } else {
         const cornerAwarded = Math.random() < SIM.CORNER_ON_SAVE_CHANCE;
         if (cornerAwarded) this.ctx.stats[side].corners++;
@@ -527,6 +541,9 @@ class EventGenerator {
       }));
 
       this._persistScore();
+
+      // Stage E: restart after a successful penalty, suppressed at period ends.
+      events.push(...this._buildKickoffRestart(defendingTeam, minute));
     } else if (outcome === 'saved') {
       this.ctx.stats[side].shotsOnTarget++;
       this._updateMomentum(side, 'saved');
@@ -575,6 +592,33 @@ class EventGenerator {
   _selectKeeper(players) {
     if (!Array.isArray(players)) return null;
     return players.find((p) => p.isGoalkeeper) || null;
+  }
+
+  /**
+   * Stage E: emit a kickoff_restart follow-up after an in-match goal or
+   * penalty_scored when the match is going to continue. The restart event
+   * is deliberately *not* part of any chain — no bundleId, bundleStep,
+   * chain_type, or chain_terminal — so it can't violate the
+   * "exactly one terminal per chain" rule for the preceding goal/penalty
+   * chain. It carries pacing metadata so the FE can stagger the reveal.
+   *
+   * The opposingTeam is the one that restarts from the halfway line, i.e.
+   * the team that just conceded.
+   *
+   * Returns [] when the minute lands on a period boundary so we don't
+   * race the halftime / fulltime / ET-halftime / match-end event that
+   * LiveMatch is about to emit on the next tick.
+   */
+  _buildKickoffRestart(opposingTeam, minute) {
+    if (PERIOD_END_MINUTES.has(minute)) return [];
+    const teamName = opposingTeam?.name || 'The opposition';
+    return [this._createEvent(EVENT_TYPES.KICKOFF_RESTART, minute, {
+      teamId: opposingTeam?.id,
+      description: `${teamName} restart from the halfway spot.`,
+      pacing: { ...CHAIN_PACING.kickoff_restart },
+      tags: ['restart'],
+      narrative: `${teamName} get the match going again from the centre circle.`
+    })];
   }
 
   _handleFoul(minute) {
