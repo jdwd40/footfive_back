@@ -1,12 +1,23 @@
 /**
  * PenaltyShootout - Penalty shootout simulation logic
  * Extracted from LiveMatch to reduce file complexity
+ *
+ * Stage F: each shootout kick is now its own display chain.
+ *   shootout_walkup → shootout_goal/save/miss → (optional) shootout_reaction
+ *
+ * Chain metadata (chain_type: "shootout", bundleId, bundleStep, chain_terminal,
+ * pacing) is stamped on every event in the kick. Reactions are gated on
+ * "important" kicks (decider / must-score / keeper streak / sudden death)
+ * so the feed isn't spammed with one after every routine kick.
+ *
+ * Shootout scoring, taker tracking, sudden death, and winner logic are
+ * untouched — chain metadata is display-only.
  */
-const { EVENT_TYPES, SIM } = require('../constants');
+const { EVENT_TYPES, SIM, CHAIN_PACING } = require('../constants');
 
 class PenaltyShootout {
   /**
-   * @param {Object} context - { homeTeam, awayTeam, homePlayers, awayPlayers, score, penaltyScore, shootoutScores, shootoutTaken }
+   * @param {Object} context - { fixtureId, homeTeam, awayTeam, homePlayers, awayPlayers, score, penaltyScore, shootoutScores, shootoutTaken }
    * @param {Function} createEvent - bound _createEvent from LiveMatch
    * @param {Function} selectScorer - bound _selectScorer from EventGenerator
    */
@@ -17,6 +28,11 @@ class PenaltyShootout {
     this.currentShooter = 'home';
     this.lastOutcomeMeta = null;
     this.keeperSaveStreak = 0;
+    // Stage F: per-kick chain bookkeeping.
+    this.bundleCounter = 0;
+    this.currentKickBundleId = null;
+    this.currentKickStep = 0;
+    this.pendingTaker = null; // taker picked at walkup-time so the name carries through to the result
   }
 
   /**
@@ -35,8 +51,12 @@ class PenaltyShootout {
       events.push(this._createWalkupEvent());
       return { events, finished: false };
     }
-    if (modulo === 1 && this.lastOutcomeMeta) {
+    if (modulo === 1 && this.lastOutcomeMeta && this._shouldEmitReaction(this.lastOutcomeMeta)) {
       events.push(this._createReactionEvent());
+      // Reaction terminates the previous kick's chain — clear it so the
+      // next walkup starts a fresh bundle.
+      this._closeKickBundle();
+      this.lastOutcomeMeta = null;
       return { events, finished: false };
     }
     if (modulo !== 0) {
@@ -46,7 +66,12 @@ class PenaltyShootout {
     const side = this.currentShooter;
     const team = side === 'home' ? this.ctx.homeTeam : this.ctx.awayTeam;
     const players = side === 'home' ? this.ctx.homePlayers : this.ctx.awayPlayers;
-    const taker = this._selectScorer(players);
+    // Use the taker we picked at walkup-time if available, so the player
+    // name printed on the walkup also appears on the result.
+    const taker = this.pendingTaker && this.pendingTaker.side === side
+      ? this.pendingTaker.player
+      : this._selectScorer(players);
+    this.pendingTaker = null;
 
     const kickIndex = this.ctx.shootoutTaken.home + this.ctx.shootoutTaken.away + 1;
     const roundIndex = Math.ceil(kickIndex / 2);
@@ -65,83 +90,79 @@ class PenaltyShootout {
     if (scored) {
       this.ctx.shootoutScores[side]++;
       this.keeperSaveStreak = 0;
-      events.push(this._createEvent(EVENT_TYPES.SHOOTOUT_GOAL, MATCH_MINUTES_ET_END, {
-        teamId: team.id,
-        playerId: taker?.playerId,
-        displayName: taker?.name,
-        description: this._getOutcomeNarration({
-          outcome: 'scored',
-          teamName: team.name,
-          pressure,
-          decider,
-          mustScore
-        }),
-        outcome: 'scored',
-        round: Math.ceil(this.ctx.shootoutTaken[side]),
-        shootoutRound,
-        kickIndex,
-        kickerTeamId: team.id,
-        isSuddenDeath,
-        pressure,
-        decider,
-        mustScore,
-        shootoutScore: { ...this.ctx.shootoutScores }
-      }));
     } else if (saved) {
       this.keeperSaveStreak++;
-      events.push(this._createEvent(EVENT_TYPES.SHOOTOUT_SAVE, MATCH_MINUTES_ET_END, {
-        teamId: team.id,
-        playerId: taker?.playerId,
-        displayName: taker?.name,
-        description: this._getOutcomeNarration({
-          outcome: 'saved',
-          teamName: team.name,
-          pressure,
-          decider,
-          mustScore
-        }),
-        outcome: 'saved',
-        round: Math.ceil(this.ctx.shootoutTaken[side]),
-        shootoutRound,
-        kickIndex,
-        kickerTeamId: team.id,
-        isSuddenDeath,
-        pressure,
-        decider,
-        mustScore,
-        shootoutScore: { ...this.ctx.shootoutScores }
-      }));
     } else {
       this.keeperSaveStreak = 0;
-      events.push(this._createEvent(EVENT_TYPES.SHOOTOUT_MISS, MATCH_MINUTES_ET_END, {
-        teamId: team.id,
-        playerId: taker?.playerId,
-        displayName: taker?.name,
-        description: this._getOutcomeNarration({
-          outcome: 'missed',
-          teamName: team.name,
-          pressure,
-          decider,
-          mustScore
-        }),
-        outcome: 'missed',
-        round: Math.ceil(this.ctx.shootoutTaken[side]),
-        shootoutRound,
-        kickIndex,
-        kickerTeamId: team.id,
-        isSuddenDeath,
-        pressure,
-        decider,
-        mustScore,
-        shootoutScore: { ...this.ctx.shootoutScores }
-      }));
     }
 
-    this.lastOutcomeMeta = {
-      outcome: scored ? 'scored' : saved ? 'saved' : 'missed',
+    const outcome = scored ? 'scored' : saved ? 'saved' : 'missed';
+    const eventType = scored
+      ? EVENT_TYPES.SHOOTOUT_GOAL
+      : saved
+        ? EVENT_TYPES.SHOOTOUT_SAVE
+        : EVENT_TYPES.SHOOTOUT_MISS;
+
+    // If no walkup ran for this kick (kick 1 on the first shootout tick),
+    // open a bundle here so the result still has a bundleId/step.
+    if (!this.currentKickBundleId) {
+      this._startKickBundle(roundIndex);
+    }
+
+    const outcomeMeta = {
+      outcome,
       teamName: team.name,
-      decider
+      decider,
+      mustScore,
+      isSuddenDeath,
+      pressure,
+      keeperSaveStreak: this.keeperSaveStreak
     };
+    const willReact = this._shouldEmitReaction(outcomeMeta);
+
+    events.push(this._createEvent(eventType, MATCH_MINUTES_ET_END, {
+      teamId: team.id,
+      playerId: taker?.playerId,
+      displayName: taker?.name,
+      description: this._buildOutcomeDescription({
+        taker,
+        teamName: team.name,
+        outcome,
+        decider,
+        mustScore,
+        pressure
+      }),
+      outcome,
+      round: Math.ceil(this.ctx.shootoutTaken[side]),
+      shootoutRound,
+      kickIndex,
+      kickerTeamId: team.id,
+      isSuddenDeath,
+      pressure,
+      decider,
+      mustScore,
+      shootoutScore: { ...this.ctx.shootoutScores },
+      bundleId: this.currentKickBundleId,
+      bundleStep: this._nextStep(),
+      chain_type: 'shootout',
+      chain_terminal: !willReact,
+      pacing: { ...CHAIN_PACING.shootout_terminal },
+      narrative: this._getOutcomeNarration({
+        outcome,
+        teamName: team.name,
+        pressure,
+        decider,
+        mustScore
+      })
+    }));
+
+    this.lastOutcomeMeta = outcomeMeta;
+
+    if (!willReact) {
+      // No reaction will follow — close the bundle so the next walkup
+      // starts cleanly.
+      this._closeKickBundle();
+    }
 
     // Switch shooter
     this.currentShooter = side === 'home' ? 'away' : 'home';
@@ -182,6 +203,7 @@ class PenaltyShootout {
   _createWalkupEvent() {
     const side = this.currentShooter;
     const team = side === 'home' ? this.ctx.homeTeam : this.ctx.awayTeam;
+    const players = side === 'home' ? this.ctx.homePlayers : this.ctx.awayPlayers;
     const kickIndex = this.ctx.shootoutTaken.home + this.ctx.shootoutTaken.away + 1;
     const roundIndex = Math.ceil(kickIndex / 2);
     const isSuddenDeath = roundIndex > SIM.SHOOTOUT_STANDARD_ROUNDS;
@@ -190,8 +212,18 @@ class PenaltyShootout {
     const mustScore = this._isMustScoreKick(side);
     const pressure = this._calculatePressure({ isSuddenDeath, roundIndex, mustScore, decider });
 
+    // Stage F: open the kick's chain bundle and pin the taker so the name
+    // printed on the walkup also appears on the result event.
+    this._startKickBundle(roundIndex);
+    const taker = this._selectScorer(players);
+    this.pendingTaker = { side, player: taker };
+
+    const playerName = taker?.name || `${team.name} taker`;
+
     return this._createEvent(EVENT_TYPES.SHOOTOUT_WALKUP, MATCH_MINUTES_ET_END, {
       teamId: team.id,
+      playerId: taker?.playerId,
+      displayName: taker?.name,
       kickIndex,
       shootoutRound,
       kickerTeamId: team.id,
@@ -199,19 +231,33 @@ class PenaltyShootout {
       pressure,
       decider,
       mustScore,
-      description: decider
+      description: `${playerName} walks up for ${team.name}.`,
+      bundleId: this.currentKickBundleId,
+      bundleStep: this._nextStep(),
+      chain_type: 'shootout',
+      chain_terminal: false,
+      pacing: { ...CHAIN_PACING.shootout_walkup },
+      narrative: decider
         ? `${team.name} walk up for a potential winner.`
         : `Tension builds as ${team.name} prepare their kick.`
     });
   }
 
   _createReactionEvent() {
+    const meta = this.lastOutcomeMeta;
     return this._createEvent(EVENT_TYPES.SHOOTOUT_REACTION, MATCH_MINUTES_ET_END, {
-      outcome: this.lastOutcomeMeta.outcome,
-      decider: this.lastOutcomeMeta.decider,
-      description: this.lastOutcomeMeta.decider
-        ? `Huge reaction after ${this.lastOutcomeMeta.teamName}'s decisive kick.`
-        : `Crowd roars after ${this.lastOutcomeMeta.teamName}'s ${this.lastOutcomeMeta.outcome}.`
+      outcome: meta.outcome,
+      decider: meta.decider,
+      mustScore: meta.mustScore,
+      description: this._buildReactionDescription(meta),
+      bundleId: this.currentKickBundleId,
+      bundleStep: this._nextStep(),
+      chain_type: 'shootout',
+      chain_terminal: true,
+      pacing: { ...CHAIN_PACING.shootout_reaction },
+      narrative: meta.decider
+        ? `Huge reaction after ${meta.teamName}'s decisive kick.`
+        : `Crowd reacts to ${meta.teamName}'s ${meta.outcome}.`
     });
   }
 
@@ -255,6 +301,48 @@ class PenaltyShootout {
     return Math.min(1, Math.max(0, pressure));
   }
 
+  /**
+   * Stage F: gate reactions so the feed isn't spammed after every kick.
+   * Reactions only fire after kicks that genuinely shift the narrative:
+   * deciders, must-score kicks, the keeper's streak hitting 2+, or a
+   * sudden-death kick of any outcome.
+   */
+  _shouldEmitReaction(meta) {
+    if (!meta) return false;
+    if (meta.decider) return true;
+    if (meta.mustScore) return true;
+    if (meta.isSuddenDeath) return true;
+    if (meta.outcome === 'saved' && meta.keeperSaveStreak >= 2) return true;
+    return false;
+  }
+
+  _buildOutcomeDescription({ taker, teamName, outcome, decider, mustScore }) {
+    const playerName = taker?.name || `${teamName} taker`;
+    const lead = `${playerName} takes the penalty`;
+    if (outcome === 'scored') {
+      if (decider) return `${lead}... and SCORES! ${teamName} land the decisive penalty.`;
+      if (mustScore) return `${lead}... and SCORES under pressure to keep ${teamName} alive.`;
+      return `${lead}... and SCORES for ${teamName}!`;
+    }
+    if (outcome === 'saved') {
+      if (this.keeperSaveStreak >= 2) return `${lead}... but the keeper SAVES — denied again!`;
+      return `${lead}... but the keeper SAVES it.`;
+    }
+    if (decider) return `${lead}... and misses — a huge chance gone for ${teamName}.`;
+    return `${lead}... and misses the target.`;
+  }
+
+  _buildReactionDescription(meta) {
+    const { teamName, outcome, decider, mustScore } = meta;
+    if (decider && outcome === 'scored') return `${teamName} edge ahead in the shootout.`;
+    if (decider) return `${teamName}'s decider goes begging.`;
+    if (mustScore && outcome === 'scored') return `${teamName} stay alive.`;
+    if (mustScore) return `Pressure tells — ${teamName} cannot find the net.`;
+    if (outcome === 'saved' && this.keeperSaveStreak >= 2) return `The keeper is unstoppable right now.`;
+    if (meta.isSuddenDeath) return `One kick could decide it now.`;
+    return `The pressure shifts back to ${teamName}.`;
+  }
+
   _getOutcomeNarration({ outcome, teamName, pressure, decider, mustScore }) {
     const highPressure = pressure >= 0.8;
     if (decider && outcome === 'scored') return `Shootout: ${teamName} score the decisive penalty!`;
@@ -267,6 +355,24 @@ class PenaltyShootout {
     if (outcome === 'saved') return `Shootout: ${teamName} see their kick saved.`;
     if (outcome === 'missed') return `Shootout: ${teamName} miss the target.`;
     return `Shootout: ${teamName} SCORES!`;
+  }
+
+  // === Chain helpers (Stage F) ===
+
+  _startKickBundle(roundIndex) {
+    this.bundleCounter++;
+    const fixtureId = this.ctx.fixtureId ?? 0;
+    this.currentKickBundleId = `shootout_${fixtureId}_${roundIndex}_${this.bundleCounter}`;
+    this.currentKickStep = 0;
+  }
+
+  _nextStep() {
+    return this.currentKickStep++;
+  }
+
+  _closeKickBundle() {
+    this.currentKickBundleId = null;
+    this.currentKickStep = 0;
   }
 
   /**
