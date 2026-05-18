@@ -365,7 +365,13 @@ const SIM = {
   // Stage 2 tuning: when the silence gap is at least this many match-minutes,
   // bias flow selection toward build_up + pressure-style descriptions so the
   // feed visibly moves toward chances instead of looping generic possession.
-  LONG_SILENCE_MATCH_MINUTES: 5
+  LONG_SILENCE_MATCH_MINUTES: 5,
+  // Stage C chain tuning. Probabilities advisory; tweak here, not in the emitter.
+  SHOT_BLOCKED_CHANCE: 0.12,
+  ATTACK_OPEN_WITH_MIDFIELD_CHANCE: 0.25,
+  COUNTER_AFTER_BREAKDOWN_CHANCE: 0.35,
+  COUNTER_FROM_MIDFIELD_CHANCE: 0.15,
+  MIDFIELD_BATTLE_COOLDOWN_MIN: 4
 };
 
 // Stage 2: which event types are flow/filler. Used by the silence detector

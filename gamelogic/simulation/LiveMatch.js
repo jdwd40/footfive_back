@@ -131,6 +131,7 @@ class LiveMatch {
 
   _getEventContext() {
     return {
+      fixtureId: this.fixtureId,
       homeTeam: this.homeTeam,
       awayTeam: this.awayTeam,
       get homePlayers() { return this._owner.homePlayers; },

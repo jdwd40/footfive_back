@@ -152,6 +152,7 @@
 | `__tests__/integration/controllers/playerController.test.js` | Player controller + DB. | playerController, db |
 | `__tests__/integration/controllers/diagnosticController.test.js` | Diagnostic controller. | diagnosticController |
 | `__tests__/integration/persistence/matchEventTypes.test.js` | Asserts every PERSISTABLE_MATCH_EVENT_TYPES inserts cleanly; verifies seq/server_timestamp round-trip. | MatchEventModel, db |
+| `__tests__/integration/adminLiveIntegration.test.js` | Integration tests for admin live controls and live match event behaviour. | adminController, liveController, LiveMatch |
 
 ---
 

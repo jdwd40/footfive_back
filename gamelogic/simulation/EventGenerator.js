@@ -1,12 +1,19 @@
 /**
  * EventGenerator - Goal/card/foul/corner event generation logic
  * Extracted from LiveMatch to reduce file complexity
+ *
+ * Stage C: attack/counter/midfield flow chains. Emitters stamp chain metadata
+ * (chain_type, chain_terminal, pacing) on each chained event. The pipeline
+ * splats payload top-level keys into metadata JSONB (see EventBus), so
+ * `chain_type` / `chain_terminal` / `pacing` flow through unchanged. Reserved
+ * payload keys (`score`, `shootoutScore`, `round`, `seq`) are stomped by the
+ * pipeline and must not be reused for chain data.
  */
-const { EVENT_TYPES, SIM } = require('../constants');
+const { EVENT_TYPES, SIM, CHAIN_PACING } = require('../constants');
 
 class EventGenerator {
   /**
-   * @param {Object} context - { homeTeam, awayTeam, homePlayers, awayPlayers, stats, score, possessionTicks }
+   * @param {Object} context - { fixtureId, homeTeam, awayTeam, homePlayers, awayPlayers, stats, score, possessionTicks }
    * @param {Function} createEvent - bound _createEvent from LiveMatch
    * @param {Function} persistScore - bound _persistScore from LiveMatch
    */
@@ -22,6 +29,8 @@ class EventGenerator {
       possessionState: 'neutral',
       sustainedPressure: { home: 0, away: 0 }
     };
+    // Stage C: throttle midfield_battle so it doesn't fire every match minute.
+    this.lastMidfieldEmittedMinute = -Infinity;
   }
 
   simulateMinute(minute) {
@@ -44,19 +53,8 @@ class EventGenerator {
       const attackEvents = this._handleAttack(this.ctx.awayTeam, this.ctx.homeTeam, 'away', minute, sequenceContext);
       events.push(...attackEvents);
     } else if (sequenceContext.possessionState === 'build_up' && Math.random() < 0.25) {
-      const quietSide = sequenceContext.possessionSide;
-      const team = quietSide === 'home' ? this.ctx.homeTeam : this.ctx.awayTeam;
-      const bundleId = this._generateBundleId('possession', minute);
-      events.push(this._createEvent(EVENT_TYPES.POSSESSION_PLAY, minute, {
-        teamId: team.id,
-        description: `${team.name} are enjoying a spell of possession in midfield.`,
-        bundleId,
-        bundleStep: 1,
-        tags: ['buildUp', 'midfieldControl'],
-        narrative: `${team.name} circulate possession and probe for openings.`,
-        momentumSnapshot: { ...this.phaseState.momentum },
-        fieldZone: sequenceContext.startZone
-      }));
+      const quietEvents = this._maybeEmitMidfieldBattle(minute, sequenceContext);
+      events.push(...quietEvents);
     }
 
     return events;
@@ -64,27 +62,72 @@ class EventGenerator {
 
   _handleAttack(attackingTeam, defendingTeam, side, minute, sequenceContext) {
     const events = [];
-    const bundleId = this._generateBundleId('attack', minute);
-    const startStep = 1;
     const startZone = sequenceContext.startZone;
+    const defenseBlocked = this._defenseBlocks(defendingTeam, side);
+
+    // Stage C: settle the penalty diversion *before* we emit any chain step.
+    // A penalty branch returns a clean legacy event (no bundleId, bundleStep,
+    // chain_type, chain_terminal, or pacing), so we can't have already
+    // committed to a partial attack chain when the diversion happens.
+    // Penalty chains arrive in Stage D.
+    let pressureLevel = null;
+    if (!defenseBlocked) {
+      pressureLevel = this._calculatePressure(attackingTeam, defendingTeam, side);
+      const penaltyChance = pressureLevel === 'high' ? SIM.HIGH_PRESSURE_PENALTY_CHANCE : SIM.BASE_PENALTY_CHANCE;
+      this._updatePressure(side, startZone);
+      if (Math.random() < penaltyChance) {
+        return this._handlePenalty(attackingTeam, defendingTeam, side, minute);
+      }
+    }
+
+    const bundleId = this._generateChainBundleId('attack', minute);
+    let step = 0;
+
+    // Optional midfield_battle opener. Throttled so attacks don't always
+    // start with one; satisfies "only when it starts a meaningful flow chain".
+    if (this._shouldOpenWithMidfield(minute)) {
+      this.lastMidfieldEmittedMinute = minute;
+      events.push(this._createEvent(EVENT_TYPES.MIDFIELD_BATTLE, minute, {
+        teamId: attackingTeam.id,
+        description: `${attackingTeam.name} tussle for control in midfield.`,
+        bundleId,
+        bundleStep: step++,
+        chain_type: 'attack',
+        chain_terminal: false,
+        pacing: { ...CHAIN_PACING.midfield_battle },
+        tags: ['midfield', 'attackOpen'],
+        narrative: `${attackingTeam.name} win the second ball and look forward.`,
+        momentumSnapshot: { ...this.phaseState.momentum },
+        fieldZone: Math.max(35, startZone - 10),
+        possessionState: 'neutral'
+      }));
+    }
 
     if (sequenceContext.emitBuildUp) {
-      events.push(this._createEvent(EVENT_TYPES.BUILD_UP_PLAY, minute, {
+      events.push(this._createEvent(EVENT_TYPES.GOAL_BUILD_UP, minute, {
         teamId: attackingTeam.id,
-        description: `${attackingTeam.name} work it out from the back with patience.`,
+        description: `${attackingTeam.name} push forward with intent.`,
         bundleId,
-        bundleStep: startStep,
+        bundleStep: step++,
+        chain_type: 'attack',
+        chain_terminal: false,
+        pacing: { ...CHAIN_PACING.goal_build_up },
+        phase: 'push_forward',
         tags: ['buildUp'],
         narrative: `${attackingTeam.name} build from deep and invite pressure.`,
         fieldZone: startZone,
         possessionState: sequenceContext.possessionState
       }));
 
-      events.push(this._createEvent(EVENT_TYPES.BALL_PROGRESSION, minute, {
+      events.push(this._createEvent(EVENT_TYPES.GOAL_BUILD_UP, minute, {
         teamId: attackingTeam.id,
-        description: `${attackingTeam.name} progress through midfield with purpose.`,
+        description: `${attackingTeam.name} beat a defender to break into the final third.`,
         bundleId,
-        bundleStep: startStep + 1,
+        bundleStep: step++,
+        chain_type: 'attack',
+        chain_terminal: false,
+        pacing: { ...CHAIN_PACING.goal_build_up },
+        phase: 'beat_defender',
         tags: ['buildUp', 'progression'],
         narrative: `${attackingTeam.name} break midfield lines and push into the final third.`,
         fieldZone: Math.min(100, startZone + 20),
@@ -92,38 +135,60 @@ class EventGenerator {
       }));
     }
 
-    if (this._defenseBlocks(defendingTeam, side)) {
+    if (defenseBlocked) {
+      const reason = Math.random() < 0.5 ? 'defender_block' : 'shut_down';
       const cornerAwarded = Math.random() < SIM.CORNER_ON_BLOCK_CHANCE;
+      if (cornerAwarded) this.ctx.stats[side].corners++;
+      this._updateMomentum(side, 'blocked');
+
+      events.push(this._createEvent(EVENT_TYPES.ATTACK_BREAKDOWN, minute, {
+        teamId: defendingTeam.id,
+        description: `${defendingTeam.name} shut down ${attackingTeam.name}'s attack.`,
+        bundleId,
+        bundleStep: step++,
+        chain_type: 'attack',
+        chain_terminal: true,
+        pacing: { ...CHAIN_PACING.attack_breakdown },
+        reason,
+        outcome: 'breakdown',
+        cornerAwarded,
+        tags: ['defensiveStand'],
+        narrative: `${defendingTeam.name} get bodies behind the ball and force a turnover.`,
+        momentumSnapshot: { ...this.phaseState.momentum },
+        fieldZone: Math.min(100, startZone + 25)
+      }));
+
       if (cornerAwarded) {
-        this.ctx.stats[side].corners++;
+        // Corner is bookkeeping for the defensive stand; keep it as a
+        // standalone event outside the attack chain so the chain has one
+        // terminal step.
         events.push(this._createEvent(EVENT_TYPES.CORNER, minute, {
           teamId: attackingTeam.id,
-          description: `Corner to ${attackingTeam.name}. Good defensive work from ${defendingTeam.name}.`,
+          description: `Corner to ${attackingTeam.name}.`,
           outcome: 'corner',
-          bundleId,
-          bundleStep: sequenceContext.emitBuildUp ? startStep + 2 : startStep,
           tags: ['defensiveStand'],
-          narrative: `${defendingTeam.name} get bodies behind the ball and force a corner.`,
+          narrative: `${defendingTeam.name} concede a corner in the process.`,
           momentumSnapshot: { ...this.phaseState.momentum },
           fieldZone: Math.min(100, startZone + 25)
         }));
       }
-      this._updateMomentum(side, 'blocked');
+
+      if (Math.random() < SIM.COUNTER_AFTER_BREAKDOWN_CHANCE) {
+        const counterSide = side === 'home' ? 'away' : 'home';
+        events.push(...this._runCounterChain(defendingTeam, attackingTeam, counterSide, minute));
+      }
+
       return events;
     }
 
-    const pressureLevel = this._calculatePressure(attackingTeam, defendingTeam, side);
-    const penaltyChance = pressureLevel === 'high' ? SIM.HIGH_PRESSURE_PENALTY_CHANCE : SIM.BASE_PENALTY_CHANCE;
-    this._updatePressure(side, sequenceContext.startZone);
-
-    if (Math.random() < penaltyChance) {
-      return this._handlePenalty(attackingTeam, defendingTeam, side, minute, bundleId, sequenceContext.emitBuildUp ? startStep + 2 : startStep);
-    }
-
-    return this._handleShot(attackingTeam, defendingTeam, side, minute, bundleId, sequenceContext.emitBuildUp ? startStep + 2 : startStep, pressureLevel, sequenceContext);
+    events.push(...this._handleShot(
+      attackingTeam, defendingTeam, side, minute, bundleId, step, pressureLevel, sequenceContext,
+      { chainType: 'attack' }
+    ));
+    return events;
   }
 
-  _handleShot(attackingTeam, defendingTeam, side, minute, bundleId, bundleStep, pressureLevel, sequenceContext) {
+  _handleShot(attackingTeam, defendingTeam, side, minute, bundleId, bundleStep, pressureLevel, sequenceContext, chainCtx = null) {
     const events = [];
     const players = side === 'home' ? this.ctx.homePlayers : this.ctx.awayPlayers;
 
@@ -135,6 +200,36 @@ class EventGenerator {
     const xg = Math.min(0.80, baseXg * pressureMod);
     const adjustedXg = Math.min(0.85, xg + sustainedPressureBonus);
     this.ctx.stats[side].xg += adjustedXg;
+
+    const chainTerminal = chainCtx
+      ? { chain_type: chainCtx.chainType, chain_terminal: true, pacing: { ...CHAIN_PACING.shot_terminal } }
+      : null;
+    const goalTerminal = chainCtx
+      ? { chain_type: chainCtx.chainType, chain_terminal: true, pacing: { ...CHAIN_PACING.goal_terminal } }
+      : null;
+
+    // Stage C: small chance shot is physically blocked before keeper involvement.
+    if (Math.random() < SIM.SHOT_BLOCKED_CHANCE) {
+      const shooter = this._selectScorer(players);
+      this._updateMomentum(side, 'blocked');
+      events.push(this._createEvent(EVENT_TYPES.SHOT_BLOCKED, minute, {
+        teamId: attackingTeam.id,
+        playerId: shooter?.playerId,
+        displayName: shooter?.name,
+        description: `Shot from ${shooter?.name || attackingTeam.name} is blocked by a ${defendingTeam.name} defender.`,
+        xg: adjustedXg,
+        outcome: 'blocked',
+        bundleId,
+        bundleStep,
+        tags: ['finalThird', 'shot', 'defensiveStand'],
+        narrative: `${defendingTeam.name} get a vital block in.`,
+        possessionState: sequenceContext.possessionState,
+        fieldZone: Math.min(100, sequenceContext.startZone + 30),
+        momentumSnapshot: { ...this.phaseState.momentum },
+        ...(chainTerminal || {})
+      }));
+      return events;
+    }
 
     if (Math.random() < SIM.ON_TARGET_CHANCE) {
       this.ctx.stats[side].shotsOnTarget++;
@@ -162,7 +257,8 @@ class EventGenerator {
           narrative: `${attackingTeam.name} turn pressure into a clinical finish.`,
           possessionState: sequenceContext.possessionState,
           fieldZone: Math.min(100, sequenceContext.startZone + 30),
-          momentumSnapshot: { ...this.phaseState.momentum }
+          momentumSnapshot: { ...this.phaseState.momentum },
+          ...(goalTerminal || {})
         }));
 
         this._persistScore();
@@ -187,10 +283,13 @@ class EventGenerator {
           narrative: `${defendingTeam.name} survive under heavy pressure.`,
           possessionState: sequenceContext.possessionState,
           fieldZone: Math.min(100, sequenceContext.startZone + 30),
-          momentumSnapshot: { ...this.phaseState.momentum }
+          momentumSnapshot: { ...this.phaseState.momentum },
+          ...(chainTerminal || {})
         }));
 
         if (adjustedXg >= SIM.BIG_CHANCE_XG) {
+          // CHANCE_CREATED is a colour event; keep it out of the chain so the
+          // chain has exactly one terminal step.
           events.push(this._createEvent(EVENT_TYPES.CHANCE_CREATED, minute, {
             teamId: attackingTeam.id,
             playerId: shooter?.playerId,
@@ -198,8 +297,6 @@ class EventGenerator {
             description: `Big chance for ${attackingTeam.name} denied by a save.`,
             xg: adjustedXg,
             outcome: 'saved',
-            bundleId,
-            bundleStep: bundleStep + 1,
             tags: ['dangerousAttack'],
             narrative: `${attackingTeam.name} carve out a high-value chance.`,
             possessionState: sequenceContext.possessionState,
@@ -223,7 +320,8 @@ class EventGenerator {
         narrative: `${attackingTeam.name} work the opening but fail to hit the target.`,
         possessionState: sequenceContext.possessionState,
         fieldZone: Math.min(100, sequenceContext.startZone + 30),
-        momentumSnapshot: { ...this.phaseState.momentum }
+        momentumSnapshot: { ...this.phaseState.momentum },
+        ...(chainTerminal || {})
       }));
 
       if (adjustedXg >= SIM.BIG_CHANCE_XG) {
@@ -234,8 +332,6 @@ class EventGenerator {
           description: `Big chance for ${attackingTeam.name} goes begging.`,
           xg: adjustedXg,
           outcome: 'missed',
-          bundleId,
-          bundleStep: bundleStep + 1,
           tags: ['dangerousAttack'],
           narrative: `${attackingTeam.name} create quality but cannot convert.`,
           possessionState: sequenceContext.possessionState,
@@ -247,7 +343,102 @@ class EventGenerator {
     return events;
   }
 
-  _handlePenalty(attackingTeam, defendingTeam, side, minute, bundleId, bundleStep) {
+  _runCounterChain(attackingTeam, defendingTeam, side, minute) {
+    const events = [];
+    const bundleId = this._generateChainBundleId('counter', minute);
+    let step = 0;
+
+    events.push(this._createEvent(EVENT_TYPES.COUNTER_ATTACK, minute, {
+      teamId: attackingTeam.id,
+      description: `${attackingTeam.name} break on the counter!`,
+      bundleId,
+      bundleStep: step++,
+      chain_type: 'counter',
+      chain_terminal: false,
+      pacing: { ...CHAIN_PACING.counter_attack },
+      tags: ['counter', 'attack'],
+      narrative: `${attackingTeam.name} pour forward in transition.`,
+      momentumSnapshot: { ...this.phaseState.momentum },
+      fieldZone: 70,
+      possessionState: 'dangerous'
+    }));
+
+    if (this._defenseBlocks(defendingTeam, side)) {
+      this._updateMomentum(side, 'blocked');
+      events.push(this._createEvent(EVENT_TYPES.COUNTER_BREAKDOWN, minute, {
+        teamId: defendingTeam.id,
+        description: `${defendingTeam.name} recover and snuff out the counter.`,
+        bundleId,
+        bundleStep: step++,
+        chain_type: 'counter',
+        chain_terminal: true,
+        pacing: { ...CHAIN_PACING.counter_breakdown },
+        reason: 'recovered',
+        outcome: 'breakdown',
+        tags: ['counter', 'defence'],
+        narrative: `${defendingTeam.name} get back in numbers to extinguish the threat.`,
+        momentumSnapshot: { ...this.phaseState.momentum },
+        fieldZone: 60
+      }));
+      return events;
+    }
+
+    const pressureLevel = this._calculatePressure(attackingTeam, defendingTeam, side);
+    events.push(...this._handleShot(
+      attackingTeam, defendingTeam, side, minute, bundleId, step, pressureLevel,
+      { startZone: 75, possessionState: 'dangerous' },
+      { chainType: 'counter' }
+    ));
+    return events;
+  }
+
+  _maybeEmitMidfieldBattle(minute, sequenceContext) {
+    if (minute - this.lastMidfieldEmittedMinute < SIM.MIDFIELD_BATTLE_COOLDOWN_MIN) {
+      return [];
+    }
+    this.lastMidfieldEmittedMinute = minute;
+
+    const events = [];
+    const subjectSide = sequenceContext.possessionSide || 'home';
+    const team = subjectSide === 'home' ? this.ctx.homeTeam : this.ctx.awayTeam;
+    const otherTeam = subjectSide === 'home' ? this.ctx.awayTeam : this.ctx.homeTeam;
+    const bundleId = this._generateChainBundleId('midfield', minute);
+
+    events.push(this._createEvent(EVENT_TYPES.MIDFIELD_BATTLE, minute, {
+      teamId: team.id,
+      description: `${team.name} and ${otherTeam.name} battle for control in midfield.`,
+      bundleId,
+      bundleStep: 0,
+      chain_type: 'midfield',
+      chain_terminal: true,
+      pacing: { ...CHAIN_PACING.midfield_battle },
+      tags: ['midfield'],
+      narrative: `${team.name} look to assert themselves in midfield.`,
+      momentumSnapshot: { ...this.phaseState.momentum },
+      fieldZone: sequenceContext.startZone
+    }));
+
+    // Variety: occasionally a midfield battle springs a counter for the
+    // opposing side.
+    if (Math.random() < SIM.COUNTER_FROM_MIDFIELD_CHANCE) {
+      const counterSide = subjectSide === 'home' ? 'away' : 'home';
+      events.push(...this._runCounterChain(otherTeam, team, counterSide, minute));
+    }
+
+    return events;
+  }
+
+  _shouldOpenWithMidfield(minute) {
+    if (minute - this.lastMidfieldEmittedMinute < SIM.MIDFIELD_BATTLE_COOLDOWN_MIN) return false;
+    return Math.random() < SIM.ATTACK_OPEN_WITH_MIDFIELD_CHANCE;
+  }
+
+  /**
+   * Stage C: penalty path emits a single legacy event with no chain
+   * metadata at all (no bundleId / bundleStep / chain_type / chain_terminal /
+   * pacing). Penalty chains are Stage D.
+   */
+  _handlePenalty(attackingTeam, defendingTeam, side, minute) {
     const events = [];
     const players = side === 'home' ? this.ctx.homePlayers : this.ctx.awayPlayers;
 
@@ -269,8 +460,6 @@ class EventGenerator {
         description: `PENALTY GOAL! ${attackingTeam.name}`,
         xg: SIM.PENALTY_XG,
         outcome: 'scored',
-        bundleId,
-        bundleStep,
         tags: ['setPiece', 'penalty'],
         narrative: `${attackingTeam.name} keep composure from the spot.`,
         momentumSnapshot: { ...this.phaseState.momentum }
@@ -287,8 +476,6 @@ class EventGenerator {
         description: `Penalty saved! ${defendingTeam.name} keep it out.`,
         xg: SIM.PENALTY_XG,
         outcome: 'saved',
-        bundleId,
-        bundleStep,
         tags: ['setPiece', 'penalty'],
         narrative: `${defendingTeam.name} produce a huge stop from the spot.`,
         momentumSnapshot: { ...this.phaseState.momentum }
@@ -302,8 +489,6 @@ class EventGenerator {
         description: `Penalty missed by ${taker?.name || attackingTeam.name}.`,
         xg: SIM.PENALTY_XG,
         outcome: 'missed',
-        bundleId,
-        bundleStep,
         tags: ['setPiece', 'penalty'],
         narrative: `${attackingTeam.name} squander the opportunity from the spot.`,
         momentumSnapshot: { ...this.phaseState.momentum }
@@ -419,6 +604,17 @@ class EventGenerator {
   _generateBundleId(eventType, minute) {
     this.bundleCounter++;
     return `${eventType}_${minute}_${this.bundleCounter}`;
+  }
+
+  /**
+   * Stage C: readable chain bundle id. Format `<chainType>_<fixtureId>_<minute>_<seq>`,
+   * kept well under VARCHAR(50). Falls back when fixtureId is unset (unit
+   * tests with bare contexts) so the helper is safe outside LiveMatch.
+   */
+  _generateChainBundleId(chainType, minute) {
+    this.bundleCounter++;
+    const fixtureId = this.ctx.fixtureId ?? 0;
+    return `${chainType}_${fixtureId}_${minute}_${this.bundleCounter}`;
   }
 
   _resolveSequenceContext() {
