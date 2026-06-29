@@ -147,11 +147,70 @@ class EventGenerator {
     }
 
     if (defenseBlocked) {
-      const reason = Math.random() < 0.5 ? 'defender_block' : 'shut_down';
       const cornerAwarded = Math.random() < SIM.CORNER_ON_BLOCK_CHANCE;
-      if (cornerAwarded) this.ctx.stats[side].corners++;
       this._updateMomentum(side, 'blocked');
 
+      if (cornerAwarded) {
+        // Issue 1: a corner won off a defensive block must NOT be preceded by
+        // a possession-loss / "attack breaks down" event for the attacking
+        // team — that reads as a turnover immediately before they are handed a
+        // corner. Emit a coherent force → block → corner sequence instead:
+        //   <attack> force the issue   (build-up, non-terminal)
+        //   <defence> block it behind  (defensive_action, chain terminal)
+        //   Corner kick to <attack>    (standalone bookkeeping, no chain meta)
+        // The block-behind is a defensive event, not a turnover, so the corner
+        // that follows is consistent. No counter springs from a conceded
+        // corner — the attacking side keep the ball for the set piece.
+        this.ctx.stats[side].corners++;
+
+        events.push(this._createEvent(EVENT_TYPES.GOAL_BUILD_UP, minute, {
+          teamId: attackingTeam.id,
+          description: `${attackingTeam.name} force the issue.`,
+          bundleId,
+          bundleStep: step++,
+          chain_type: 'attack',
+          chain_terminal: false,
+          pacing: { ...CHAIN_PACING.goal_build_up },
+          phase: 'force_issue',
+          tags: ['buildUp', 'pressure'],
+          narrative: `${attackingTeam.name} pile on the pressure in the final third.`,
+          fieldZone: Math.min(100, startZone + 25),
+          possessionState: 'dangerous'
+        }));
+
+        events.push(this._createEvent(EVENT_TYPES.DEFENSIVE_ACTION, minute, {
+          teamId: defendingTeam.id,
+          description: `${defendingTeam.name} block it behind.`,
+          bundleId,
+          bundleStep: step++,
+          chain_type: 'attack',
+          chain_terminal: true,
+          pacing: { ...CHAIN_PACING.attack_breakdown },
+          reason: 'blocked_behind',
+          outcome: 'block',
+          cornerConceded: true,
+          tags: ['defensiveStand'],
+          narrative: `${defendingTeam.name} throw a body in the way to concede a corner.`,
+          momentumSnapshot: { ...this.phaseState.momentum },
+          fieldZone: Math.min(100, startZone + 25)
+        }));
+
+        events.push(this._createEvent(EVENT_TYPES.CORNER, minute, {
+          teamId: attackingTeam.id,
+          description: `Corner kick to ${attackingTeam.name}.`,
+          outcome: 'corner',
+          tags: ['setPiece'],
+          narrative: `${attackingTeam.name} have a corner to attack.`,
+          momentumSnapshot: { ...this.phaseState.momentum },
+          fieldZone: Math.min(100, startZone + 25)
+        }));
+
+        return events;
+      }
+
+      // No corner: a genuine turnover. Keep the normal attack breakdown and
+      // the counter that may spring from it.
+      const reason = Math.random() < 0.5 ? 'defender_block' : 'shut_down';
       events.push(this._createEvent(EVENT_TYPES.ATTACK_BREAKDOWN, minute, {
         teamId: defendingTeam.id,
         description: `${defendingTeam.name} shut down ${attackingTeam.name}'s attack.`,
@@ -162,27 +221,12 @@ class EventGenerator {
         pacing: { ...CHAIN_PACING.attack_breakdown },
         reason,
         outcome: 'breakdown',
-        cornerAwarded,
+        cornerAwarded: false,
         tags: ['defensiveStand'],
         narrative: `${defendingTeam.name} get bodies behind the ball and force a turnover.`,
         momentumSnapshot: { ...this.phaseState.momentum },
         fieldZone: Math.min(100, startZone + 25)
       }));
-
-      if (cornerAwarded) {
-        // Corner is bookkeeping for the defensive stand; keep it as a
-        // standalone event outside the attack chain so the chain has one
-        // terminal step.
-        events.push(this._createEvent(EVENT_TYPES.CORNER, minute, {
-          teamId: attackingTeam.id,
-          description: `Corner to ${attackingTeam.name}.`,
-          outcome: 'corner',
-          tags: ['defensiveStand'],
-          narrative: `${defendingTeam.name} concede a corner in the process.`,
-          momentumSnapshot: { ...this.phaseState.momentum },
-          fieldZone: Math.min(100, startZone + 25)
-        }));
-      }
 
       if (Math.random() < SIM.COUNTER_AFTER_BREAKDOWN_CHANCE) {
         const counterSide = side === 'home' ? 'away' : 'home';
@@ -205,12 +249,44 @@ class EventGenerator {
 
     this.ctx.stats[side].shots++;
 
+    // Issue 2: pick the shooter once so the shot build-up and the result name
+    // the same player, and so the build-up can be emitted before whichever
+    // result branch we take.
+    const shooter = this._selectScorer(players);
+
     const baseXg = 0.08 + Math.random() * 0.12;
     const pressureMod = pressureLevel === 'high' ? 1.3 : 1.0;
     const sustainedPressureBonus = Math.min(0.12, this.phaseState.sustainedPressure[side] * 0.02);
     const xg = Math.min(0.80, baseXg * pressureMod);
     const adjustedXg = Math.min(0.85, xg + sustainedPressureBonus);
     this.ctx.stats[side].xg += adjustedXg;
+
+    // Step bookkeeping: the build-up takes the caller's bundleStep and the
+    // result event follows on the next step, keeping the chain monotonic.
+    let step = bundleStep;
+    const chainStep = chainCtx ? { chain_type: chainCtx.chainType } : {};
+
+    // Issue 2: shot build-up immediately before the result. Always a
+    // non-terminal chain step and never mutates the score — it is emitted
+    // before any score change below, so its score snapshot is the pre-shot
+    // score. Reuses goal_build_up (already in the live stream) so existing
+    // frontends keep rendering it.
+    events.push(this._createEvent(EVENT_TYPES.GOAL_BUILD_UP, minute, {
+      teamId: attackingTeam.id,
+      playerId: shooter?.playerId,
+      displayName: shooter?.name,
+      description: this._getShotBuildUpDescription(shooter?.name, attackingTeam.name),
+      bundleId,
+      bundleStep: step++,
+      ...chainStep,
+      ...(chainCtx ? { chain_terminal: false } : {}),
+      pacing: { ...CHAIN_PACING.goal_build_up },
+      phase: 'shot_attempt',
+      tags: ['finalThird', 'shot', 'shotAttempt'],
+      narrative: `${attackingTeam.name} work a shooting chance.`,
+      possessionState: sequenceContext.possessionState,
+      fieldZone: Math.min(100, sequenceContext.startZone + 28)
+    }));
 
     const chainTerminal = chainCtx
       ? { chain_type: chainCtx.chainType, chain_terminal: true, pacing: { ...CHAIN_PACING.shot_terminal } }
@@ -221,7 +297,6 @@ class EventGenerator {
 
     // Stage C: small chance shot is physically blocked before keeper involvement.
     if (Math.random() < SIM.SHOT_BLOCKED_CHANCE) {
-      const shooter = this._selectScorer(players);
       this._updateMomentum(side, 'blocked');
       events.push(this._createEvent(EVENT_TYPES.SHOT_BLOCKED, minute, {
         teamId: attackingTeam.id,
@@ -231,7 +306,7 @@ class EventGenerator {
         xg: adjustedXg,
         outcome: 'blocked',
         bundleId,
-        bundleStep,
+        bundleStep: step,
         tags: ['finalThird', 'shot', 'defensiveStand'],
         narrative: `${defendingTeam.name} get a vital block in.`,
         possessionState: sequenceContext.possessionState,
@@ -244,7 +319,6 @@ class EventGenerator {
 
     if (Math.random() < SIM.ON_TARGET_CHANCE) {
       this.ctx.stats[side].shotsOnTarget++;
-      const shooter = this._selectScorer(players);
 
       if (!this._goalkeeperSaves(defendingTeam)) {
         this.ctx.score[side]++;
@@ -263,7 +337,7 @@ class EventGenerator {
           xg: adjustedXg,
           outcome: 'scored',
           bundleId,
-          bundleStep,
+          bundleStep: step,
           tags: ['finalThird', 'shot'],
           narrative: `${attackingTeam.name} turn pressure into a clinical finish.`,
           possessionState: sequenceContext.possessionState,
@@ -286,12 +360,12 @@ class EventGenerator {
           playerId: shooter?.playerId,
           displayName: shooter?.name,
           description: cornerAwarded
-            ? `Save! ${defendingTeam.name} keeper denies ${shooter?.name || attackingTeam.name}. Corner to ${attackingTeam.name}.`
+            ? `Save! ${defendingTeam.name} keeper denies ${shooter?.name || attackingTeam.name}. Corner kick to ${attackingTeam.name}.`
             : `Save! Good stop by the ${defendingTeam.name} goalkeeper from ${shooter?.name || attackingTeam.name}'s effort.`,
           xg: adjustedXg,
           outcome: 'saved',
           bundleId,
-          bundleStep,
+          bundleStep: step,
           cornerAwarded,
           tags: ['finalThird', 'shot'],
           narrative: `${defendingTeam.name} survive under heavy pressure.`,
@@ -319,17 +393,22 @@ class EventGenerator {
         }
       }
     } else {
-      const shooter = this._selectScorer(players);
       this._updateMomentum(side, 'missed');
+      // Issue 3: vary the missed-shot message (incl. "hit the post"). The post
+      // is still a miss — type stays shot_missed, score is untouched. The
+      // chosen variant is surfaced in metadata so the FE can optionally flavour
+      // a post differently while still treating it as a miss.
+      const miss = this._buildMissOutcome(shooter?.name, attackingTeam.name);
       events.push(this._createEvent(EVENT_TYPES.SHOT_MISSED, minute, {
         teamId: attackingTeam.id,
         playerId: shooter?.playerId,
         displayName: shooter?.name,
-        description: this._getMissDescription(shooter?.name, attackingTeam.name),
+        description: miss.description,
+        missVariant: miss.variant,
         xg: adjustedXg,
         outcome: 'missed',
         bundleId,
-        bundleStep,
+        bundleStep: step,
         tags: ['finalThird', 'shot'],
         narrative: `${attackingTeam.name} work the opening but fail to hit the target.`,
         possessionState: sequenceContext.possessionState,
@@ -805,15 +884,53 @@ class EventGenerator {
     return Math.max(-100, Math.min(100, value));
   }
 
-  _getMissDescription(playerName, teamName) {
-    const descriptions = [
-      `${playerName || teamName} fires wide of the target.`,
-      `Shot from ${playerName || teamName} goes over the bar.`,
-      `${playerName || teamName} pulls the shot wide. Close!`,
-      `Effort from ${playerName || teamName} sails over the crossbar.`,
-      `${playerName || teamName} drags the shot wide of the post.`
+  /**
+   * Issue 2: short build-up line emitted immediately before a shot result.
+   * Player forms are used when a shooter is known; otherwise team-only
+   * fallbacks. Never references the outcome — the result event reveals it.
+   */
+  _getShotBuildUpDescription(playerName, teamName) {
+    if (!playerName) {
+      const teamVariants = [
+        `${teamName} take a shot!`,
+        `${teamName} go for goal!`,
+        `${teamName} let fly!`
+      ];
+      return teamVariants[Math.floor(Math.random() * teamVariants.length)];
+    }
+    const variants = [
+      `${playerName} takes the shot for ${teamName}!`,
+      `${playerName} drives it goalward!`,
+      `${playerName} lets fly for ${teamName}!`,
+      `${teamName} work it to ${playerName} who shoots!`
     ];
-    return descriptions[Math.floor(Math.random() * descriptions.length)];
+    return variants[Math.floor(Math.random() * variants.length)];
+  }
+
+  /**
+   * Issue 3: varied missed-shot text. Returns { description, variant } where
+   * variant is one of 'miss' | 'wide' | 'over' | 'post'. "Hit the post" is a
+   * miss like any other — the caller keeps the shot_missed type and never
+   * touches the score for any variant.
+   */
+  _buildMissOutcome(playerName, teamName) {
+    const variants = playerName
+      ? [
+          { variant: 'miss', text: `${playerName} misses for ${teamName}!` },
+          { variant: 'wide', text: `${playerName} drags it wide.` },
+          { variant: 'over', text: `${playerName} blazes it over the bar.` },
+          { variant: 'post', text: `${playerName} hits the post!` },
+          { variant: 'wide', text: `${playerName} fires wide of the target.` },
+          { variant: 'over', text: `Effort from ${playerName} sails over the crossbar.` }
+        ]
+      : [
+          { variant: 'miss', text: `${teamName} miss!` },
+          { variant: 'wide', text: `${teamName} fire wide!` },
+          { variant: 'over', text: `${teamName} blaze it over!` },
+          { variant: 'post', text: `${teamName} hit the post!` }
+        ];
+    const pick = variants[Math.floor(Math.random() * variants.length)];
+    return { description: pick.text, variant: pick.variant };
   }
 
   _getFoulDescription(playerName, teamName, opposingTeam) {

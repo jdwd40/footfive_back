@@ -187,6 +187,9 @@
 |------|---------|
 | `README.md` | Entry point: links to architecture map and docs index. |
 | `AGENTS.md` | Agent / VM runbook (env vars, commands). |
+| `bugs.md` | Tracked simulation / live-match bugs (open + fixed). |
+| `new_features.md` | Live-match commentary / event-generation feature notes. |
+| `changelog.md` | Dated changelog of backend changes. |
 
 ---
 

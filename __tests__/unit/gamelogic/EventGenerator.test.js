@@ -78,13 +78,16 @@ describe('EventGenerator', () => {
       const events = generator._handleAttack(homeTeam, awayTeam, 'home', 12, { ...baseSequenceContext, startZone: 50 });
 
       const chainEvents = events.filter((e) => e.chain_type === 'attack');
+      // Two build-up steps, then the Issue 2 shot build-up, then the result.
       expect(chainEvents.map((e) => e.type)).toEqual([
+        EVENT_TYPES.GOAL_BUILD_UP,
         EVENT_TYPES.GOAL_BUILD_UP,
         EVENT_TYPES.GOAL_BUILD_UP,
         EVENT_TYPES.SHOT_MISSED
       ]);
       expect(chainEvents[0].phase).toBe('push_forward');
       expect(chainEvents[1].phase).toBe('beat_defender');
+      expect(chainEvents[2].phase).toBe('shot_attempt');
 
       const bundleIds = new Set(chainEvents.map((e) => e.bundleId));
       expect(bundleIds.size).toBe(1);
@@ -120,11 +123,11 @@ describe('EventGenerator', () => {
       }
     });
 
-    it('emits attack_breakdown terminal and a non-chain corner when defense blocks', () => {
+    it('emits attack_breakdown terminal (no corner) when the block is a turnover', () => {
       const { generator } = setupGenerator();
       jest.spyOn(generator, '_defenseBlocks').mockReturnValue(true);
-      // 0.05 < 0.5 (reason), 0.05 < 0.3 (corner), 0.05 < 0.35 (counter follow-up triggers)
-      jest.spyOn(Math, 'random').mockReturnValue(0.05);
+      // 0.5 >= 0.3 → corner roll fails, so this is a genuine turnover.
+      jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
       const events = generator._handleAttack(homeTeam, awayTeam, 'home', 12, baseSequenceContext);
       const breakdown = events.find((e) => e.type === EVENT_TYPES.ATTACK_BREAKDOWN);
@@ -133,10 +136,55 @@ describe('EventGenerator', () => {
       expect(breakdown.chain_terminal).toBe(true);
       expect(['defender_block', 'shut_down']).toContain(breakdown.reason);
 
-      const corner = events.find((e) => e.type === EVENT_TYPES.CORNER);
-      expect(corner).toBeDefined();
+      // No corner means no contradiction to guard against here.
+      expect(events.some((e) => e.type === EVENT_TYPES.CORNER)).toBe(false);
+    });
+
+    // Issue 1: a corner won off a block must not directly follow a same-team
+    // possession-loss ("lose the ball" / "attack breaks down" / "shut down").
+    it('emits a coherent force → block → corner sequence when a block wins a corner', () => {
+      const { generator } = setupGenerator();
+      jest.spyOn(generator, '_defenseBlocks').mockReturnValue(true);
+      // 0.05 < 0.3 → corner awarded off the block.
+      jest.spyOn(Math, 'random').mockReturnValue(0.05);
+
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 12, baseSequenceContext);
+
+      // The corner exists and reads as a corner kick to the attacking team.
+      const cornerIdx = events.findIndex((e) => e.type === EVENT_TYPES.CORNER);
+      expect(cornerIdx).toBeGreaterThan(-1);
+      const corner = events[cornerIdx];
+      expect(corner.teamId).toBe(homeTeam.id);
+      expect(corner.description).toBe(`Corner kick to ${homeTeam.name}.`);
+      // Corner stays a standalone bookkeeping event (no chain metadata).
       expect(corner.chain_type).toBeUndefined();
       expect(corner.chain_terminal).toBeUndefined();
+
+      // No attack_breakdown / turnover anywhere in the sequence.
+      expect(events.some((e) => e.type === EVENT_TYPES.ATTACK_BREAKDOWN)).toBe(false);
+
+      // The event directly before the corner is the defensive block, not a
+      // possession-loss for the attacking team.
+      const beforeCorner = events[cornerIdx - 1];
+      expect(beforeCorner.type).toBe(EVENT_TYPES.DEFENSIVE_ACTION);
+      expect(beforeCorner.teamId).toBe(awayTeam.id);
+      expect(beforeCorner.description).toMatch(/block it behind/i);
+      expect(beforeCorner.description).not.toMatch(/lose|lost|shut down|breaks down/i);
+
+      // The attacking "force the issue" build-up leads the move.
+      const forceIssue = events.find((e) => e.phase === 'force_issue');
+      expect(forceIssue).toBeDefined();
+      expect(forceIssue.type).toBe(EVENT_TYPES.GOAL_BUILD_UP);
+      expect(forceIssue.teamId).toBe(homeTeam.id);
+
+      // Exactly one terminal in the attack chain (the defensive block).
+      const chain = events.filter((e) => e.chain_type === 'attack');
+      const terminals = chain.filter((e) => e.chain_terminal === true);
+      expect(terminals).toHaveLength(1);
+      expect(terminals[0].type).toBe(EVENT_TYPES.DEFENSIVE_ACTION);
+
+      // The corner stat is recorded for the attacking side.
+      expect(generator.ctx.stats.home.corners).toBe(1);
     });
 
     it('persists score only on the goal event', () => {
@@ -195,11 +243,15 @@ describe('EventGenerator', () => {
       const rand = jest.spyOn(Math, 'random');
       // Sequence in _handleAttack → _handleShot:
       //   1: penalty check (want >0.08 → 0.9)
-      //   2: baseXg multiplier (any → 0.5)
-      //   3: shot_blocked roll (<0.12 → 0.05)
-      //   4+: _selectScorer / momentum / etc.
+      //   2: _selectScorer (shooter pre-selected once → 0.5)
+      //   3: baseXg multiplier (any → 0.5)
+      //   4: shot build-up description pick (any → 0.5)
+      //   5: shot_blocked roll (<0.12 → 0.05)
+      //   6+: momentum / etc.
       rand
         .mockReturnValueOnce(0.9)
+        .mockReturnValueOnce(0.5)
+        .mockReturnValueOnce(0.5)
         .mockReturnValueOnce(0.5)
         .mockReturnValueOnce(0.05)
         .mockReturnValue(0.5);
@@ -210,6 +262,213 @@ describe('EventGenerator', () => {
       expect(blocked.chain_type).toBe('attack');
       expect(blocked.chain_terminal).toBe(true);
       expect(ctx.score).toEqual({ home: 0, away: 0 });
+    });
+  });
+
+  describe('Issue 2: shot build-up before the shot result', () => {
+    // emitBuildUp:false isolates the chain to [shot build-up, result] so the
+    // build-up is unambiguously the event directly before the result.
+    const noLeadInContext = { ...baseSequenceContext, emitBuildUp: false };
+
+    const setupShot = () => {
+      const ctx = buildContext();
+      const generator = new EventGenerator(ctx, createEvent, jest.fn());
+      generator.lastMidfieldEmittedMinute = 99;
+      jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+      return { ctx, generator };
+    };
+
+    const assertBuildUpBefore = (events, resultType) => {
+      const resultIdx = events.findIndex((e) => e.type === resultType);
+      expect(resultIdx).toBeGreaterThan(0);
+      const buildUp = events[resultIdx - 1];
+      const result = events[resultIdx];
+      expect(buildUp.type).toBe(EVENT_TYPES.GOAL_BUILD_UP);
+      expect(buildUp.phase).toBe('shot_attempt');
+      expect(buildUp.chain_terminal).toBe(false);
+      // Same chain, ordered immediately before the result.
+      expect(buildUp.bundleId).toBe(result.bundleId);
+      expect(buildUp.bundleStep).toBe(result.bundleStep - 1);
+      // The build-up never carries a result outcome and never scores.
+      expect(buildUp.outcome).toBeUndefined();
+      return buildUp;
+    };
+
+    it('appears immediately before a goal (and does not itself score)', () => {
+      const { ctx, generator } = setupShot();
+      jest.spyOn(generator, '_goalkeeperSaves').mockReturnValue(false);
+      jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 30, noLeadInContext);
+      const buildUp = assertBuildUpBefore(events, EVENT_TYPES.GOAL);
+      // Score advances exactly once, on the goal — not on the build-up.
+      expect(ctx.score).toEqual({ home: 1, away: 0 });
+      expect(buildUp.description).toMatch(/shot|goal|fly|drives/i);
+    });
+
+    it('appears immediately before a saved shot', () => {
+      const { ctx, generator } = setupShot();
+      jest.spyOn(generator, '_goalkeeperSaves').mockReturnValue(true);
+      jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 30, noLeadInContext);
+      assertBuildUpBefore(events, EVENT_TYPES.SHOT_SAVED);
+      expect(ctx.score).toEqual({ home: 0, away: 0 });
+    });
+
+    it('appears immediately before a missed shot', () => {
+      const { ctx, generator } = setupShot();
+      jest.spyOn(Math, 'random').mockReturnValue(0.9); // off target → miss
+
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 30, noLeadInContext);
+      assertBuildUpBefore(events, EVENT_TYPES.SHOT_MISSED);
+      expect(ctx.score).toEqual({ home: 0, away: 0 });
+    });
+
+    it('appears immediately before a blocked shot', () => {
+      const { ctx, generator } = setupShot();
+      const rand = jest.spyOn(Math, 'random');
+      rand
+        .mockReturnValueOnce(0.9)  // penalty check (no)
+        .mockReturnValueOnce(0.5)  // _selectScorer
+        .mockReturnValueOnce(0.5)  // baseXg
+        .mockReturnValueOnce(0.5)  // build-up description
+        .mockReturnValueOnce(0.05) // SHOT_BLOCKED roll → blocked
+        .mockReturnValue(0.5);
+
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 30, noLeadInContext);
+      assertBuildUpBefore(events, EVENT_TYPES.SHOT_BLOCKED);
+      expect(ctx.score).toEqual({ home: 0, away: 0 });
+    });
+
+    it('uses a team-only build-up when no shooter is available', () => {
+      const ctx = buildContext();
+      // Strip outfield players so _selectScorer returns null.
+      ctx.homePlayers = ctx.homePlayers.filter((p) => p.isGoalkeeper);
+      const generator = new EventGenerator(ctx, createEvent, jest.fn());
+      generator.lastMidfieldEmittedMinute = 99;
+      jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+      jest.spyOn(Math, 'random').mockReturnValue(0.9); // miss
+
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 30, noLeadInContext);
+      const buildUp = assertBuildUpBefore(events, EVENT_TYPES.SHOT_MISSED);
+      expect(buildUp.displayName).toBeUndefined();
+      expect(buildUp.description).toContain(homeTeam.name);
+    });
+  });
+
+  describe('Issue 3: missed-shot variety', () => {
+    const sweepRandom = (fn) => {
+      const generator = new EventGenerator(buildContext(), createEvent, jest.fn());
+      const rand = jest.spyOn(Math, 'random');
+      const out = [];
+      for (const r of [0, 0.12, 0.24, 0.36, 0.48, 0.6, 0.72, 0.84, 0.96]) {
+        rand.mockReturnValueOnce(r);
+        out.push(fn(generator));
+      }
+      return out;
+    };
+
+    it('includes a "hit the post" variant for player shooters', () => {
+      const results = sweepRandom((g) => g._buildMissOutcome('P. Blue', 'Airway City'));
+      expect(results.some((r) => r.variant === 'post')).toBe(true);
+      expect(results.some((r) => /hits? the post/i.test(r.description))).toBe(true);
+      // Genuine variety, not the same line every time.
+      expect(new Set(results.map((r) => r.description)).size).toBeGreaterThan(1);
+    });
+
+    it('includes a "hit the post" variant for team-only fallbacks', () => {
+      const results = sweepRandom((g) => g._buildMissOutcome(null, 'Airway City'));
+      expect(results.some((r) => r.variant === 'post')).toBe(true);
+      expect(results.every((r) => r.description.includes('Airway City'))).toBe(true);
+    });
+
+    it('"hit the post" stays a shot_missed and never changes the score', () => {
+      const ctx = buildContext();
+      const persistScore = jest.fn();
+      const generator = new EventGenerator(ctx, createEvent, persistScore);
+      generator.lastMidfieldEmittedMinute = 99;
+      jest.spyOn(generator, '_defenseBlocks').mockReturnValue(false);
+      const rand = jest.spyOn(Math, 'random');
+      rand
+        .mockReturnValueOnce(0.9)  // penalty check (no)
+        .mockReturnValueOnce(0.5)  // _selectScorer
+        .mockReturnValueOnce(0.5)  // baseXg
+        .mockReturnValueOnce(0.5)  // build-up description
+        .mockReturnValueOnce(0.9)  // shot_blocked roll (no)
+        .mockReturnValueOnce(0.9)  // on_target roll → miss
+        .mockReturnValueOnce(0.55) // _buildMissOutcome → 'post' (index 3 of 6)
+        .mockReturnValue(0.5);
+
+      const events = generator._handleAttack(homeTeam, awayTeam, 'home', 30, { ...baseSequenceContext, emitBuildUp: false });
+      const missed = events.find((e) => e.type === EVENT_TYPES.SHOT_MISSED);
+      expect(missed).toBeDefined();
+      expect(missed.missVariant).toBe('post');
+      expect(missed.description).toMatch(/hits? the post/i);
+      expect(missed.outcome).toBe('missed');
+      // The post is a miss: no goal, no score change, no persist.
+      expect(events.some((e) => e.type === EVENT_TYPES.GOAL)).toBe(false);
+      expect(ctx.score).toEqual({ home: 0, away: 0 });
+      expect(persistScore).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Issues 1 & 2: invariants across a full match worth of events', () => {
+    const SHOT_RESULTS = [
+      EVENT_TYPES.GOAL,
+      EVENT_TYPES.SHOT_SAVED,
+      EVENT_TYPES.SHOT_MISSED,
+      EVENT_TYPES.SHOT_BLOCKED
+    ];
+
+    // Drive simulateMinute over every match minute, several times, with real
+    // RNG so the corner/block/shot branches all fire, and flatten the stream.
+    const runFullMatchStream = () => {
+      const stream = [];
+      for (let run = 0; run < 8; run++) {
+        const generator = new EventGenerator(buildContext(), createEvent, jest.fn());
+        for (let minute = 1; minute <= 120; minute++) {
+          stream.push(...generator.simulateMinute(minute));
+        }
+      }
+      return stream;
+    };
+
+    it('never places a same-team possession-loss directly before a corner', () => {
+      const stream = runFullMatchStream();
+      const corners = stream
+        .map((e, i) => ({ e, i }))
+        .filter(({ e }) => e.type === EVENT_TYPES.CORNER);
+      // Real RNG should produce at least some block-corners over 8 matches.
+      expect(corners.length).toBeGreaterThan(0);
+
+      for (const { e, i } of corners) {
+        const before = stream[i - 1];
+        expect(before).toBeDefined();
+        // The directly-preceding event must not be a turnover / possession loss.
+        expect(before.type).not.toBe(EVENT_TYPES.ATTACK_BREAKDOWN);
+        expect(before.type).not.toBe(EVENT_TYPES.COUNTER_BREAKDOWN);
+        expect(before.description || '').not.toMatch(/lose|lost|shut down|breaks down/i);
+        // In practice the lead-in is the defensive block-behind.
+        expect(before.type).toBe(EVENT_TYPES.DEFENSIVE_ACTION);
+      }
+    });
+
+    it('precedes every in-match shot result with its shot build-up', () => {
+      const stream = runFullMatchStream();
+      const results = stream
+        .map((e, i) => ({ e, i }))
+        .filter(({ e }) => SHOT_RESULTS.includes(e.type) && e.bundleId);
+      expect(results.length).toBeGreaterThan(0);
+
+      for (const { e, i } of results) {
+        const before = stream[i - 1];
+        expect(before).toBeDefined();
+        expect(before.type).toBe(EVENT_TYPES.GOAL_BUILD_UP);
+        expect(before.phase).toBe('shot_attempt');
+        expect(before.bundleId).toBe(e.bundleId);
+        expect(before.bundleStep).toBe(e.bundleStep - 1);
+      }
     });
   });
 
@@ -522,7 +781,9 @@ describe('EventGenerator', () => {
         const rand = jest.spyOn(Math, 'random');
         rand
           .mockReturnValueOnce(0.9)  // penalty check
+          .mockReturnValueOnce(0.5)  // _selectScorer (pre-selected shooter)
           .mockReturnValueOnce(0.5)  // baseXg multiplier
+          .mockReturnValueOnce(0.5)  // shot build-up description pick
           .mockReturnValueOnce(0.05) // SHOT_BLOCKED_CHANCE roll → blocked
           .mockReturnValue(0.5);
         const events = generator._handleAttack(homeTeam, awayTeam, 'home', 30, baseSequenceContext);
