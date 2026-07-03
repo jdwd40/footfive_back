@@ -700,7 +700,7 @@ class LiveMatch {
   }
 
   _createEvent(type, minute, data = {}) {
-    return {
+    const event = {
       type,
       fixtureId: this.fixtureId,
       tournamentId: this.tournamentId,
@@ -711,6 +711,31 @@ class LiveMatch {
       awayTeam: { id: this.awayTeam.id, name: this.awayTeam.name },
       ...data
     };
+
+    // Structured contract fields so the frontend never has to infer them
+    // from description text or event-type scans.
+    //
+    // side: which team the event belongs to. An explicit data.side wins
+    // (flow filler flips it for defensive_action); otherwise derive from
+    // teamId. Note breakdown events pass the DEFENDING team's id, so their
+    // side is the defender — same convention as teamId.
+    if (event.side !== 'home' && event.side !== 'away') {
+      event.side = event.teamId != null && event.teamId === this.homeTeam.id
+        ? 'home'
+        : event.teamId != null && event.teamId === this.awayTeam.id
+          ? 'away'
+          : null;
+    }
+
+    // matchPhase: match-level phase (first_half, penalty_shootout, ...).
+    // Deliberately NOT named `phase` — chain/flow payloads already use
+    // `phase` for micro-phase labels (push_forward, possession, ...), and
+    // those must keep passing through untouched.
+    if (event.matchPhase === undefined) {
+      event.matchPhase = STATE_TO_PHASE[this.state] ?? null;
+    }
+
+    return event;
   }
 
   _collectRecapStats(recap, events) {
@@ -876,8 +901,15 @@ class LiveMatch {
   }
 
   getPenaltyScore() {
+    // Decided shootout (penaltyScore is only assigned once a winner exists).
     if (this.penaltyScore.home > 0 || this.penaltyScore.away > 0) {
       return { ...this.penaltyScore };
+    }
+    // Running total while the shootout is in progress, so snapshots can
+    // show the live pens score instead of null until it's decided.
+    if (this.state === MATCH_STATES.PENALTIES &&
+        (this.shootoutTaken.home > 0 || this.shootoutTaken.away > 0)) {
+      return { ...this.shootoutScores };
     }
     return null;
   }

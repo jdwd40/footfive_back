@@ -72,6 +72,45 @@ describe('PenaltyShootout (Stage F: chained kick messaging)', () => {
     expect(walkup.bundleId.length).toBeLessThanOrEqual(50);
   });
 
+  it('carries running penaltyScore on walkup and kick outcome events', () => {
+    const { ctx, shootout } = buildShootout();
+    // 0.5 < 0.85 → onTarget; 0.5 > 0.12 → not saved → scored.
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const walkup = shootout.processTick(2, 0).events[0];
+    const result = shootout.processTick(3, 0).events[0];
+
+    // Walkup: total before the kick.
+    expect(walkup.penaltyScore).toEqual({ home: 0, away: 0 });
+    // Scored home kick: total after the kick, matching legacy shootoutScore.
+    expect(result.type).toBe(EVENT_TYPES.SHOOTOUT_GOAL);
+    expect(result.penaltyScore).toEqual({ home: 1, away: 0 });
+    expect(result.penaltyScore).toEqual(result.shootoutScore);
+    expect(result.penaltyScore).toEqual(ctx.shootoutScores);
+    // Snapshot, not a live reference to the mutable score object.
+    expect(result.penaltyScore).not.toBe(ctx.shootoutScores);
+  });
+
+  it('carries running penaltyScore on reaction events', () => {
+    const { ctx, shootout } = buildShootout();
+    ctx.shootoutScores.home = 2;
+    ctx.shootoutScores.away = 2;
+    shootout._startKickBundle(3);
+    shootout.lastOutcomeMeta = {
+      outcome: 'scored',
+      teamName: homeTeam.name,
+      decider: true,
+      mustScore: false,
+      isSuddenDeath: false,
+      pressure: 1,
+      keeperSaveStreak: 0
+    };
+
+    const reaction = shootout._createReactionEvent();
+    expect(reaction.type).toBe(EVENT_TYPES.SHOOTOUT_REACTION);
+    expect(reaction.penaltyScore).toEqual({ home: 2, away: 2 });
+  });
+
   it('uses chain_type "shootout" and pacing metadata on every chain step', () => {
     const { shootout } = buildShootout();
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
