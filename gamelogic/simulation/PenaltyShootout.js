@@ -142,6 +142,9 @@ class PenaltyShootout {
       decider,
       mustScore,
       shootoutScore: { ...this.ctx.shootoutScores },
+      // Running shootout total under the canonical name so scoreboards can
+      // apply it directly; shootoutScore stays for backwards compatibility.
+      penaltyScore: { ...this.ctx.shootoutScores },
       bundleId: this.currentKickBundleId,
       bundleStep: this._nextStep(),
       chain_type: 'shootout',
@@ -231,6 +234,8 @@ class PenaltyShootout {
       pressure,
       decider,
       mustScore,
+      // Running total before this kick is taken.
+      penaltyScore: { ...this.ctx.shootoutScores },
       description: `${playerName} walks up for ${team.name}.`,
       bundleId: this.currentKickBundleId,
       bundleStep: this._nextStep(),
@@ -249,6 +254,9 @@ class PenaltyShootout {
       outcome: meta.outcome,
       decider: meta.decider,
       mustScore: meta.mustScore,
+      // Running total after the kick this reaction follows — keeps a paced
+      // scoreboard in sync even when the reaction is the last revealed item.
+      penaltyScore: { ...this.ctx.shootoutScores },
       description: this._buildReactionDescription(meta),
       bundleId: this.currentKickBundleId,
       bundleStep: this._nextStep(),

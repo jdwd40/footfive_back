@@ -356,6 +356,75 @@ describe('LiveMatch', () => {
     });
   });
 
+  describe('structured contract fields (side + matchPhase)', () => {
+    it('derives side=home from the home teamId', () => {
+      match.state = MATCH_STATES.FIRST_HALF;
+      const event = match._createEvent(EVENT_TYPES.GOAL, 10, { teamId: homeTeam.id });
+      expect(event.side).toBe('home');
+    });
+
+    it('derives side=away from the away teamId', () => {
+      match.state = MATCH_STATES.SECOND_HALF;
+      const event = match._createEvent(EVENT_TYPES.FOUL, 60, { teamId: awayTeam.id });
+      expect(event.side).toBe('away');
+    });
+
+    it('sets side=null for unknown or missing teamId', () => {
+      const unknownTeam = match._createEvent(EVENT_TYPES.GOAL, 10, { teamId: 999 });
+      expect(unknownTeam.side).toBeNull();
+
+      const neutral = match._createEvent(EVENT_TYPES.HALFTIME, 45, {});
+      expect(neutral.side).toBeNull();
+    });
+
+    it('preserves an explicit data.side (flow-filler defensive flip)', () => {
+      // defensive_action passes teamId of one side but flips side; the
+      // explicit value must win over teamId derivation.
+      const event = match._createEvent(EVENT_TYPES.DEFENSIVE_ACTION, 30, {
+        teamId: homeTeam.id,
+        side: 'away'
+      });
+      expect(event.side).toBe('away');
+    });
+
+    it('replaces an invalid explicit side with the derived one', () => {
+      const event = match._createEvent(EVENT_TYPES.GOAL, 10, {
+        teamId: homeTeam.id,
+        side: 'left-wing'
+      });
+      expect(event.side).toBe('home');
+    });
+
+    it('stamps matchPhase from the current match state', () => {
+      const cases = [
+        [MATCH_STATES.FIRST_HALF, 'first_half'],
+        [MATCH_STATES.HALFTIME, 'halftime'],
+        [MATCH_STATES.SECOND_HALF, 'second_half'],
+        [MATCH_STATES.EXTRA_TIME_1, 'extra_time_first_half'],
+        [MATCH_STATES.EXTRA_TIME_2, 'extra_time_second_half'],
+        [MATCH_STATES.PENALTIES, 'penalty_shootout'],
+        [MATCH_STATES.FINISHED, 'finished']
+      ];
+      for (const [state, expected] of cases) {
+        match.state = state;
+        const event = match._createEvent(EVENT_TYPES.KICKOFF, 1, {});
+        expect(event.matchPhase).toBe(expected);
+      }
+    });
+
+    it('does not overwrite the chain micro `phase` payload key', () => {
+      match.state = MATCH_STATES.FIRST_HALF;
+      // goal_build_up steps carry phase: 'push_forward' | 'beat_defender'
+      const event = match._createEvent(EVENT_TYPES.GOAL_BUILD_UP, 20, {
+        teamId: homeTeam.id,
+        phase: 'push_forward'
+      });
+      expect(event.phase).toBe('push_forward'); // micro-phase untouched
+      expect(event.matchPhase).toBe('first_half'); // match phase alongside it
+      expect(event.side).toBe('home');
+    });
+  });
+
   describe('penalty shootout', () => {
     beforeEach(() => {
       match.state = MATCH_STATES.PENALTIES;
@@ -410,6 +479,42 @@ describe('LiveMatch', () => {
       // After 5 kicks each, 5-2 or 5-3 means home wins
       expect(match.state).toBe(MATCH_STATES.FINISHED);
       expect(match.penaltyScore.home).toBeGreaterThan(match.penaltyScore.away);
+    });
+  });
+
+  describe('getPenaltyScore', () => {
+    it('returns null before any shootout', () => {
+      match.state = MATCH_STATES.SECOND_HALF;
+      expect(match.getPenaltyScore()).toBeNull();
+    });
+
+    it('returns null during PENALTIES before the first kick', () => {
+      match.state = MATCH_STATES.PENALTIES;
+      expect(match.getPenaltyScore()).toBeNull();
+    });
+
+    it('returns the running total during the shootout', () => {
+      match.state = MATCH_STATES.PENALTIES;
+      match.shootoutScores = { home: 2, away: 1 };
+      match.shootoutTaken = { home: 3, away: 2 };
+
+      expect(match.getPenaltyScore()).toEqual({ home: 2, away: 1 });
+    });
+
+    it('returns a live 0-0 once kicks have been taken but none scored', () => {
+      match.state = MATCH_STATES.PENALTIES;
+      match.shootoutScores = { home: 0, away: 0 };
+      match.shootoutTaken = { home: 1, away: 1 };
+
+      expect(match.getPenaltyScore()).toEqual({ home: 0, away: 0 });
+    });
+
+    it('returns the final decided score once penaltyScore is set', () => {
+      match.state = MATCH_STATES.FINISHED;
+      match.penaltyScore = { home: 4, away: 3 };
+      match.shootoutScores = { home: 4, away: 3 };
+
+      expect(match.getPenaltyScore()).toEqual({ home: 4, away: 3 });
     });
   });
 
