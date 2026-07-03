@@ -5,8 +5,15 @@
  */
 
 const request = require('supertest');
-const { resetSimulationLoop, resetEventBus } = require('../../gamelogic/simulation');
-const { createTestApp, setupBeforeEach, cleanupAfterEach, sseClient } = require('../setup/testHelpers');
+const {
+  createTestApp,
+  setupBeforeEach,
+  cleanupAfterEach,
+  openSSEClient,
+  closeServer,
+  cleanupSimulationResources,
+  flushAsync
+} = require('../setup/testHelpers');
 
 describe('Admin and Live integration', () => {
   let app;
@@ -18,16 +25,17 @@ describe('Admin and Live integration', () => {
   });
 
   beforeEach(async () => {
-    resetSimulationLoop();
-    resetEventBus();
+    await cleanupSimulationResources();
     await setupBeforeEach();
   });
 
   afterEach(async () => {
+    await cleanupSimulationResources();
     await cleanupAfterEach();
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    await cleanupSimulationResources();
     process.env = originalEnv;
   });
 
@@ -137,13 +145,15 @@ describe('Admin and Live integration', () => {
       const server = app.listen(0);
       const port = server.address().port;
       const baseUrl = `http://127.0.0.1:${port}`;
+      let client;
 
       try {
-        const { events } = await sseClient(baseUrl, '/api/live/events', { timeoutMs: 2500 });
-        expect(events.length).toBeGreaterThanOrEqual(1);
-        expect(events.some((e) => e.type === 'connected')).toBe(true);
+        client = openSSEClient(baseUrl, '/api/live/events', { timeoutMs: 2500 });
+        const connected = await client.waitFor((e) => e.type === 'connected');
+        expect(connected.type).toBe('connected');
       } finally {
-        server.close();
+        if (client) await client.close();
+        await closeServer(server);
       }
     });
 
@@ -157,21 +167,23 @@ describe('Admin and Live integration', () => {
       const server = app.listen(0);
       const port = server.address().port;
       const baseUrl = `http://127.0.0.1:${port}`;
+      let client;
 
       try {
-        const ssePromise = sseClient(baseUrl, '/api/live/events', { timeoutMs: 4000, fixtureId });
-        await new Promise((r) => setTimeout(r, 100));
+        client = openSSEClient(baseUrl, '/api/live/events', { timeoutMs: 4000, fixtureId });
+        await client.waitFor((e) => e.type === 'connected');
         await request(app)
           .post(`/api/admin/match/${fixtureId}/force-score`)
           .send({ home: 2, away: 1 })
           .expect(200);
-        const { events } = await ssePromise;
-        expect(events.some((e) => e.type === 'connected')).toBe(true);
-        const scoreEvent = events.find((e) => e.type === 'score_update' && e.fixtureId === fixtureId);
-        expect(scoreEvent).toBeDefined();
+
+        const scoreEvent = await client.waitFor(
+          (e) => e.type === 'score_update' && Number(e.fixtureId) === Number(fixtureId)
+        );
         expect(scoreEvent.payload?.score).toEqual({ home: 2, away: 1 });
       } finally {
-        server.close();
+        if (client) await client.close();
+        await closeServer(server);
       }
     });
 
@@ -188,18 +200,19 @@ describe('Admin and Live integration', () => {
       const server = app.listen(0);
       const port = server.address().port;
       const baseUrl = `http://127.0.0.1:${port}`;
+      let client;
 
       try {
         // afterSeq=-1 means "send all buffered events" (seq > -1)
-        const { events } = await sseClient(baseUrl, '/api/live/events', { afterSeq: -1, timeoutMs: 3500 });
-        expect(events.some((e) => e.type === 'connected')).toBe(true);
-        const catchupScore = events.find(
-          (e) => e.type === 'score_update' && (e.fixtureId === fixtureId || e.fixtureId === Number(fixtureId))
+        client = openSSEClient(baseUrl, '/api/live/events', { afterSeq: -1, timeoutMs: 3500 });
+        await client.waitFor((e) => e.type === 'connected');
+        const catchupScore = await client.waitFor(
+          (e) => e.type === 'score_update' && Number(e.fixtureId) === Number(fixtureId)
         );
-        expect(catchupScore).toBeDefined();
         expect(catchupScore.payload?.score).toEqual({ home: 1, away: 0 });
       } finally {
-        server.close();
+        if (client) await client.close();
+        await closeServer(server);
       }
     });
 
@@ -212,22 +225,26 @@ describe('Admin and Live integration', () => {
       const server = app.listen(0);
       const port = server.address().port;
       const baseUrl = `http://127.0.0.1:${port}`;
+      let clientForB;
 
       try {
-        const clientForB = sseClient(baseUrl, '/api/live/events', { timeoutMs: 3500, fixtureId: fixtureB });
-        await new Promise((r) => setTimeout(r, 50));
+        clientForB = openSSEClient(baseUrl, '/api/live/events', { timeoutMs: 3500, fixtureId: fixtureB });
+        await clientForB.waitFor((e) => e.type === 'connected');
         await request(app)
           .post(`/api/admin/match/${fixtureA}/force-score`)
           .send({ home: 3, away: 0 })
           .expect(200);
-        const { events: eventsForB } = await clientForB;
-        const connectedOnly = eventsForB.filter((e) => e.type === 'connected');
-        const scoreEvents = eventsForB.filter((e) => e.type === 'score_update');
+
+        await flushAsync();
+
+        const connectedOnly = clientForB.events.filter((e) => e.type === 'connected');
+        const scoreEvents = clientForB.events.filter((e) => e.type === 'score_update');
         expect(connectedOnly.length).toBeGreaterThanOrEqual(1);
         expect(scoreEvents.every((e) => e.fixtureId === fixtureB)).toBe(true);
         expect(scoreEvents.some((e) => e.fixtureId === fixtureA)).toBe(false);
       } finally {
-        server.close();
+        if (clientForB) await clientForB.close();
+        await closeServer(server);
       }
     });
   });

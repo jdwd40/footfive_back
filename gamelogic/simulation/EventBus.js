@@ -50,6 +50,9 @@ class EventBus extends EventEmitter {
     this.eventBuffer = [];
     this.maxBufferSize = 1000;
 
+    // Async DB writes kicked off by emit(); tests can await these before DB cleanup.
+    this.pendingPersistence = new Set();
+
     // Stats
     this.stats = {
       eventsEmitted: 0,
@@ -76,7 +79,7 @@ class EventBus extends EventEmitter {
 
     // Persist to DB if it's a match event
     if (this._isPersistableEvent(enrichedEvent)) {
-      this._persistEvent(enrichedEvent);
+      this._trackPersistence(enrichedEvent);
     }
 
     // Broadcast to SSE clients
@@ -248,7 +251,11 @@ class EventBus extends EventEmitter {
         return false;
       }
       const data = JSON.stringify(event);
-      res.write(`event: ${event.type}\n`);
+      // Data-only SSE frame (no `event: <type>` name). Named frames are only
+      // delivered by EventSource to listeners registered for that exact name,
+      // so every new event type was silently dropped until the frontend
+      // whitelist was updated. Default frames always hit `onmessage`; the
+      // event type stays available as `type` inside the JSON payload.
       res.write(`data: ${data}\n\n`);
       // Flush to ensure SSE events are sent immediately
       if (res.flush) res.flush();
@@ -333,6 +340,20 @@ class EventBus extends EventEmitter {
         constraint: err.constraint || null,
         message: err.message
       });
+    }
+  }
+
+  _trackPersistence(event) {
+    const pending = this._persistEvent(event);
+    this.pendingPersistence.add(pending);
+    pending.finally(() => {
+      this.pendingPersistence.delete(pending);
+    });
+  }
+
+  async waitForPersistence() {
+    while (this.pendingPersistence.size > 0) {
+      await Promise.allSettled([...this.pendingPersistence]);
     }
   }
 
@@ -423,6 +444,7 @@ class EventBus extends EventEmitter {
     }
 
     this.clients.clear();
+    this.pendingPersistence.clear();
     this.eventBuffer = [];
     this.sequence = 0;
     this.stats = {

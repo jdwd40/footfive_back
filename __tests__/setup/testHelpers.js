@@ -132,15 +132,15 @@ function parseSSELines(buffer, chunk) {
 }
 
 /**
- * Connect to an SSE endpoint, collect events until timeout, and return parsed payloads.
+ * Connect to an SSE endpoint and return a live client handle.
  * Uses native http so the app must be listening (e.g. app.listen(0)).
  *
  * @param {string} baseUrl - e.g. 'http://127.0.0.1:3456'
  * @param {string} path - e.g. '/api/live/events'
  * @param {{ timeoutMs?: number, afterSeq?: number, fixtureId?: number, tournamentId?: number }} [opts]
- * @returns {Promise<{ events: Array<object>, close: function }>}
+ * @returns {{ events: Array<object>, waitFor: function, close: function }}
  */
-function sseClient(baseUrl, path, opts = {}) {
+function openSSEClient(baseUrl, path, opts = {}) {
   const timeoutMs = opts.timeoutMs ?? 3000;
   const params = new URLSearchParams();
   if (opts.afterSeq != null) params.set('afterSeq', String(opts.afterSeq));
@@ -152,41 +152,165 @@ function sseClient(baseUrl, path, opts = {}) {
   const url = new URL(pathWithQuery, baseUrl);
   const http = require('http');
   const events = [];
+  const waiters = new Set();
+  let response = null;
+  let buffer = '';
+  let closed = false;
+
+  const settleWaiter = (waiter, event, err) => {
+    waiters.delete(waiter);
+    clearTimeout(waiter.timeoutId);
+    if (err) {
+      waiter.reject(err);
+      return;
+    }
+    waiter.resolve(event);
+  };
+
+  const failWaiters = (err) => {
+    for (const waiter of [...waiters]) {
+      settleWaiter(waiter, null, err);
+    }
+  };
+
+  const notifyWaiters = (event) => {
+    for (const waiter of [...waiters]) {
+      if (waiter.predicate(event)) {
+        settleWaiter(waiter, event);
+      }
+    }
+  };
+
+  const waitFor = (predicate, waitMs = timeoutMs) => {
+    const existing = events.find(predicate);
+    if (existing) return Promise.resolve(existing);
+
+    if (closed) {
+      return Promise.reject(new Error('SSE client closed before expected event arrived'));
+    }
+
+    return new Promise((resolve, reject) => {
+      const waiter = {
+        predicate,
+        resolve,
+        reject,
+        timeoutId: setTimeout(() => {
+          settleWaiter(waiter, null, new Error(`Timed out waiting for SSE event after ${waitMs}ms`));
+        }, waitMs)
+      };
+      waiters.add(waiter);
+    });
+  };
+
+  const req = http.get(
+    { hostname: url.hostname, port: url.port || 80, path: url.pathname + url.search, headers: { Accept: 'text/event-stream' } },
+    (res) => {
+      response = res;
+      if (res.statusCode !== 200) {
+        closed = true;
+        res.resume();
+        failWaiters(new Error(`SSE request failed with status ${res.statusCode}`));
+        return;
+      }
+
+      res.on('data', (chunk) => {
+        const parsed = parseSSELines(buffer, chunk);
+        buffer = parsed.buffer;
+        events.push(...parsed.parsed);
+        parsed.parsed.forEach(notifyWaiters);
+      });
+      res.on('end', () => {
+        closed = true;
+        failWaiters(new Error('SSE response ended before expected event arrived'));
+      });
+      res.on('error', (err) => {
+        closed = true;
+        failWaiters(err);
+      });
+      res.on('close', () => {
+        closed = true;
+      });
+    }
+  );
+
+  req.on('error', (err) => {
+    if (!closed) {
+      closed = true;
+      failWaiters(err);
+    }
+  });
+
+  const close = async () => {
+    if (!closed) {
+      closed = true;
+    }
+
+    failWaiters(new Error('SSE client closed'));
+
+    if (response && !response.destroyed) {
+      response.destroy();
+    }
+    if (!req.destroyed) {
+      req.destroy();
+    }
+
+    await new Promise(resolve => setImmediate(resolve));
+  };
+
+  return { events, waitFor, close };
+}
+
+/**
+ * Connect to an SSE endpoint, collect events until a predicate matches or
+ * timeout expires, then close the client. Kept for older tests.
+ */
+async function sseClient(baseUrl, path, opts = {}) {
+  const client = openSSEClient(baseUrl, path, opts);
+  try {
+    if (opts.until) {
+      await client.waitFor(opts.until, opts.timeoutMs);
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, opts.timeoutMs ?? 3000));
+    }
+    return { events: client.events, close: client.close };
+  } finally {
+    await client.close();
+  }
+}
+
+function closeServer(server) {
+  if (!server || !server.listening) {
+    return Promise.resolve();
+  }
 
   return new Promise((resolve, reject) => {
-    let settled = false;
-    let timeoutId;
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      if (timeoutId) clearTimeout(timeoutId);
-      req.destroy();
-      resolve(result);
-    };
-    const req = http.get(
-      { hostname: url.hostname, port: url.port || 80, path: url.pathname + url.search, headers: { Accept: 'text/event-stream' } },
-      (res) => {
-        if (res.statusCode !== 200) {
-          res.resume();
-          return finish({ events: [], close: () => {} });
-        }
-        let buffer = '';
-        timeoutId = setTimeout(() => finish({ events, close: () => {} }), timeoutMs);
-        res.on('data', (chunk) => {
-          const { parsed, buffer: nextBuffer } = parseSSELines(buffer, chunk);
-          buffer = nextBuffer;
-          events.push(...parsed);
-        });
-        res.on('end', () => finish({ events, close: () => {} }));
-        res.on('error', (err) => {
-          if (!settled) { settled = true; if (timeoutId) clearTimeout(timeoutId); req.destroy(); reject(err); }
-        });
+    server.close((err) => {
+      if (err) {
+        reject(err);
+        return;
       }
-    );
-    req.on('error', (err) => {
-      if (!settled) { settled = true; reject(err); }
+      resolve();
     });
   });
+}
+
+async function flushAsync() {
+  await new Promise(resolve => setImmediate(resolve));
+}
+
+async function cleanupSimulationResources() {
+  const { resetSimulationLoop } = require('../../gamelogic/simulation/SimulationLoop');
+  const { getEventBus, resetEventBus } = require('../../gamelogic/simulation/EventBus');
+
+  resetSimulationLoop();
+
+  const eventBus = getEventBus();
+  if (typeof eventBus.waitForPersistence === 'function') {
+    await eventBus.waitForPersistence();
+  }
+
+  resetEventBus();
+  await flushAsync();
 }
 
 module.exports = {
@@ -198,6 +322,9 @@ module.exports = {
   createTestPlayer,
   getTestApp,
   createTestApp,
-  sseClient
+  sseClient,
+  openSSEClient,
+  closeServer,
+  cleanupSimulationResources,
+  flushAsync
 };
-

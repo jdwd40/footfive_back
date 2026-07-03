@@ -198,6 +198,7 @@
 | `docs/INSTALLATION.md` | Install instructions. |
 | `docs/TROUBLESHOOTING.md` | Common issues (includes `tournament_state` / migration mismatch). |
 | `docs/ARCHITECTURE.md` | System architecture, diagrams, simulation flow. |
+| `docs/codebase-explained.html` | Standalone HTML walkthrough of runtime flow, file structure, API surface, database, simulation, events, tests, and operations. |
 | `docs/API_REFERENCE.md` | HTTP API reference. |
 | `docs/latest_changes.md` | Recent changes. |
 | `docs/new_endpoints.md` | Fixtures-focused endpoint notes. |
@@ -206,6 +207,7 @@
 | `docs/match-events-enhancement.md` | Match events enhancement. |
 | `docs/SIMULATION_PHASE12_UPGRADE.md` | Phase 1-2 simulation narrative upgrade and frontend changes. |
 | `docs/TOURNAMENT_SCHEDULING.md` | Tournament scheduling. |
+| `docs/TEST_SUITE_REVIEW.md` | Current review of test coverage, usefulness, redundancy, and hard-coded/mock-driven risks. |
 | `docs/TEST_AUDIT.md` | Test suite audit. |
 | `docs/TEST_COVERAGE.md` | Test coverage notes. |
 

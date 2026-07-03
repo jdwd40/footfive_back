@@ -14,6 +14,7 @@
 | Document | Description |
 |----------|-------------|
 | [../LIVING_ARCHITECTURE.md](../LIVING_ARCHITECTURE.md) | Every source file and how it connects |
+| [codebase-explained.html](codebase-explained.html) | Standalone HTML walkthrough of the backend structure, runtime flow, database, simulation, events, tests, and operations |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System overview, diagrams, simulation flow |
 | [API_REFERENCE.md](API_REFERENCE.md) | HTTP endpoints (verify against `routes/` when in doubt) |
 | [new_endpoints.md](new_endpoints.md) | Fixtures-focused endpoint notes |
@@ -34,5 +35,6 @@
 | Document | Description |
 |----------|-------------|
 | [latest_changes.md](latest_changes.md) | Recent change log |
+| [TEST_SUITE_REVIEW.md](TEST_SUITE_REVIEW.md) | Current review of test coverage, usefulness, redundancy, and hard-coded/mock-driven risks |
 | [TEST_AUDIT.md](TEST_AUDIT.md) | Test suite audit |
 | [TEST_COVERAGE.md](TEST_COVERAGE.md) | Coverage notes |

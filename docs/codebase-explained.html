@@ -1,0 +1,1294 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FootFive Backend Codebase Explained</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --surface: #ffffff;
+      --surface-2: #f1f4f7;
+      --ink: #17202a;
+      --muted: #5b6673;
+      --line: #d8dee6;
+      --accent: #147d7e;
+      --accent-2: #9a6500;
+      --accent-3: #8a3342;
+      --code-bg: #111827;
+      --code-fg: #e5edf7;
+      --shadow: 0 10px 28px rgba(23, 32, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    code,
+    pre,
+    kbd {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--line);
+      background: #ffffff;
+      padding: 28px 24px;
+    }
+
+    .brand {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 24px;
+    }
+
+    .brand strong {
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .brand span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .nav-title {
+      margin: 20px 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .nav {
+      display: grid;
+      gap: 2px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .nav a {
+      display: block;
+      border-radius: 6px;
+      padding: 7px 9px;
+      color: #2f3b48;
+      font-size: 14px;
+    }
+
+    .nav a:hover {
+      background: var(--surface-2);
+      text-decoration: none;
+    }
+
+    .content {
+      min-width: 0;
+      padding: 36px;
+    }
+
+    .hero,
+    .section {
+      max-width: 1180px;
+      margin: 0 auto 22px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 34px;
+    }
+
+    .section {
+      padding: 28px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+      margin: 0;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 820px;
+      font-size: 36px;
+    }
+
+    h2 {
+      margin-bottom: 16px;
+      font-size: 26px;
+    }
+
+    h3 {
+      margin: 26px 0 10px;
+      font-size: 19px;
+    }
+
+    h4 {
+      margin: 18px 0 8px;
+      font-size: 16px;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 18px 20px;
+      padding: 0;
+    }
+
+    li {
+      margin: 5px 0;
+    }
+
+    .lede {
+      max-width: 880px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .meta-grid,
+    .cards,
+    .two-col,
+    .three-col {
+      display: grid;
+      gap: 14px;
+    }
+
+    .meta-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 24px;
+    }
+
+    .two-col {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .three-col {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .cards {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .stat,
+    .note,
+    .mini-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 14px;
+    }
+
+    .stat strong,
+    .mini-card strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--ink);
+    }
+
+    .stat span,
+    .mini-card span,
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .note {
+      border-left: 4px solid var(--accent);
+      background: #f5fbfb;
+    }
+
+    .warning {
+      border-left-color: var(--accent-2);
+      background: #fff9ec;
+    }
+
+    .risk {
+      border-left-color: var(--accent-3);
+      background: #fff5f6;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0 2px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface-2);
+      padding: 3px 10px;
+      color: #354150;
+      font-size: 13px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      margin: 12px 0 20px;
+    }
+
+    table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--surface-2);
+      color: #27313d;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    pre {
+      overflow-x: auto;
+      margin: 12px 0 18px;
+      border-radius: 8px;
+      background: var(--code-bg);
+      color: var(--code-fg);
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    :not(pre) > code,
+    kbd {
+      border: 1px solid #d1d8e2;
+      border-radius: 5px;
+      background: #eef2f6;
+      padding: 1px 5px;
+      color: #203040;
+      font-size: 0.92em;
+    }
+
+    .flow {
+      display: grid;
+      gap: 10px;
+      margin: 12px 0 18px;
+    }
+
+    .flow-step {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+    }
+
+    .flow-step b {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 13px;
+    }
+
+    .flow-step div {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 10px 12px;
+    }
+
+    .flow-step strong {
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .footer {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 10px 4px 26px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .content {
+        padding: 18px;
+      }
+
+      .meta-grid,
+      .cards,
+      .two-col,
+      .three-col {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 30px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <strong>FootFive Backend</strong>
+        <span>Codebase explanation, generated from the current repository snapshot.</span>
+      </div>
+
+      <div class="nav-title">Guide</div>
+      <ul class="nav">
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#runtime">Runtime Shape</a></li>
+        <li><a href="#structure">Repository Structure</a></li>
+        <li><a href="#request-flow">HTTP Request Flow</a></li>
+        <li><a href="#api">API Surface</a></li>
+        <li><a href="#database">Database Layer</a></li>
+        <li><a href="#simulation">Simulation System</a></li>
+        <li><a href="#events">Events and SSE</a></li>
+        <li><a href="#odds">Odds Engine</a></li>
+        <li><a href="#tests">Tests</a></li>
+        <li><a href="#operations">Operations</a></li>
+        <li><a href="#change-guide">Change Guide</a></li>
+        <li><a href="#watch-outs">Watch-outs</a></li>
+      </ul>
+
+      <div class="nav-title">Primary Files</div>
+      <ul class="nav">
+        <li><a href="../listen.js">listen.js</a></li>
+        <li><a href="../routes/index.js">routes/index.js</a></li>
+        <li><a href="../gamelogic/simulation/SimulationLoop.js">SimulationLoop.js</a></li>
+        <li><a href="../gamelogic/simulation/TournamentManager.js">TournamentManager.js</a></li>
+        <li><a href="../gamelogic/simulation/LiveMatch.js">LiveMatch.js</a></li>
+        <li><a href="../gamelogic/simulation/EventBus.js">EventBus.js</a></li>
+      </ul>
+    </aside>
+
+    <main class="content">
+      <section class="hero" id="overview">
+        <p class="eyebrow">Codebase Guide</p>
+        <h1>FootFive is an Express and PostgreSQL backend for a live knockout football tournament simulator.</h1>
+        <p class="lede">
+          The application exposes a REST API under <code>/api</code>, streams live simulation events with
+          Server-Sent Events, stores teams, players, fixtures, match reports, odds, and event history in
+          PostgreSQL, and can run a continuous 16-team knockout cup.
+        </p>
+
+        <div class="meta-grid">
+          <div class="stat">
+            <strong>Runtime</strong>
+            <span>Node.js, Express, CommonJS modules</span>
+          </div>
+          <div class="stat">
+            <strong>Database</strong>
+            <span>PostgreSQL via <code>pg</code></span>
+          </div>
+          <div class="stat">
+            <strong>Port</strong>
+            <span><code>9001</code>, API root <code>/api</code></span>
+          </div>
+          <div class="stat">
+            <strong>Realtime</strong>
+            <span>SSE endpoint at <code>/api/live/events</code></span>
+          </div>
+        </div>
+
+        <div class="tag-row">
+          <span class="tag">Express REST API</span>
+          <span class="tag">PostgreSQL persistence</span>
+          <span class="tag">Knockout bracket</span>
+          <span class="tag">Live match simulation</span>
+          <span class="tag">Event replay buffer</span>
+          <span class="tag">Jest and Supertest</span>
+        </div>
+      </section>
+
+      <section class="section" id="runtime">
+        <h2>Runtime Shape</h2>
+        <p>
+          <a href="../listen.js"><code>listen.js</code></a> is both the production entry point and the app export used by tests.
+          It creates the Express app, installs JSON parsing and CORS, mounts the route aggregator under <code>/api</code>,
+          starts listening on port <code>9001</code>, and optionally starts the live simulation when
+          <code>SIMULATION_AUTO_START=true</code>.
+        </p>
+
+        <pre><code>Client
+  |
+  | HTTP JSON or Server-Sent Events
+  v
+listen.js
+  |
+  v
+routes/index.js
+  |
+  +-- /api/teams       -> teamController       -> TeamModel / PlayerModel
+  +-- /api/players     -> playerController     -> PlayerModel / db
+  +-- /api/fixtures    -> fixtureController    -> Fixture/Odds/Event/Report models
+  +-- /api/live        -> liveController       -> SimulationLoop / EventBus / FixtureModel
+  +-- /api/admin       -> adminController      -> SimulationLoop / TournamentManager
+  +-- /api/diagnostic  -> diagnosticController -> db/connection / seed
+  |
+  v
+PostgreSQL</code></pre>
+
+        <div class="two-col">
+          <div class="note">
+            <h3>Startup</h3>
+            <p>
+              Running <code>npm start</code> executes <code>node listen.js</code>. If auto-start is enabled,
+              <code>listen.js</code> creates the singleton simulation loop, a singleton event bus, and a new
+              <code>TournamentManager</code>, then calls <code>loop.init(...)</code> and <code>loop.start()</code>.
+            </p>
+          </div>
+          <div class="note warning">
+            <h3>Environment</h3>
+            <p>
+              <a href="../db/connection.js"><code>db/connection.js</code></a> loads <code>.env.{NODE_ENV}</code> with
+              <code>dotenv</code>, but dotenv does not override existing <code>PG*</code> variables. In this VM,
+              use the documented <code>env -u PGUSER ...</code> prefix for node and npm commands.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="structure">
+        <h2>Repository Structure</h2>
+        <p>
+          The codebase is organized around a conventional Express layering model plus a separate simulation domain.
+          The canonical file map is maintained in <a href="../LIVING_ARCHITECTURE.md"><code>LIVING_ARCHITECTURE.md</code></a>.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Area</th>
+                <th>Files</th>
+                <th>Responsibility</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Entry and config</td>
+                <td><code>listen.js</code>, <code>package.json</code>, <code>jest.config.js</code>, <code>monitor.js</code></td>
+                <td>Application boot, scripts, test runner config, standalone monitoring utility.</td>
+              </tr>
+              <tr>
+                <td>Routes</td>
+                <td><code>routes/*.js</code></td>
+                <td>Express route declarations. They are intentionally thin and delegate to controllers.</td>
+              </tr>
+              <tr>
+                <td>Controllers</td>
+                <td><code>controllers/*.js</code></td>
+                <td>HTTP request parsing, response shaping, validation, and calling models or simulation singletons.</td>
+              </tr>
+              <tr>
+                <td>Services</td>
+                <td><code>services/*.js</code></td>
+                <td>Extracted helper logic for fixtures, live snapshots, and admin operations. Some controllers still contain equivalent logic directly.</td>
+              </tr>
+              <tr>
+                <td>Models</td>
+                <td><code>models/*.js</code></td>
+                <td>Database access classes around teams, players, fixtures, odds, match events, and match reports.</td>
+              </tr>
+              <tr>
+                <td>Game logic</td>
+                <td><code>gamelogic/*.js</code>, <code>gamelogic/simulation/*.js</code></td>
+                <td>Odds calculation, legacy one-shot fixture simulation, and the current live tournament simulator.</td>
+              </tr>
+              <tr>
+                <td>Database</td>
+                <td><code>db/*.js</code>, <code>db/migrations/*.sql</code>, <code>db/data/*.js</code></td>
+                <td>Connection setup, seed scripts, migrations, and team/player seed data.</td>
+              </tr>
+              <tr>
+                <td>Tests</td>
+                <td><code>__tests__/</code>, <code>test-helpers/</code></td>
+                <td>Unit, integration, and API route tests with database setup helpers.</td>
+              </tr>
+              <tr>
+                <td>Documentation</td>
+                <td><code>docs/</code>, <code>README.md</code>, <code>AGENTS.md</code></td>
+                <td>Setup, API reference, architecture notes, troubleshooting, and operational runbooks.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Dependency Direction</h3>
+        <p>
+          Normal API requests move from route to controller to model. The simulation path is slightly different:
+          admin or startup code initializes the singleton loop, the loop owns active <code>LiveMatch</code> instances,
+          and the event bus persists and broadcasts events.
+        </p>
+      </section>
+
+      <section class="section" id="request-flow">
+        <h2>HTTP Request Flow</h2>
+        <div class="flow">
+          <div class="flow-step">
+            <b>1</b>
+            <div>
+              <strong>Express receives the request.</strong>
+              <span><code>listen.js</code> parses JSON, applies CORS, and sends anything under <code>/api</code> to <code>routes/index.js</code>.</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <b>2</b>
+            <div>
+              <strong>The route module chooses a controller.</strong>
+              <span>Example: <code>GET /api/fixtures/:id/events</code> calls <code>getMatchEvents</code> in <code>fixtureController.js</code>.</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <b>3</b>
+            <div>
+              <strong>The controller validates and orchestrates.</strong>
+              <span>Controllers parse params and query strings, enforce simple validation, call models or simulation singletons, and shape JSON responses.</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <b>4</b>
+            <div>
+              <strong>Models execute SQL.</strong>
+              <span>Models use parameterized queries through <code>db/connection.js</code>. Some bulk inserts use <code>pg-format</code>.</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <b>5</b>
+            <div>
+              <strong>The controller returns JSON or SSE.</strong>
+              <span>REST endpoints return JSON. <code>/api/live/events</code> keeps the response open and writes SSE messages.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="api">
+        <h2>API Surface</h2>
+        <p>
+          The API base is <code>http://localhost:9001/api</code> in development. Public read endpoints are open.
+          Admin endpoints are open outside production and require <code>DEV_ADMIN=true</code> or a matching
+          <code>x-admin-secret</code> header in production.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Namespace</th>
+                <th>Routes</th>
+                <th>Controller</th>
+                <th>Main behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>/api</code></td>
+                <td><code>GET /</code></td>
+                <td><code>routes/index.js</code></td>
+                <td>Smoke response: <code>{ msg: "ok" }</code>.</td>
+              </tr>
+              <tr>
+                <td><code>/api/teams</code></td>
+                <td><code>GET /</code>, <code>GET /3jcup</code>, <code>GET /stats</code></td>
+                <td><code>teamController.js</code></td>
+                <td>Team list with ratings, top JCup standings, and aggregate team stats.</td>
+              </tr>
+              <tr>
+                <td><code>/api/players</code></td>
+                <td><code>GET /</code>, <code>GET /team/:teamName</code>, <code>GET /:playerId</code></td>
+                <td><code>playerController.js</code></td>
+                <td>Player list, player by ID, and players by team name.</td>
+              </tr>
+              <tr>
+                <td><code>/api/fixtures</code></td>
+                <td><code>POST /</code>, <code>POST /batch</code>, <code>GET /</code>, <code>GET /:id</code>, <code>DELETE /:id</code></td>
+                <td><code>fixtureController.js</code></td>
+                <td>Create, list, inspect, and delete fixtures. Listing supports filters such as <code>status</code>, <code>teamId</code>, <code>round</code>, and <code>tournamentId</code>.</td>
+              </tr>
+              <tr>
+                <td><code>/api/fixtures</code></td>
+                <td><code>GET /:id/odds</code>, <code>POST /:id/odds/calculate</code>, <code>POST /:id/simulate</code></td>
+                <td><code>fixtureController.js</code></td>
+                <td>Retrieve or recalculate odds. The simulate route uses the deprecated synchronous <code>SimulationEngine</code>.</td>
+              </tr>
+              <tr>
+                <td><code>/api/fixtures</code></td>
+                <td><code>GET /:id/report</code>, <code>GET /:id/events</code>, <code>GET /:id/goals</code></td>
+                <td><code>fixtureController.js</code></td>
+                <td>Post-match statistics, persisted match events, and goal-only event history.</td>
+              </tr>
+              <tr>
+                <td><code>/api/live</code></td>
+                <td><code>GET /events</code>, <code>GET /status</code>, <code>GET /tournament</code>, <code>GET /matches</code>, <code>GET /matches/:fixtureId</code>, <code>GET /fixtures</code>, <code>GET /events/recent</code></td>
+                <td><code>liveController.js</code></td>
+                <td>SSE stream, current loop status, current tournament snapshot, active match snapshots, enriched fixture list, and recent event replay.</td>
+              </tr>
+              <tr>
+                <td><code>/api/admin</code></td>
+                <td><code>POST /simulation/start</code>, <code>POST /simulation/stop</code>, <code>POST /tournament/start</code>, <code>POST /tournament/cancel</code>, <code>POST /tournament/skip-to-round</code>, <code>POST /clock/*</code>, <code>POST /match/:fixtureId/*</code>, <code>GET /state</code></td>
+                <td><code>adminController.js</code></td>
+                <td>Start, stop, pause, resume, speed up, inspect, skip, force-score, and force-end the live simulator.</td>
+              </tr>
+              <tr>
+                <td><code>/api/diagnostic</code></td>
+                <td><code>GET /</code>, <code>POST /seed</code></td>
+                <td><code>diagnosticController.js</code></td>
+                <td>Database status, table counts, sample rows, and manual seed trigger.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section" id="database">
+        <h2>Database Layer</h2>
+        <p>
+          <a href="../db/connection.js"><code>db/connection.js</code></a> exports a PostgreSQL pool. Every model imports that pool
+          and performs SQL directly. The schema is created by <a href="../db/seed.js"><code>db/seed.js</code></a> for a fresh
+          database and extended through SQL migrations in <code>db/migrations/</code>.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Table</th>
+                <th>Owned by</th>
+                <th>Purpose</th>
+                <th>Important fields</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>teams</code></td>
+                <td><code>TeamModel</code></td>
+                <td>Team identity and long-term tournament statistics.</td>
+                <td><code>wins</code>, <code>losses</code>, <code>goals_for</code>, <code>goals_against</code>, <code>jcups_won</code>, <code>runner_ups</code>, <code>recent_form</code>, <code>goal_diff</code>.</td>
+              </tr>
+              <tr>
+                <td><code>players</code></td>
+                <td><code>PlayerModel</code></td>
+                <td>Players attached to teams, including the goalkeeper marker.</td>
+                <td><code>attack</code>, <code>defense</code>, <code>is_goalkeeper</code>.</td>
+              </tr>
+              <tr>
+                <td><code>fixtures</code></td>
+                <td><code>FixtureModel</code></td>
+                <td>Scheduled, live, and completed matches, including bracket slots.</td>
+                <td><code>tournament_id</code>, <code>round</code>, <code>status</code>, scores, penalties, <code>winner_team_id</code>, <code>bracket_slot</code>, <code>feeds_into</code>.</td>
+              </tr>
+              <tr>
+                <td><code>match_events</code></td>
+                <td><code>MatchEventModel</code></td>
+                <td>Persisted timeline events for each fixture.</td>
+                <td><code>event_type</code>, <code>minute</code>, <code>second</code>, <code>team_id</code>, <code>player_id</code>, <code>bundle_id</code>, <code>metadata</code>, <code>seq</code>, <code>server_timestamp</code>.</td>
+              </tr>
+              <tr>
+                <td><code>match_reports</code></td>
+                <td><code>MatchReportModel</code></td>
+                <td>Aggregate post-match statistics.</td>
+                <td>Possession, shots, xG, corners, fouls, cards, extra-time flag, penalties flag.</td>
+              </tr>
+              <tr>
+                <td><code>fixture_odds</code></td>
+                <td><code>OddsModel</code></td>
+                <td>Pre-match probabilities and decimal odds.</td>
+                <td>Home and away probabilities, odds, margin, JSON factors.</td>
+              </tr>
+              <tr>
+                <td><code>tournament_state</code></td>
+                <td>Migration only</td>
+                <td>Planned/persisted tournament lifecycle state.</td>
+                <td><code>state</code>, <code>current_round</code>, timing fields, and <code>total_match_minutes</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Model Responsibilities</h3>
+        <div class="three-col">
+          <div class="mini-card">
+            <strong><code>TeamModel</code></strong>
+            <span>Builds team DTOs with derived ratings from player rows, updates wins/losses/goals, JCup wins, runner-up counts, highest round, and stats tables.</span>
+          </div>
+          <div class="mini-card">
+            <strong><code>FixtureModel</code></strong>
+            <span>Creates fixtures with nullable teams for TBD bracket slots, filters fixture lists, completes matches, and fills next-round home or away slots.</span>
+          </div>
+          <div class="mini-card">
+            <strong><code>MatchEventModel</code></strong>
+            <span>Inserts single or batch events, retrieves by fixture/type/bundle, supports live catch-up by event ID, and formats events for API responses.</span>
+          </div>
+          <div class="mini-card">
+            <strong><code>MatchReportModel</code></strong>
+            <span>Stores final stat lines and returns combined fixture/report details for report endpoints.</span>
+          </div>
+          <div class="mini-card">
+            <strong><code>OddsModel</code></strong>
+            <span>Creates, updates, upserts, deletes, and formats odds rows.</span>
+          </div>
+          <div class="mini-card">
+            <strong><code>UserModel</code></strong>
+            <span>Placeholder for future authentication work. It currently exports an empty object.</span>
+          </div>
+        </div>
+
+        <h3>Seeding and Migrations</h3>
+        <p>
+          <code>npm run seed</code> executes <code>db/run-seed.js</code>, which drops and recreates the core tables,
+          creates indexes and a <code>goal_diff</code> trigger, then inserts team/player seed data. Migrations add or
+          alter match system features over time, including bracket fields, tournament state, expanded event types,
+          sequence fields, and chain narrative event types.
+        </p>
+      </section>
+
+      <section class="section" id="simulation">
+        <h2>Simulation System</h2>
+        <p>
+          The current live simulator lives in <code>gamelogic/simulation/</code>. Its central design is a singleton
+          <code>SimulationLoop</code> that ticks once per second, delegates tournament lifecycle work to
+          <code>TournamentManager</code>, and ticks each active <code>LiveMatch</code>.
+        </p>
+
+        <pre><code>Admin or auto-start
+  -> getSimulationLoop()
+  -> getEventBus()
+  -> new TournamentManager(rules)
+  -> loop.init({ tournamentManager, eventBus })
+  -> loop.start()
+  -> loop.tick() every second
+      -> tournamentManager.tick(now)
+      -> liveMatch.tick(now)
+      -> eventBus.emit(event)
+      -> tournamentManager.onMatchFinalized(result)</code></pre>
+
+        <h3>SimulationLoop</h3>
+        <p>
+          <a href="../gamelogic/simulation/SimulationLoop.js"><code>SimulationLoop.js</code></a> is responsible for process-local
+          simulation coordination. It stores the active matches in a <code>Map</code>, exposes admin controls such as
+          pause/resume/speed/force-end/force-score, attempts recovery on start, and emits tournament-level events
+          through the event bus when rounds and fixtures change.
+        </p>
+
+        <h3>TournamentManager</h3>
+        <p>
+          <a href="../gamelogic/simulation/TournamentManager.js"><code>TournamentManager.js</code></a> owns the tournament state machine.
+          It loads teams, creates a tournament ID, shuffles teams, pre-generates the full bracket, starts each round,
+          collects winners, updates team history, records the final winner/runner-up, and supports recovery from
+          recent fixtures after restart.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>State group</th>
+                <th>States</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Idle/setup</td>
+                <td><code>IDLE</code>, <code>SETUP</code></td>
+                <td>No active tournament, or teams and bracket fixtures are being prepared.</td>
+              </tr>
+              <tr>
+                <td>Playing rounds</td>
+                <td><code>ROUND_OF_16</code>, <code>QUARTER_FINALS</code>, <code>SEMI_FINALS</code>, <code>FINAL</code></td>
+                <td>Live matches are created and ticked for the current round.</td>
+              </tr>
+              <tr>
+                <td>Breaks</td>
+                <td><code>QF_BREAK</code>, <code>SF_BREAK</code>, <code>FINAL_BREAK</code>, <code>TOURNAMENT_BREAK</code></td>
+                <td>Timer-driven pauses between rounds or between tournaments in continuous mode.</td>
+              </tr>
+              <tr>
+                <td>Results</td>
+                <td><code>RESULTS</code>, <code>COMPLETE</code></td>
+                <td>Winner and runner-up are determined, team stats are updated, and state is cleared for the next tournament.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>BracketManager</h3>
+        <p>
+          <a href="../gamelogic/simulation/BracketManager.js"><code>BracketManager.js</code></a> creates all 15 bracket fixtures at
+          tournament setup time. Round of 16 fixtures are assigned teams immediately. Quarter-final, semi-final,
+          and final fixtures start with nullable team IDs and are filled as winners advance through
+          <code>bracket_slot</code> and <code>feeds_into</code>.
+        </p>
+
+        <pre><code>R16_1 -> QF1 home      R16_2 -> QF1 away
+R16_3 -> QF2 home      R16_4 -> QF2 away
+R16_5 -> QF3 home      R16_6 -> QF3 away
+R16_7 -> QF4 home      R16_8 -> QF4 away
+QF1   -> SF1 home      QF2   -> SF1 away
+QF3   -> SF2 home      QF4   -> SF2 away
+SF1   -> FINAL home    SF2   -> FINAL away</code></pre>
+
+        <h3>LiveMatch</h3>
+        <p>
+          <a href="../gamelogic/simulation/LiveMatch.js"><code>LiveMatch.js</code></a> simulates one fixture. It maps real ticks to match
+          minutes, transitions through match phases, loads players, delegates event creation to <code>EventGenerator</code>,
+          delegates shootouts to <code>PenaltyShootout</code>, updates fixture scores during play, finalizes the fixture,
+          writes the match report, updates team statistics, and advances winners into the bracket.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Match state</th>
+                <th>Default tick range</th>
+                <th>Match minutes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>FIRST_HALF</code></td>
+                <td>0 to 239 seconds</td>
+                <td>1 to 45</td>
+              </tr>
+              <tr>
+                <td><code>HALFTIME</code></td>
+                <td>240 to 299 seconds</td>
+                <td>45</td>
+              </tr>
+              <tr>
+                <td><code>SECOND_HALF</code></td>
+                <td>300 to 539 seconds</td>
+                <td>46 to 90</td>
+              </tr>
+              <tr>
+                <td><code>EXTRA_TIME_1</code>, <code>ET_HALFTIME</code>, <code>EXTRA_TIME_2</code></td>
+                <td>After 90 minutes if a knockout match is drawn</td>
+                <td>91 to 120</td>
+              </tr>
+              <tr>
+                <td><code>PENALTIES</code></td>
+                <td>After extra time if still tied</td>
+                <td>120</td>
+              </tr>
+              <tr>
+                <td><code>FINISHED</code></td>
+                <td>After winner is known</td>
+                <td>Final minute</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>EventGenerator and PenaltyShootout</h3>
+        <p>
+          <code>EventGenerator</code> handles minute-level play simulation: possession, fouls, cards, attacks,
+          penalties, shots, saves, misses, goals, xG, momentum, pressure, and narrative payloads.
+          <code>PenaltyShootout</code> handles staged walkups, outcomes, reactions, standard five-round shootouts,
+          sudden death, and instant shootouts for forced endings.
+        </p>
+
+        <h3>Legacy SimulationEngine</h3>
+        <p>
+          <a href="../gamelogic/SimulationEngine.js"><code>SimulationEngine.js</code></a> is marked deprecated and only backs
+          <code>POST /api/fixtures/:id/simulate</code>. It runs a whole fixture synchronously and persists the result.
+          New live tournament behavior should be implemented in <code>LiveMatch</code>, <code>EventGenerator</code>,
+          <code>PenaltyShootout</code>, <code>TournamentManager</code>, or adjacent simulation modules.
+        </p>
+      </section>
+
+      <section class="section" id="events">
+        <h2>Events and SSE</h2>
+        <p>
+          <a href="../gamelogic/simulation/EventBus.js"><code>EventBus.js</code></a> is the central live event hub. It accepts raw
+          events from matches and the tournament manager, normalizes them, assigns a monotonically increasing
+          <code>seq</code>, stamps <code>serverTimestamp</code>, categorizes by type, buffers recent events, persists eligible
+          match events, and writes matching events to connected SSE clients.
+        </p>
+
+        <pre><code>LiveMatch or TournamentManager event
+  -> EventBus._normalizeEvent()
+  -> seq and serverTimestamp assigned
+  -> buffered in memory
+  -> persisted if scope=match and type is persistable
+  -> broadcast to SSE clients whose filters match
+  -> emitted internally through EventEmitter</code></pre>
+
+        <h3>SSE Client Flow</h3>
+        <p>
+          <code>GET /api/live/events</code> accepts filters: <code>tournamentId</code>, <code>fixtureId</code>,
+          <code>category</code>, and <code>afterSeq</code>. The event bus stores each client response in a map,
+          sends a <code>connected</code> event, then writes events as:
+        </p>
+
+        <pre><code>event: goal
+data: {"seq":12,"scope":"match","fixtureId":42,"type":"goal",...}</code></pre>
+
+        <h3>Event Shape</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>scope</code></td>
+                <td><code>match</code>, <code>tournament</code>, or <code>system</code>.</td>
+              </tr>
+              <tr>
+                <td><code>tournamentId</code></td>
+                <td>Current tournament identifier when available.</td>
+              </tr>
+              <tr>
+                <td><code>fixtureId</code></td>
+                <td>Fixture identifier for match-scoped events.</td>
+              </tr>
+              <tr>
+                <td><code>minute</code></td>
+                <td>Match minute for match-scoped events. Tournament/system events use <code>null</code>.</td>
+              </tr>
+              <tr>
+                <td><code>type</code></td>
+                <td>Canonical event type from <code>gamelogic/constants.js</code>.</td>
+              </tr>
+              <tr>
+                <td><code>category</code></td>
+                <td>Array of categories such as <code>flow</code>, <code>highlights</code>, <code>goals</code>, <code>cards</code>, <code>shootout</code>, <code>tournament</code>, or <code>result</code>.</td>
+              </tr>
+              <tr>
+                <td><code>payload</code></td>
+                <td>Event-specific data. The bus folds unknown top-level raw event keys into this object.</td>
+              </tr>
+              <tr>
+                <td><code>seq</code></td>
+                <td>In-memory event sequence used for ordering and reconnect catch-up.</td>
+              </tr>
+              <tr>
+                <td><code>serverTimestamp</code></td>
+                <td>Epoch milliseconds assigned by the event bus.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Persistence Rules</h3>
+        <p>
+          Only events with <code>scope === "match"</code>, a non-null <code>fixtureId</code>, and a type included in
+          <code>PERSISTABLE_MATCH_EVENT_TYPES</code> are inserted into <code>match_events</code>. Persistence is fire-and-forget:
+          a database error is logged but does not crash the live simulation.
+        </p>
+      </section>
+
+      <section class="section" id="odds">
+        <h2>Odds Engine</h2>
+        <p>
+          <a href="../gamelogic/OddsEngine.js"><code>OddsEngine.js</code></a> calculates two-outcome decimal odds for fixtures.
+          It combines recent form, team attack/defense ratings, goal difference, goalkeeper rating, and a small home
+          advantage, then applies a configurable margin. The default controller and service instantiate it with a
+          <code>0.05</code> margin.
+        </p>
+
+        <div class="two-col">
+          <div class="mini-card">
+            <strong>Inputs</strong>
+            <span>Team rating DTOs from <code>Team.getRatingById</code> and recent form from <code>Fixture.getTeamForm</code>.</span>
+          </div>
+          <div class="mini-card">
+            <strong>Outputs</strong>
+            <span><code>homeWinProb</code>, <code>awayWinProb</code>, decimal odds, margin, and JSON factors explaining the calculation.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="tests">
+        <h2>Tests</h2>
+        <p>
+          Jest is configured in <a href="../jest.config.js"><code>jest.config.js</code></a>. Tests are split into unit tests,
+          integration tests, and API route tests. Supertest is used for route-level checks. Database-backed tests use
+          setup helpers to seed and clean the test database.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Command</th>
+                <th>Scope</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>npm test</code></td>
+                <td>All Jest tests.</td>
+              </tr>
+              <tr>
+                <td><code>npm run test:unit</code></td>
+                <td>Unit tests for controllers, models, and simulation modules.</td>
+              </tr>
+              <tr>
+                <td><code>npm run test:integration</code></td>
+                <td>Integration tests against controller/database behavior and event persistence.</td>
+              </tr>
+              <tr>
+                <td><code>npm run test:api</code></td>
+                <td>Route-level API tests through Express.</td>
+              </tr>
+              <tr>
+                <td><code>npm run test:coverage</code></td>
+                <td>Coverage report for models, controllers, routes, and game logic.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note warning">
+          <h3>Required command prefix in this VM</h3>
+          <p>
+            Because the VM pre-injects PostgreSQL environment variables, run tests with:
+          </p>
+          <pre><code>env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm test</code></pre>
+        </div>
+
+        <h3>Test Helpers</h3>
+        <p>
+          <code>__tests__/setup/testHelpers.js</code> provides <code>getTestApp()</code>, <code>createTestApp()</code>,
+          database setup/cleanup helpers, team/player factories, and a small SSE client for event stream tests.
+          <code>db/test-connection.js</code> enforces that the test database is named <code>footfive_test</code>.
+        </p>
+      </section>
+
+      <section class="section" id="operations">
+        <h2>Operations</h2>
+        <h3>Run the App</h3>
+        <pre><code>env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm start</code></pre>
+
+        <h3>Seed the Database</h3>
+        <pre><code>env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run seed</code></pre>
+
+        <h3>Run a Migration</h3>
+        <pre><code>env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run migrate 004_tournament_state.sql</code></pre>
+
+        <h3>Manual Simulation Startup</h3>
+        <p>
+          In local development, admin routes are open. A typical manual startup sequence is:
+        </p>
+        <pre><code>POST /api/admin/simulation/start
+POST /api/admin/tournament/start
+GET  /api/live/status
+GET  /api/live/fixtures
+GET  /api/live/events</code></pre>
+
+        <h3>Production Admin Protection</h3>
+        <p>
+          In production, <code>adminController.devAdminOnly</code> requires either <code>DEV_ADMIN=true</code>
+          or an <code>x-admin-secret</code> header matching <code>ADMIN_SECRET</code>.
+        </p>
+      </section>
+
+      <section class="section" id="change-guide">
+        <h2>Change Guide</h2>
+        <p>
+          Use these paths when making common changes. This keeps changes aligned with the existing architecture.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Change</th>
+                <th>Likely files</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Add a REST endpoint</td>
+                <td><code>routes/*Routes.js</code>, <code>controllers/*Controller.js</code>, possibly <code>models/*Model.js</code></td>
+                <td>Add a focused route, controller validation/response shaping, and model SQL if persistence is needed. Add route tests under <code>__tests__/api/routes/</code>.</td>
+              </tr>
+              <tr>
+                <td>Add a database column</td>
+                <td><code>db/migrations/*.sql</code>, <code>db/seed.js</code>, relevant model constructor/query</td>
+                <td>Keep fresh seed schema and migration path in sync. Add tests if the model or API should expose the field.</td>
+              </tr>
+              <tr>
+                <td>Add a match event type</td>
+                <td><code>gamelogic/constants.js</code>, <code>db/seed.js</code>, event type migration, event generator/emitter tests</td>
+                <td>Update <code>EVENT_TYPES</code>, category mappings, persistable set if needed, and the database CHECK constraint.</td>
+              </tr>
+              <tr>
+                <td>Change match simulation rules</td>
+                <td><code>LiveMatch.js</code>, <code>EventGenerator.js</code>, <code>PenaltyShootout.js</code>, <code>constants.js</code></td>
+                <td>Prefer changing constants or focused helper modules over adding more responsibility to controllers.</td>
+              </tr>
+              <tr>
+                <td>Change tournament structure</td>
+                <td><code>constants.js</code>, <code>BracketManager.js</code>, <code>TournamentManager.js</code>, fixture migrations if schema changes</td>
+                <td>Bracket slots, feeds, round names, and scheduling logic need to stay consistent.</td>
+              </tr>
+              <tr>
+                <td>Change live frontend contract</td>
+                <td><code>liveController.js</code>, <code>EventBus.js</code>, <code>LiveService.js</code>, docs in <code>docs/</code></td>
+                <td>Preserve additive response changes when possible because live UI code may depend on existing fields.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section" id="watch-outs">
+        <h2>Watch-outs</h2>
+        <div class="two-col">
+          <div class="note warning">
+            <h3>PG env variables</h3>
+            <p>
+              The biggest local execution trap is pre-existing <code>PG*</code> environment variables. Use the
+              <code>env -u</code> prefix for <code>node</code> and <code>npm</code> commands in this VM.
+            </p>
+          </div>
+          <div class="note warning">
+            <h3>Seed and migrations must match</h3>
+            <p>
+              Freshly seeded databases must have the same effective schema as migrated databases. This matters most for
+              <code>match_events.event_type</code> CHECK constraints and event metadata columns.
+            </p>
+          </div>
+          <div class="note">
+            <h3>Controller/service split is incomplete</h3>
+            <p>
+              <code>services/</code> contains extracted logic, but several controllers still implement equivalent logic directly.
+              When refactoring, migrate behavior carefully and keep API responses stable.
+            </p>
+          </div>
+          <div class="note">
+            <h3>Simulation state is process-local</h3>
+            <p>
+              <code>SimulationLoop</code> and <code>EventBus</code> are in-memory singletons. Horizontal scaling would require
+              shared state and shared event distribution, such as Redis or another coordination service.
+            </p>
+          </div>
+          <div class="note risk">
+            <h3>Route names and comments can drift</h3>
+            <p>
+              Verify behavior against route and controller source. Example: the <code>/api/teams/3jcup</code> path and
+              "top 3" naming do not line up cleanly with the model limit of 16.
+            </p>
+          </div>
+          <div class="note risk">
+            <h3>Export barrels need checks</h3>
+            <p>
+              <code>gamelogic/simulation/index.js</code> exports several names from <code>TournamentManager</code>.
+              Confirm those names are actually exported before depending on that barrel in new code.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Further Reading</h2>
+        <ul>
+          <li><a href="../README.md"><code>README.md</code></a> - short project entry point.</li>
+          <li><a href="../LIVING_ARCHITECTURE.md"><code>LIVING_ARCHITECTURE.md</code></a> - canonical file map.</li>
+          <li><a href="ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a> - architecture diagrams and simulation flow.</li>
+          <li><a href="API_REFERENCE.md"><code>docs/API_REFERENCE.md</code></a> - endpoint examples and response shapes.</li>
+          <li><a href="INSTALLATION.md"><code>docs/INSTALLATION.md</code></a> - setup and database instructions.</li>
+          <li><a href="TROUBLESHOOTING.md"><code>docs/TROUBLESHOOTING.md</code></a> - common operational failures.</li>
+        </ul>
+      </section>
+
+      <div class="footer">
+        Document snapshot created for the current FootFive backend repository. Open this file directly in a browser or serve it with any static file server.
+      </div>
+    </main>
+  </div>
+</body>
+</html>
