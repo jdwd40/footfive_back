@@ -92,7 +92,12 @@ const EVENT_TYPES = {
   COUNTER_BREAKDOWN: 'counter_breakdown',
   KICKOFF_RESTART: 'kickoff_restart',
   PENALTY_WALKUP: 'penalty_walkup',
-  PENALTY_RUN_UP: 'penalty_run_up'
+  PENALTY_RUN_UP: 'penalty_run_up',
+  // Stage G: CommentaryEngine contextual observation events (migration 007).
+  // Commentator-style analysis (momentum, scoreline, shaky defence, ...) —
+  // display-only, never mutates score/state, never in KEY_EVENTS so it is
+  // dropped during fast-forward.
+  MATCH_OBSERVATION: 'match_observation'
 };
 
 // Key events that should be emitted even during fast-forward
@@ -185,6 +190,9 @@ const EVENT_TYPE_TO_CATEGORIES = {
   [EVENT_TYPES.KICKOFF_RESTART]: ['flow'],
   [EVENT_TYPES.PENALTY_WALKUP]: ['flow'],
   [EVENT_TYPES.PENALTY_RUN_UP]: ['flow'],
+  // Stage G: commentator observations ride the flow feed plus their own
+  // category so clients can filter analysis lines specifically.
+  [EVENT_TYPES.MATCH_OBSERVATION]: ['flow', 'commentary'],
   connected: ['system']
 };
 
@@ -254,7 +262,9 @@ const PERSISTABLE_MATCH_EVENT_TYPES = new Set([
   // replay buffer. The result events (shootout_goal/save/miss) have been
   // persistable since Stage 0.
   EVENT_TYPES.SHOOTOUT_WALKUP,
-  EVENT_TYPES.SHOOTOUT_REACTION
+  EVENT_TYPES.SHOOTOUT_REACTION,
+  // Stage G: commentator observations (migration 007 extends the DB CHECK).
+  EVENT_TYPES.MATCH_OBSERVATION
 ]);
 
 // === Default Match Rules ===
@@ -385,6 +395,52 @@ const SIM = {
   MIDFIELD_BATTLE_COOLDOWN_MIN: 4
 };
 
+// Stage G: CommentaryEngine tuning. All observation pacing/trigger knobs live
+// here so commentary can be re-tuned without touching engine logic.
+// Minutes are simulated match minutes, not real seconds.
+const COMMENTARY = {
+  // Hard cap on match_observation events per match.
+  MAX_OBSERVATIONS_PER_MATCH: 10,
+  // Minimum gap between any two observations.
+  MIN_MINUTES_BETWEEN_OBSERVATIONS: 5,
+  // Same subtype can't repeat within this window.
+  SUBTYPE_COOLDOWN_MINUTES: 15,
+  // Same team can't be the subject of two observations within this window.
+  TEAM_COOLDOWN_MINUTES: 10,
+  // Rolling window for pressure/momentum signal counting.
+  PRESSURE_WINDOW_MINUTES: 8,
+  // Attacking signals (shots/corners/chances/counters) in the window needed
+  // to call a team's spell of pressure.
+  PRESSURE_SIGNAL_TRIGGER: 3,
+  // Signals *against* a team before it is called shaky at the back.
+  SHAKY_SIGNAL_TRIGGER: 4,
+  // Two goals conceded within this window reads as warning signs / collapse.
+  QUICK_CONCEDE_WINDOW_MINUTES: 10,
+  // From this minute the engine may call late drama.
+  LATE_DRAMA_FROM_MINUTE: 75,
+  // Overall-rating gap that makes one side the on-paper favourite.
+  FAVOURITE_RATING_GAP: 8,
+  // Don't praise a team's momentum this soon after it conceded (and don't
+  // call a team shaky this soon after it scored) — contradiction guard.
+  CONTRADICTION_GUARD_MINUTES: 3
+};
+
+// Stage G: match_observation subtypes. Exported so tests and future UI
+// severity mapping share one source of truth.
+const OBSERVATION_SUBTYPES = {
+  MOMENTUM: 'momentum',
+  PRESSURE: 'pressure',
+  SHAKY_DEFENCE: 'shaky_defence',
+  SCORELINE: 'scoreline',
+  UNDERDOG: 'underdog',
+  FAVOURITE_CONTROL: 'favourite_control',
+  LATE_PRESSURE: 'late_pressure',
+  COMEBACK: 'comeback',
+  COLLAPSE: 'collapse',
+  WARNING_SIGNS: 'warning_signs',
+  GAME_STATE: 'game_state'
+};
+
 // Stage 2: which event types are flow/filler. Used by the silence detector
 // to pick a type and by tests/observability to identify ambient commentary.
 // Already in PERSISTABLE_MATCH_EVENT_TYPES (see Stage 0 migration 005).
@@ -441,5 +497,7 @@ module.exports = {
   EVENT_CATEGORIES,
   PERSISTABLE_MATCH_EVENT_TYPES,
   FLOW_EVENT_TYPES,
-  CHAIN_PACING
+  CHAIN_PACING,
+  COMMENTARY,
+  OBSERVATION_SUBTYPES
 };

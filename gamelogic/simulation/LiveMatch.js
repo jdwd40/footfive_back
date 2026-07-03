@@ -18,6 +18,7 @@ const {
 
 const { EventGenerator } = require('./EventGenerator');
 const { PenaltyShootout } = require('./PenaltyShootout');
+const { CommentaryEngine } = require('./CommentaryEngine');
 
 // Stage 1: friendly phase string per MATCH_STATE for snapshot consumers
 // that prefer a normalised, lower-case label over the raw enum.
@@ -126,6 +127,18 @@ class LiveMatch {
       this._getShootoutContext(),
       this._createEvent.bind(this),
       this._eventGenerator._selectScorer.bind(this._eventGenerator)
+    );
+
+    // Stage G: centralised commentary — varied wording for existing events
+    // plus occasional match_observation analysis events. Display-only.
+    this._commentary = new CommentaryEngine(
+      {
+        fixtureId: this.fixtureId,
+        homeTeam: this.homeTeam,
+        awayTeam: this.awayTeam,
+        score: this.score
+      },
+      this._createEvent.bind(this)
     );
   }
 
@@ -508,6 +521,21 @@ class LiveMatch {
       const flow = this._maybeEmitFlowEvent();
       if (flow) events.push(flow);
     }
+
+    // Stage G: commentary pass. Decoration rewrites only `description` on
+    // supported types; observation may append at most one match_observation
+    // per tick. Observations are suppressed during fast-forward (the engine
+    // still ingests events so its rolling context stays warm) and outside
+    // active play/shootout.
+    for (const evt of events) {
+      this._commentary.decorate(evt);
+    }
+    const allowObservation = !this.isFastForwarding &&
+      (this._isPlayState() || this.state === MATCH_STATES.PENALTIES);
+    const observation = this._commentary.observe(events, this.getMatchMinute(), {
+      allowEmit: allowObservation
+    });
+    if (observation) events.push(observation);
 
     return events;
   }
