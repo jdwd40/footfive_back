@@ -50,10 +50,6 @@ module.exports = {
   // Verbose output
   verbose: true,
 
-  // Force exit after tests complete
-  forceExit: true,
-
   // Detect open handles
   detectOpenHandles: true
 };
-

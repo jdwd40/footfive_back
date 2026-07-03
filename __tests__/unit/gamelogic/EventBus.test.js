@@ -13,7 +13,8 @@ describe('EventBus', () => {
     eventBus = new EventBus();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await eventBus.waitForPersistence();
     eventBus.clear();
   });
 
@@ -271,11 +272,18 @@ describe('EventBus', () => {
         expect(clientId).toMatch(/^client_\d+$/);
       });
 
-      it('should send connected event', () => {
+      it('should send connected event as a data-only frame', () => {
         eventBus.addClient(mockRes);
 
-        expect(mockRes.write).toHaveBeenCalledWith('event: connected\n');
-        expect(mockRes.write).toHaveBeenCalledWith(expect.stringContaining('data: '));
+        const writes = mockRes.write.mock.calls.map(c => String(c[0]));
+        // No named frames: a data-only message reaches EventSource.onmessage
+        // regardless of type, so new event types are never silently dropped.
+        expect(writes.some(w => w.startsWith('event: '))).toBe(false);
+        const dataFrame = writes.find(w => w.startsWith('data: '));
+        expect(dataFrame).toBeDefined();
+        expect(dataFrame.endsWith('\n\n')).toBe(true);
+        const parsed = JSON.parse(dataFrame.slice('data: '.length).trim());
+        expect(parsed.type).toBe('connected');
       });
 
       it('should register close handler', () => {
@@ -342,6 +350,25 @@ describe('EventBus', () => {
         expect(mockRes2.write).not.toHaveBeenCalled();
       });
 
+      it('broadcasts any event type as a valid data-only SSE frame', () => {
+        eventBus.addClient(mockRes);
+        mockRes.write.mockClear();
+
+        // Type deliberately not in any frontend whitelist — must still be
+        // deliverable via EventSource.onmessage (default message).
+        eventBus.emit({ type: 'var_check', fixtureId: 1, minute: 63 });
+
+        expect(mockRes.write).toHaveBeenCalledTimes(1);
+        const frame = String(mockRes.write.mock.calls[0][0]);
+        expect(frame.startsWith('data: ')).toBe(true);
+        expect(frame.endsWith('\n\n')).toBe(true);
+        expect(frame.includes('event: ')).toBe(false);
+        const parsed = JSON.parse(frame.slice('data: '.length).trim());
+        expect(parsed.type).toBe('var_check');
+        expect(parsed.fixtureId).toBe(1);
+        expect(typeof parsed.seq).toBe('number');
+      });
+
       it('should filter by tournamentId', () => {
         const mockRes2 = { writeHead: jest.fn(), write: jest.fn(), on: jest.fn(), flushHeaders: jest.fn(), writable: true };
 
@@ -370,7 +397,7 @@ describe('EventBus', () => {
         eventBus.sendCatchup(clientId, 0); // Get events after seq 0
 
         // Should receive 2 events (seq 1 and 2)
-        expect(mockRes.write).toHaveBeenCalledTimes(4); // 2 events * 2 writes each
+        expect(mockRes.write).toHaveBeenCalledTimes(2); // 2 events * 1 data-only frame each
       });
 
       it('should respect client filters in catchup', () => {
@@ -383,7 +410,7 @@ describe('EventBus', () => {
         eventBus.sendCatchup(clientId, -1);
 
         // Should only receive fixture 1 event
-        expect(mockRes.write).toHaveBeenCalledTimes(2); // 1 event * 2 writes
+        expect(mockRes.write).toHaveBeenCalledTimes(1); // 1 event * 1 data-only frame
       });
     });
   });
@@ -405,8 +432,7 @@ describe('EventBus', () => {
         displayName: 'Test Player'
       });
 
-      // Wait for async persistence
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await eventBus.waitForPersistence();
 
       expect(MatchEvent.create).toHaveBeenCalledWith(expect.objectContaining({
         fixtureId: 1,
@@ -423,7 +449,7 @@ describe('EventBus', () => {
         minute: 45
       });
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await eventBus.waitForPersistence();
 
       expect(MatchEvent.create).toHaveBeenCalled();
     });
@@ -434,7 +460,7 @@ describe('EventBus', () => {
         tournamentId: 100
       });
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await eventBus.waitForPersistence();
 
       expect(MatchEvent.create).not.toHaveBeenCalled();
     });
@@ -446,7 +472,7 @@ describe('EventBus', () => {
         // No fixtureId
       });
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await eventBus.waitForPersistence();
 
       expect(MatchEvent.create).not.toHaveBeenCalled();
     });
@@ -455,7 +481,7 @@ describe('EventBus', () => {
       eventBus.emit({ type: 'goal', fixtureId: 1 });
       eventBus.emit({ type: 'goal', fixtureId: 1 });
 
-      await new Promise(resolve => setTimeout(resolve, 20));
+      await eventBus.waitForPersistence();
 
       expect(eventBus.stats.eventsPersisted).toBe(2);
     });
@@ -468,7 +494,7 @@ describe('EventBus', () => {
         teamId: 5
       });
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await eventBus.waitForPersistence();
 
       expect(MatchEvent.create).toHaveBeenCalledWith(expect.objectContaining({
         seq: 0,
@@ -491,7 +517,7 @@ describe('EventBus', () => {
         teamId: 5
       });
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await eventBus.waitForPersistence();
 
       expect(errorSpy).toHaveBeenCalledWith(
         '[EventBus] Failed to persist event',
@@ -522,7 +548,7 @@ describe('EventBus', () => {
       const second = eventBus.emit({ type: 'goal', fixtureId: 1, minute: 6 });
       expect(second.seq).toBe(1);
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await eventBus.waitForPersistence();
       errorSpy.mockRestore();
     });
   });
