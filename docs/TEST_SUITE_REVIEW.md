@@ -450,14 +450,14 @@ The current warnings indicate that at least one test leaves asynchronous work ru
 
 ## Existing test docs are stale
 
-The repository already has:
+The repository keeps these superseded historical docs in `retired_docs/`:
 
-- `docs/TEST_AUDIT.md`
-- `docs/TEST_COVERAGE.md`
+- `retired_docs/TEST_AUDIT.md`
+- `retired_docs/TEST_COVERAGE.md`
 
-Those files appear stale in places. They reference older endpoints and test files that do not match the current test inventory. For example, they mention old `/api/jcup/init` behavior and a `MatchSimulator.test.js` file that is not present in the current test tree.
+Those files are stale in places. They reference older endpoints and test files that do not match the current route and test inventory.
 
-Recommendation: after this review is accepted, either replace those docs with this current review or clearly mark them as historical.
+They are retained for context only. Use this file as the current test-suite review.
 
 ## File-by-file assessment
 

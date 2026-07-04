@@ -407,6 +407,9 @@ const COMMENTARY = {
   SUBTYPE_COOLDOWN_MINUTES: 15,
   // Same team can't be the subject of two observations within this window.
   TEAM_COOLDOWN_MINUTES: 10,
+  // Chance a player-less flow step (build-up / counter) gets a named player
+  // stamped for a player-led line; the rest stay team-only for variety.
+  FLOW_PLAYER_LINE_CHANCE: 0.6,
   // Rolling window for pressure/momentum signal counting.
   PRESSURE_WINDOW_MINUTES: 8,
   // Attacking signals (shots/corners/chances/counters) in the window needed

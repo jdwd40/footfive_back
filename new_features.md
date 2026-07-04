@@ -2,6 +2,36 @@
 
 Live-match commentary / event-generation improvements. Newest first.
 
+## More varied event messages (2026-07-04)
+
+Generic flow-chain commentary is now varied, player-aware and more
+football-like. `CommentaryEngine.decorate` gained template pools for
+`midfield_battle`, `goal_build_up` (per chain phase: `push_forward` /
+`beat_defender` / `force_issue`), `attack_breakdown`, `counter_attack`,
+`counter_breakdown`, `kickoff_restart` and the pre-corner block-behind
+`defensive_action`, plus extra variants for `shot_saved` / `shot_missed` /
+`shot_blocked`.
+
+```
+D. Kaimana surges forward for Port Hilo.        (goal_build_up, push_forward)
+R. Okoye leaves a defender chasing shadows.     (goal_build_up, beat_defender)
+Virgin slam the door shut on Port Hilo.         (attack_breakdown)
+E. Quill leads the break for Virgin!            (counter_attack)
+Virgin kick off again, looking for a response.  (kickoff_restart)
+```
+
+- Player-less build-up / counter steps may get an attack-weighted outfield
+  player stamped (`playerId` / `displayName`) so lines can name a player;
+  chance tuned via `COMMENTARY.FLOW_PLAYER_LINE_CHANCE`. Team-only fallbacks
+  apply when no player data exists — no "undefined" ever.
+- Breakdown lines keep the defender as the event's team (`teamId` / `side`
+  unchanged); the frontend resolves parties from structured `side`, so the
+  legacy description regexes are unaffected (fallback for old events only).
+- Chain metadata (`bundleId`, `bundleStep`, `chain_type`, `chain_terminal`,
+  `pacing`), score handling and event ordering are untouched.
+- Frontend `EventFeed` no longer discards flow-event descriptions that name
+  the player instead of the team, so player-led lines display as headlines.
+
 ## Shot build-up before every shot result (2026-06-29)
 
 Every normal in-match shot now emits a short build-up event immediately before

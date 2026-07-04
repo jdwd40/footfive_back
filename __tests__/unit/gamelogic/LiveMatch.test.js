@@ -679,6 +679,11 @@ describe('LiveMatch', () => {
         MATCH_STATES.FINISHED
       ]) {
         armSilence(match, { ticksSinceLast: farPastThreshold });
+        // SCHEDULED auto-transitions to FIRST_HALF inside _processTick, and
+        // EventGenerator can then randomly emit play events whose corner
+        // path includes a flow-typed defensive_action. Mark the minute as
+        // processed — this test is about the flow FILLER only.
+        match.processedMinutes.add(match.getMatchMinute());
         match.state = nonPlay;
         const events = match._processTick();
         const flowEvents = events.filter(e => FLOW_EVENT_TYPES.has(e.type));

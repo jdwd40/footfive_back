@@ -89,12 +89,13 @@
 | `gamelogic/simulation/index.js` | Module exports: SimulationLoop, LiveMatch, TournamentManager, EventBus, EventGenerator, PenaltyShootout, BracketManager, TournamentScheduler. | All simulation/* |
 | `gamelogic/simulation/SimulationLoop.js` | Singleton tick loop (1s). Ticks matches, coordinates tournament, admin controls. | EventEmitter |
 | `gamelogic/simulation/TournamentManager.js` | Tournament state machine. Setup → R16 → QF → SF → Final → Complete. | TeamModel, FixtureModel, LiveMatch, db, BracketManager, TournamentScheduler, constants |
-| `gamelogic/simulation/LiveMatch.js` | Per-match simulation. Phases, events, stats, extra time, penalties. | FixtureModel, MatchEventModel, MatchReportModel, TeamModel, PlayerModel, db, EventGenerator, PenaltyShootout, constants |
+| `gamelogic/simulation/LiveMatch.js` | Per-match simulation. Phases, events, stats, extra time, penalties. | FixtureModel, MatchEventModel, MatchReportModel, TeamModel, PlayerModel, db, EventGenerator, PenaltyShootout, CommentaryEngine, constants |
 | `gamelogic/simulation/EventBus.js` | Event distribution. Persists events, pushes to SSE clients. | EventEmitter, MatchEventModel |
 | `gamelogic/simulation/EventGenerator.js` | Generates match events (goals, shots, cards). | constants |
 | `gamelogic/simulation/PenaltyShootout.js` | Penalty shootout logic. | constants |
+| `gamelogic/simulation/CommentaryEngine.js` | Contextual match_observation commentary. | constants |
 | `gamelogic/simulation/BracketManager.js` | Bracket creation, winner advancement. | FixtureModel, TeamModel, PlayerModel, LiveMatch, constants |
-| `gamelogic/simulation/TournamentScheduler.js` | Wall-clock scheduling. | constants |
+| `gamelogic/simulation/TournamentScheduler.js` | Round-break, tournament-break, and force-mode scheduling. | constants |
 
 ---
 
@@ -117,6 +118,7 @@
 | `db/migrations/004_tournament_state.sql` | Tournament state table for event-driven scheduling. | — |
 | `db/migrations/005_expand_match_event_types.sql` | Expands match_events.valid_event_type CHECK; adds nullable seq + server_timestamp columns. | 001, 002 |
 | `db/migrations/006_expand_match_event_types.sql` | Stage A of flow-chain work. Adds chain narrative types (midfield_battle, goal_build_up, attack_breakdown, counter_breakdown, kickoff_restart, penalty_walkup, penalty_run_up) to valid_event_type CHECK. | 001, 002, 005 |
+| `db/migrations/007_add_match_observation.sql` | Adds match_observation to match_events.valid_event_type CHECK. | 001, 002, 005, 006 |
 
 ---
 
@@ -164,6 +166,7 @@
 | `__tests__/unit/controllers/liveController.test.js` | Live controller (mocked). | liveController |
 | `__tests__/unit/gamelogic/EventGenerator.test.js` | EventGenerator narrative/momentum sequence behavior. | EventGenerator |
 | `__tests__/unit/gamelogic/PenaltyShootout.test.js` | PenaltyShootout chain metadata, reaction gating, winner/sudden-death guards. | PenaltyShootout |
+| `__tests__/unit/gamelogic/CommentaryEngine.test.js` | CommentaryEngine contextual observation behavior. | CommentaryEngine |
 | `__tests__/unit/gamelogic/EventBus.test.js` | EventBus. | EventBus, MatchEventModel |
 | `__tests__/unit/gamelogic/LiveMatch.test.js` | LiveMatch simulation. | LiveMatch |
 | `__tests__/unit/gamelogic/SimulationLoop.test.js` | SimulationLoop. | SimulationLoop |
@@ -211,18 +214,19 @@
 | `docs/SIMULATION_PHASE12_UPGRADE.md` | Phase 1-2 simulation narrative upgrade and frontend changes. |
 | `docs/TOURNAMENT_SCHEDULING.md` | Tournament scheduling. |
 | `docs/TEST_SUITE_REVIEW.md` | Current review of test coverage, usefulness, redundancy, and hard-coded/mock-driven risks. |
-| `docs/TEST_AUDIT.md` | Test suite audit. |
-| `docs/TEST_COVERAGE.md` | Test coverage notes. |
 
 ---
 
-## Documentation — docs/old/
+## Documentation — retired_docs/
 
 | File | Purpose |
 |------|---------|
-| `docs/old/DEPLOYMENT.md` | Legacy deployment docs. |
-| `docs/old/TESTING.md` | Legacy testing docs. |
-| `docs/old/highlight.md` | Highlight feature notes. |
+| `retired_docs/README.md` | Index of stale/superseded documents retained for history only. |
+| `retired_docs/DEPLOYMENT.md` | Legacy deployment docs. |
+| `retired_docs/TESTING.md` | Legacy testing docs. |
+| `retired_docs/highlight.md` | Legacy highlight feature notes. |
+| `retired_docs/TEST_AUDIT.md` | Superseded test suite audit. |
+| `retired_docs/TEST_COVERAGE.md` | Superseded coverage notes. |
 
 ---
 

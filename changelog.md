@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Added** varied, player-aware commentary for generic flow events
+  (`midfield_battle`, `goal_build_up` phases, `attack_breakdown`,
+  `counter_attack`, `counter_breakdown`, `kickoff_restart`, pre-corner
+  block-behind, extra shot-result variants) via `CommentaryEngine` template
+  pools; player-less build-up/counter steps may be stamped with a picked
+  outfield player for player-led lines. (see `new_features.md`)
+- **Changed** frontend `EventFeed` to accept flow-event descriptions that name
+  the event's player (not just the team) so improved backend lines are not
+  replaced by generic frontend templates.
+- No changes to score/winner logic, round progression, shootout scoring, or
+  chain metadata.
+
 ## 2026-06-29 — Live-match attacking event polish
 
 Backend live-match event generation (`gamelogic/simulation/EventGenerator.js`):

@@ -6,8 +6,6 @@
 |----------|-------------|
 | [INSTALLATION.md](INSTALLATION.md) | Install PostgreSQL, env files, migrate, seed |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common failures (port, DB, migrations, simulation) |
-| [old/DEPLOYMENT.md](old/DEPLOYMENT.md) | Legacy VPS / deployment notes |
-| [old/TESTING.md](old/TESTING.md) | Jest layout and commands (also see repo `AGENTS.md`) |
 
 ## Architecture and API
 
@@ -18,7 +16,7 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System overview, diagrams, simulation flow |
 | [API_REFERENCE.md](API_REFERENCE.md) | HTTP endpoints (verify against `routes/` when in doubt) |
 | [new_endpoints.md](new_endpoints.md) | Fixtures-focused endpoint notes |
-| [TOURNAMENT_SCHEDULING.md](TOURNAMENT_SCHEDULING.md) | Wall-clock tournament schedule |
+| [TOURNAMENT_SCHEDULING.md](TOURNAMENT_SCHEDULING.md) | Dynamic tournament schedule |
 
 ## Features and integrations
 
@@ -28,7 +26,6 @@
 | [LIVE_MATCH_VIEW_APP.md](LIVE_MATCH_VIEW_APP.md) | Live match view notes |
 | [match-events-enhancement.md](match-events-enhancement.md) | Match event enhancements |
 | [SIMULATION_PHASE12_UPGRADE.md](SIMULATION_PHASE12_UPGRADE.md) | Phase 1-2 simulation narrative upgrade and frontend integration notes |
-| [old/highlight.md](old/highlight.md) | Highlights system (legacy doc) |
 
 ## Project history and tests
 
@@ -36,5 +33,7 @@
 |----------|-------------|
 | [latest_changes.md](latest_changes.md) | Recent change log |
 | [TEST_SUITE_REVIEW.md](TEST_SUITE_REVIEW.md) | Current review of test coverage, usefulness, redundancy, and hard-coded/mock-driven risks |
-| [TEST_AUDIT.md](TEST_AUDIT.md) | Test suite audit |
-| [TEST_COVERAGE.md](TEST_COVERAGE.md) | Coverage notes |
+
+## Retired docs
+
+Historical docs that are stale or superseded live in [../retired_docs/](../retired_docs/). Do not use them as current guidance.

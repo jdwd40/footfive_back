@@ -4,6 +4,12 @@
 
 The app connects using **the same env as when it starts**: `NODE_ENV` and `.env.{NODE_ENV}` (e.g. `.env.production`). If you run the migration with a different env or different env file, you may be writing to a **different database** than the one the running app uses. That causes errors like `relation "tournament_state" does not exist` even after “running the migration.”
 
+In this VM, unset injected PostgreSQL variables before running migrations so `dotenv` can load the intended `.env.*` file:
+
+```bash
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT <command>
+```
+
 ### 1. Use the same env as the running app
 
 On the VPS, run the migration with the **same** `NODE_ENV` (and same env vars) as your running process:
@@ -12,10 +18,10 @@ On the VPS, run the migration with the **same** `NODE_ENV` (and same env vars) a
 cd /path/to/footfive_back
 
 # If your app runs with NODE_ENV=production (e.g. pm2):
-NODE_ENV=production npm run migrate 004_tournament_state.sql
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT NODE_ENV=production npm run migrate 004_tournament_state.sql
 
 # If your app runs with NODE_ENV=development:
-NODE_ENV=development npm run migrate 004_tournament_state.sql
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT NODE_ENV=development npm run migrate 004_tournament_state.sql
 ```
 
 If you use a process manager (pm2, systemd), check how the app is started and what `NODE_ENV` and `PGDATABASE` it uses, then run the migration with the same values (e.g. create `.env.production` with the same `PGDATABASE`, `PGHOST`, etc., and run with `NODE_ENV=production`).
@@ -41,10 +47,10 @@ If `tournament_state_exists` is `false`, the app is using a database where the m
 To apply every migration in order:
 
 ```bash
-NODE_ENV=production npm run migrate 001_match_system.sql
-NODE_ENV=production npm run migrate 002_add_event_types.sql
-NODE_ENV=production npm run migrate 003_bracket_system.sql
-NODE_ENV=production npm run migrate 004_tournament_state.sql
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT NODE_ENV=production npm run migrate 001_match_system.sql
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT NODE_ENV=production npm run migrate 002_add_event_types.sql
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT NODE_ENV=production npm run migrate 003_bracket_system.sql
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT NODE_ENV=production npm run migrate 004_tournament_state.sql
 ```
 
 (Use the same `NODE_ENV` as your running app.)

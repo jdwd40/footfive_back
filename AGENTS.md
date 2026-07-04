@@ -49,8 +49,8 @@ This project has no ESLint or lint scripts.
 
 ### Database seeding / migrations
 
-- `npm run seed` — drops and recreates all tables, seeds teams + players (development DB)
-- `npm run migrate` — runs a single SQL migration file (default: `001_match_system.sql`; pass filename as arg for others)
+- `env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run seed` — drops and recreates all tables, seeds teams + players (development DB)
+- `env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run migrate` — runs a single SQL migration file (default: `001_match_system.sql`; pass filename as arg for others)
 - Migration `004_tournament_state.sql` creates the `tournament_state` table required by the simulation system. Run it after seeding if the table doesn't exist.
 
 ### Key architecture notes

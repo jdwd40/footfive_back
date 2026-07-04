@@ -13,7 +13,7 @@ const ROOT = path.join(__dirname, '..');
 const ARCH_PATH = path.join(ROOT, 'LIVING_ARCHITECTURE.md');
 const IGNORE = new Set([
   'node_modules', '.git', 'package-lock.json', '.gitignore',
-  '.cursor', '.claude', 'result.score[team2.name]',
+  '.cursor', '.claude', 'coverage', 'result.score[team2.name]',
 ]);
 
 function getAllFiles(dir, base = '') {

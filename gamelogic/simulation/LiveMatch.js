@@ -136,7 +136,10 @@ class LiveMatch {
         fixtureId: this.fixtureId,
         homeTeam: this.homeTeam,
         awayTeam: this.awayTeam,
-        score: this.score
+        score: this.score,
+        get homePlayers() { return this._owner.homePlayers; },
+        get awayPlayers() { return this._owner.awayPlayers; },
+        _owner: this
       },
       this._createEvent.bind(this)
     );

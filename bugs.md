@@ -4,7 +4,14 @@ Tracked simulation / live-match bugs. Newest first.
 
 ## Open
 
-_None._
+### Decisive shootout kick's chain has no terminal step (2026-07-04)
+
+**Symptom:** The kick that wins a shootout is marked `chain_terminal: false`
+(because `_shouldEmitReaction` returns true for a decider), but the shootout
+finishes on that same tick, so the terminal `shootout_reaction` never fires —
+leaving that bundle with zero terminal steps. Display-only; scores and
+progression are unaffected. Found while smoke-testing commentary changes;
+pre-existing in `PenaltyShootout.processTick`.
 
 ## Fixed
 

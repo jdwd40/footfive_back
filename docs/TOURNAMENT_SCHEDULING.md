@@ -96,11 +96,12 @@ Manual Start
 
 ## Configuration
 
-Break duration is configured in `Gamelogic/simulation/TournamentManager.js`:
+Break duration is configured in `gamelogic/constants.js`:
 
 ```javascript
 const SCHEDULE = {
-  BREAK_DURATION_MS: 5 * 60 * 1000 // 5 minutes between rounds
+  BREAK_DURATION_MS: 5 * 60 * 1000,           // 5 minutes between rounds
+  TOURNAMENT_BREAK_DURATION_MS: 2 * 60 * 1000 // 2 minutes between tournaments in continuous mode
 };
 ```
 
@@ -121,7 +122,7 @@ Each match runs in real-time with the following durations:
 | Penalties | ~1-2 minutes |
 | **Worst Case** | **~15.5 minutes** |
 
-Match timing is configured in `Gamelogic/simulation/LiveMatch.js`:
+Match timing is configured in `gamelogic/constants.js` and used by `gamelogic/simulation/LiveMatch.js`:
 
 ```javascript
 const DEFAULT_RULES = {

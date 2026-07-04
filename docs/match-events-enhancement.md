@@ -8,8 +8,8 @@ Enhanced the live match event system to emit more detailed, human-readable event
 
 ### Files Modified
 
-- `Gamelogic/simulation/LiveMatch.js`
-- `Gamelogic/simulation/EventBus.js`
+- `gamelogic/simulation/LiveMatch.js`
+- `gamelogic/simulation/EventBus.js`
 
 ### New Events Emitted
 

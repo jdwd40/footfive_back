@@ -4,12 +4,18 @@
  * Two responsibilities, both display-only (never mutates score/state):
  *
  * 1. decorate(event): swap the stock description of selected existing event
- *    types (goal, shot_saved, cards, halftime, ...) for a varied, contextual
- *    line picked from template pools. Only `description` is touched; every
- *    structured field (side, matchPhase, chain metadata, score) passes
- *    through unchanged. Types the frontend legacy parsers read
- *    (attack_breakdown / counter_breakdown) and the already-contextual
- *    shootout kick copy from PenaltyShootout are deliberately left alone.
+ *    types (goal, shot_saved, cards, flow-chain events, halftime, ...) for a
+ *    varied, contextual line picked from template pools. Chain metadata
+ *    (bundleId, bundleStep, chain_type, chain_terminal, pacing), side,
+ *    matchPhase and score pass through unchanged. For player-less flow steps
+ *    (goal_build_up push_forward/beat_defender, counter_attack) decorate may
+ *    additionally stamp playerId/displayName with a picked attacker so the
+ *    line can name a player — purely narrative, never a stats mutation.
+ *    Varying attack_breakdown / counter_breakdown is safe: the frontend
+ *    resolves breakdown parties from the structured `side` field and only
+ *    falls back to description regexes for legacy events without it. The
+ *    already-contextual shootout kick copy from PenaltyShootout is left
+ *    alone.
  *
  * 2. observe(events, minute): track rolling match context (attacking
  *    signals per side, goals timeline, on-paper favourite) and occasionally
@@ -72,19 +78,67 @@ class CommentaryEngine {
 
   /**
    * Replace the description of supported event types with a varied,
-   * context-aware line. Mutates only `description`; returns the event.
+   * context-aware line. Mutates `description` (and, for selected flow steps,
+   * may stamp playerId/displayName — see class doc); returns the event.
    */
   decorate(event) {
     if (!event || typeof event.type !== 'string') return event;
     const builder = this._templatePools()[event.type];
     if (!builder) return event;
 
+    this._maybeAttachPlayer(event);
+
     const names = this._namesFor(event);
     const pool = builder(event, names);
     if (!Array.isArray(pool) || pool.length === 0) return event;
 
-    event.description = this._pickVariant(event.type, pool);
+    // goal_build_up pools differ per chain phase; key the no-repeat
+    // bookkeeping per phase so phases don't invalidate each other's picks.
+    const variantKey = event.phase ? `${event.type}:${event.phase}` : event.type;
+    event.description = this._pickVariant(variantKey, pool);
     return event;
+  }
+
+  /**
+   * For player-less flow steps that support player-led lines, occasionally
+   * pick an attack-weighted outfield player from the event's side and stamp
+   * playerId/displayName. Narrative only — no stats/score involvement. Skips
+   * events that already carry a player and sides without player data (older
+   * callers, bare test contexts), so team-only fallbacks still apply.
+   */
+  _maybeAttachPlayer(event) {
+    if (event.displayName) return;
+    const playerPhase = event.type === EVENT_TYPES.GOAL_BUILD_UP &&
+      (event.phase === 'push_forward' || event.phase === 'beat_defender');
+    const wantsPlayer = playerPhase || event.type === EVENT_TYPES.COUNTER_ATTACK;
+    if (!wantsPlayer) return;
+    if (this.rng() >= this.tuning.FLOW_PLAYER_LINE_CHANCE) return;
+
+    const side = event.side === 'home' || event.side === 'away'
+      ? event.side
+      : event.teamId === this.ctx.homeTeam.id ? 'home'
+      : event.teamId === this.ctx.awayTeam.id ? 'away' : null;
+    if (!side) return;
+
+    const player = this._pickChainPlayer(side);
+    if (!player || !player.name) return;
+    event.playerId = player.playerId;
+    event.displayName = player.name;
+  }
+
+  _pickChainPlayer(side) {
+    const players = side === 'home' ? this.ctx.homePlayers : this.ctx.awayPlayers;
+    if (!Array.isArray(players)) return null;
+    const outfield = players.filter(p => p && !p.isGoalkeeper && p.name);
+    if (!outfield.length) return null;
+
+    const totalAttack = outfield.reduce((sum, p) => sum + (p.attack || 1), 0);
+    let rand = this.rng() * totalAttack;
+    for (const player of outfield) {
+      rand -= (player.attack || 1);
+      if (rand <= 0) return player;
+    }
+    return outfield[0];
   }
 
   _namesFor(event) {
@@ -139,6 +193,87 @@ class CommentaryEngine {
     this._pools = {
       [EVENT_TYPES.GOAL]: (evt, n) => this._goalPool(evt, n),
 
+      // --- Flow-chain events (Stage C emitters). n.team is the event's
+      // teamId side: the attacker for build-up/counter events, the DEFENDER
+      // for breakdown/defensive events. Builders return [] when the names
+      // they need are missing, leaving the stock description in place. ---
+
+      [EVENT_TYPES.MIDFIELD_BATTLE]: (evt, n) => {
+        if (!n.team || !n.opponent) return [];
+        return [
+          `${n.team} and ${n.opponent} scrap for it in midfield.`,
+          `The ball pings around midfield — ${n.team} just about keep it.`,
+          `${n.team} win the second ball in the middle of the park.`,
+          `It's a tussle in there, and ${n.team} come out with the ball.`,
+          `Neither side can settle it — ${n.team} finally force it forward.`
+        ];
+      },
+
+      [EVENT_TYPES.GOAL_BUILD_UP]: (evt, n) => this._buildUpPool(evt, n),
+
+      [EVENT_TYPES.ATTACK_BREAKDOWN]: (evt, n) => {
+        if (!n.team || !n.opponent) return [];
+        return [
+          `${n.team} snap into the tackle and end ${n.opponent}'s attack.`,
+          `${n.team} slam the door shut on ${n.opponent}.`,
+          `${n.opponent}'s move breaks down — ${n.team} read it early.`,
+          `${n.team} swarm the ball and kill the attack.`,
+          `${n.opponent} try to force it, but ${n.team} cut the danger out.`,
+          `${n.team} stand firm and shut ${n.opponent} down.`,
+          `${n.opponent} lose it under pressure from ${n.team}.`
+        ];
+      },
+
+      [EVENT_TYPES.COUNTER_ATTACK]: (evt, n) => {
+        if (!n.team) return [];
+        if (evt.displayName) {
+          return [
+            `${evt.displayName} leads the break for ${n.team}!`,
+            `${evt.displayName} races into space as ${n.team} counter!`,
+            `${evt.displayName} carries it forward at pace — ${n.team} are away!`
+          ];
+        }
+        return [
+          `${n.team} explode forward on the counter!`,
+          `${n.team} turn defence into attack in a flash!`,
+          `${n.team} hit them fast through the middle!`,
+          `${n.team} break at pace — this looks dangerous!`
+        ];
+      },
+
+      [EVENT_TYPES.COUNTER_BREAKDOWN]: (evt, n) => {
+        if (!n.team) return [];
+        return [
+          `${n.team} recover and snuff out the counter.`,
+          `${n.team} get back in numbers and kill the break.`,
+          `${n.team} scramble back to smother the counter.`,
+          `The counter fizzles out — ${n.team} regroup in time.`
+        ];
+      },
+
+      [EVENT_TYPES.KICKOFF_RESTART]: (evt, n) => {
+        if (!n.team) return [];
+        return [
+          `${n.team} restart from the halfway spot.`,
+          `${n.team} get us back underway.`,
+          `The ball is back on the centre spot — ${n.team} restart.`,
+          `${n.team} kick off again, looking for a response.`
+        ];
+      },
+
+      // Only the pre-corner block-behind gets varied wording. It must still
+      // read as a block conceding a corner (never a turnover) — the corner
+      // event follows immediately. Flow-filler defensive_action lines are
+      // already varied at emission and are left alone.
+      [EVENT_TYPES.DEFENSIVE_ACTION]: (evt, n) => {
+        if (evt.reason !== 'blocked_behind' || !n.team) return [];
+        return [
+          `${n.team} block it behind.`,
+          `${n.team} throw a body in the way — behind for a corner.`,
+          `Last-ditch block! ${n.team} turn it behind.`
+        ];
+      },
+
       [EVENT_TYPES.SHOT_SAVED]: (evt, n) => evt.cornerAwarded
         ? [
             `Save! ${n.opponent}'s keeper turns ${n.player}'s effort behind. Corner to ${n.team}.`,
@@ -149,7 +284,8 @@ class CommentaryEngine {
             `Save! Good stop by the ${n.opponent} goalkeeper from ${n.player}'s effort.`,
             `${n.player} tests the keeper, but ${n.opponent}'s number one is equal to it.`,
             `Denied! The ${n.opponent} keeper gets down well to keep out ${n.player}.`,
-            `${n.player} lets fly for ${n.team} — held comfortably by the keeper.`
+            `${n.player} lets fly for ${n.team} — held comfortably by the keeper.`,
+            `The ${n.opponent} keeper stands tall and beats ${n.player}'s effort away.`
           ],
 
       [EVENT_TYPES.SHOT_MISSED]: (evt, n) => [
@@ -157,13 +293,15 @@ class CommentaryEngine {
         `Off the post! ${n.player} is inches away from giving ${n.team} something to shout about.`,
         `${n.player} drags it wide — ${n.team} will feel that was a chance.`,
         `Over the bar! ${n.player} leans back and the effort sails over.`,
-        `${n.player} clips the outside of the post! So close for ${n.team}.`
+        `${n.player} clips the outside of the post! So close for ${n.team}.`,
+        `${n.player} snatches at it and the chance goes begging.`
       ],
 
       [EVENT_TYPES.SHOT_BLOCKED]: (evt, n) => [
         `Blocked! A ${n.opponent} defender throws himself in front of ${n.player}'s shot.`,
         `${n.player} pulls the trigger, but ${n.opponent} get a body in the way.`,
-        `Crucial block — ${n.opponent} refuse to let ${n.player}'s effort through.`
+        `Crucial block — ${n.opponent} refuse to let ${n.player}'s effort through.`,
+        `${n.player} shoots — straight into a wall of ${n.opponent} shirts.`
       ],
 
       [EVENT_TYPES.CORNER]: (evt, n) => [
@@ -273,6 +411,60 @@ class CommentaryEngine {
     };
 
     return this._pools;
+  }
+
+  /**
+   * goal_build_up variants per chain phase. Player-led lines only when the
+   * event actually carries a displayName (n.player falls back to the team
+   * name, which would break player verb forms). The shot_attempt phase is
+   * already varied at emission with the actual shooter — left alone.
+   */
+  _buildUpPool(evt, n) {
+    if (!n.team) return [];
+    const p = evt.displayName || null;
+
+    if (evt.phase === 'push_forward') {
+      if (p) {
+        return [
+          `${p} surges forward for ${n.team}.`,
+          `${p} drives through the middle for ${n.team}.`,
+          `${p} picks it up and ${n.team} push higher.`
+        ];
+      }
+      return [
+        `${n.team} are flooding forward now.`,
+        `${n.team} smell a chance and push higher.`,
+        `${n.team} build with real purpose.`,
+        `${n.team} work it wide and stretch the defence.`
+      ];
+    }
+
+    if (evt.phase === 'beat_defender') {
+      if (p) {
+        return [
+          `${p} glides past his marker.`,
+          `${p} leaves a defender chasing shadows.`,
+          `${p} bursts beyond the challenge and into the final third.`,
+          `${p} turns neatly and opens up the pitch for ${n.team}.`,
+          `${p} slips between two defenders.`
+        ];
+      }
+      return [
+        `${n.team} break the line with a sharp move.`,
+        `${n.team} tear into the final third.`,
+        `${n.team} carve a way through midfield.`
+      ];
+    }
+
+    if (evt.phase === 'force_issue') {
+      return [
+        `${n.team} force the issue in the final third.`,
+        `${n.team} pile bodies forward.`,
+        `${n.team} keep coming in waves.`
+      ];
+    }
+
+    return [];
   }
 
   _goalPool(evt, n) {

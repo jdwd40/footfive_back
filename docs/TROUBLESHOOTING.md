@@ -2,6 +2,8 @@
 
 Common issues and solutions for FootFive backend.
 
+In this VM, prefix app, seed, migrate, and test commands with `env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT` so project `.env.*` files are used.
+
 ## Server Issues
 
 ### Server Won't Start
@@ -30,10 +32,10 @@ kill -9 $(lsof -t -i :9001)
 
 **Solution**:
 1. Verify `.env.development` exists in project root
-2. Check it contains `PGDATABASE=footfive`
+2. Check it contains `PGDATABASE=footfive_dev`
 3. Ensure `NODE_ENV` matches your env file:
    ```bash
-   NODE_ENV=development npm start
+   env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT NODE_ENV=development npm start
    ```
 
 ---
@@ -64,15 +66,15 @@ npm install
 
 ---
 
-**Error**: `database "footfive" does not exist`
+**Error**: `database "footfive_dev" does not exist`
 
 **Cause**: Database not created.
 
 **Solution**:
 ```bash
-psql -U your_user -c "CREATE DATABASE footfive;"
-npm run migrate
-npm run seed
+psql -U your_user -d postgres -c "CREATE DATABASE footfive_dev;"
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run migrate
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run seed
 ```
 
 ---
@@ -115,7 +117,7 @@ DROP TABLE IF EXISTS match_reports CASCADE;
 DROP TABLE IF EXISTS fixtures CASCADE;
 
 # Re-run migration
-npm run migrate
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run migrate
 ```
 
 ---
@@ -130,7 +132,7 @@ npm run migrate
 1. On the server, confirm how the app is started (`pm2`, `systemd`, etc.) and which `NODE_ENV` and `PGDATABASE` it uses.
 2. From the app directory, run the migration with that same `NODE_ENV` so `db/connection.js` loads the correct `.env` file:
    ```bash
-   NODE_ENV=production npm run migrate 004_tournament_state.sql
+   env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT NODE_ENV=production npm run migrate 004_tournament_state.sql
    ```
    (Use `development` if that is what the process uses.)
 3. Verify with `GET /api/diagnostic` — `tournament_state_exists` should be `true`.
@@ -150,7 +152,7 @@ npm run migrate
 psql -U your_user -d footfive -c "TRUNCATE teams, players CASCADE;"
 
 # Re-seed
-npm run seed
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run seed
 ```
 
 ---
@@ -372,10 +374,10 @@ pm2 save
 **Solution**:
 ```bash
 # Run with open handle detection
-npx jest --detectOpenHandles
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npx jest --detectOpenHandles
 
 # Set explicit timeout
-npx jest --testTimeout=10000
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npx jest --testTimeout=10000
 ```
 
 ---
@@ -394,7 +396,7 @@ npx jest --testTimeout=10000
 
 2. Use `--runInBand` to run sequentially:
    ```bash
-   npx jest --runInBand
+   env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npx jest --runInBand
    ```
 
 ---
@@ -452,7 +454,7 @@ psql -U your_user -c "CREATE DATABASE footfive_test;"
 
 Add to your environment:
 ```bash
-DEBUG=* npm start
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT DEBUG=* npm start
 ```
 
 ### Check PM2 Logs

@@ -2,15 +2,20 @@
 
 This guide will walk you through setting up the FootFive backend application step by step.
 
+In this VM, `PGUSER`, `PGDATABASE`, `PGPASSWORD`, `PGHOST`, and `PGPORT` may be pre-set by the environment. For commands that run the app, seed, migrate, or test, unset those variables first so `dotenv` can load this project's `.env.*` files:
+
+```bash
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT <command>
+```
+
 ## Table of Contents
 1. [Prerequisites](#prerequisites)
 2. [Project Setup](#project-setup)
 3. [Environment Configuration](#environment-configuration)
 4. [Database Setup](#database-setup)
 5. [Running the Application](#running-the-application)
-6. [Test Server Setup](#test-server-setup)
-7. [Running Tests](#running-tests)
-8. [Troubleshooting](#troubleshooting)
+6. [Running Tests](#running-tests)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -45,7 +50,7 @@ Before you begin, ensure you have the following installed:
 ### Step 1: Navigate to Project Directory
 
 ```bash
-cd /home/jd/projects/proball/footfive_back
+cd /home/jd/projects/footfive/footfive_back
 ```
 
 ### Step 2: Install Dependencies
@@ -88,7 +93,7 @@ Add the following content to `.env.development`:
 ```env
 PGDATABASE=footfive_dev
 PGUSER=jd
-PGPASSWORD=K1ller1921
+PGPASSWORD=your_password
 PGHOST=localhost
 PGPORT=5432
 ```
@@ -113,7 +118,7 @@ Add the following content to `.env.test`:
 ```env
 PGDATABASE=footfive_test
 PGUSER=jd
-PGPASSWORD=K1ller1921
+PGPASSWORD=your_password
 PGHOST=localhost
 PGPORT=5432
 ```
@@ -136,68 +141,30 @@ The application automatically loads the correct file based on the `NODE_ENV` var
 
 ### Step 5: Create Development Database
 
-Run the database setup script:
+Create the development database:
 
 ```bash
-bash setup-database.sh
+psql -U jd -d postgres -c "CREATE DATABASE footfive_dev;"
 ```
 
-**What this does:**
-- Creates a PostgreSQL database named `footfive_dev`
-- Uses the credentials from your `.env.development` file
-
-**Expected Output:**
-```
-Setting up FootFive database...
-Database footfive_dev already exists (or CREATE DATABASE)
-Database setup complete!
-
-Database Details:
-- Database: footfive_dev
-- User: jd
-- Host: localhost
-- Port: 5432
-```
-
-**If you encounter permission errors:**
-
-If the script fails, you may need to create the database manually:
-
-```bash
-psql -U jd -c "CREATE DATABASE footfive_dev;"
-```
+If it already exists, PostgreSQL will report that and you can continue.
 
 ### Step 6: Create Test Database
 
-Run the test database setup script:
+Create the test database:
 
 ```bash
-bash setup-test-database.sh
+psql -U jd -d postgres -c "CREATE DATABASE footfive_test;"
 ```
 
-**What this does:**
-- Creates a PostgreSQL database named `footfive_test`
-- Grants necessary permissions
-
-**Expected Output:**
-```
-Setting up FootFive test database...
-Database footfive_test already exists (or CREATE DATABASE)
-Test database setup complete!
-
-Test Database Details:
-- Database: footfive_test
-- User: jd
-- Host: localhost
-- Port: 5432
-```
+The test database must be named `footfive_test`; `db/test-connection.js` enforces this safety check.
 
 ### Step 7: Seed Development Database
 
 Populate the development database with initial data:
 
 ```bash
-npm run seed
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run seed
 ```
 
 **What this does:**
@@ -236,7 +203,7 @@ seeded
 Start the development server:
 
 ```bash
-npm start
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm start
 ```
 
 **What this does:**
@@ -259,73 +226,6 @@ Server is running on port 9001
 
 ---
 
-## Test Server Setup
-
-The test server is a standalone GUI tool for testing match simulations. It has its own dependencies.
-
-### Step 9: Navigate to Test Server Directory
-
-```bash
-cd test-server
-```
-
-### Step 10: Install Test Server Dependencies
-
-**Important:** You MUST run `npm install` separately in the test-server directory:
-
-```bash
-npm install
-```
-
-**What this installs:**
-- `express` - Web framework
-- `pg` - PostgreSQL client
-- `nodemon` - Auto-restart development tool (dev dependency)
-
-### Step 11: Start the Test Server
-
-From the `test-server` directory:
-
-```bash
-npm start
-```
-
-**Or for auto-reload during development:**
-
-```bash
-npm run dev
-```
-
-**Expected Output:**
-```
-Test server running on http://localhost:3001
-```
-
-### Step 12: Access Test Server GUI
-
-Open your web browser and navigate to:
-
-```
-http://localhost:3001
-```
-
-**Features:**
-- Interactive team selection
-- Editable attack/defense/goalkeeper ratings
-- Real-time match simulation
-- Detailed results with highlights
-
-**To stop the test server:**
-- Press `Ctrl + C` in the terminal
-
-### Returning to Project Root
-
-```bash
-cd ..
-```
-
----
-
 ## Running Tests
 
 The project uses Jest for testing.
@@ -333,35 +233,35 @@ The project uses Jest for testing.
 ### Run All Tests
 
 ```bash
-npm test
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm test
 ```
 
 ### Run Specific Test Suites
 
 ```bash
 # Watch mode (auto-run on file changes)
-npm run test:watch
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run test:watch
 
 # With coverage report
-npm run test:coverage
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run test:coverage
 
 # Unit tests only
-npm run test:unit
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run test:unit
 
 # Integration tests only
-npm run test:integration
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run test:integration
 
 # API/route tests only
-npm run test:api
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run test:api
 
 # Model tests only
-npm run test:models
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run test:models
 
 # Game logic tests only
-npm run test:gamelogic
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run test:gamelogic
 
 # Controller tests only
-npm run test:controllers
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run test:controllers
 ```
 
 **Important:** Tests automatically use the test database (`footfive_test`) via `NODE_ENV=test`.
@@ -395,13 +295,9 @@ npm run test:controllers
 **Problem:** `database "footfive_dev" does not exist`
 
 **Solution:**
-1. Run the setup script again:
+1. Create the database:
    ```bash
-   bash setup-database.sh
-   ```
-2. Or create manually:
-   ```bash
-   psql -U jd -c "CREATE DATABASE footfive_dev;"
+   psql -U jd -d postgres -c "CREATE DATABASE footfive_dev;"
    ```
 
 ---
@@ -416,17 +312,6 @@ npm run test:controllers
    lsof -ti:9001 | xargs kill -9
    ```
 2. Or change the port in `listen.js`
-
----
-
-**Problem:** `Port 3001 is already in use` (Test Server)
-
-**Solution:**
-1. Find and kill the process:
-   ```bash
-   lsof -ti:3001 | xargs kill -9
-   ```
-2. Or modify the port in `test-server/server.js`
 
 ---
 
@@ -450,17 +335,9 @@ npm run test:controllers
 
 ---
 
-### Test Server Not Loading Teams
+### Standalone Test Server
 
-**Problem:** Test server can't fetch teams
-
-**Solution:**
-1. Ensure the development database is seeded:
-   ```bash
-   npm run seed
-   ```
-2. Verify the main server is NOT running (test server uses its own connection)
-3. Check database connection in `db/connection.js`
+The old standalone `test-server` app is not present in this checkout. Use the backend API on `http://localhost:9001/api` and the Jest tests instead.
 
 ---
 
@@ -476,7 +353,7 @@ npm install
 cat > .env.development << EOF
 PGDATABASE=footfive_dev
 PGUSER=jd
-PGPASSWORD=K1ller1921
+PGPASSWORD=your_password
 PGHOST=localhost
 PGPORT=5432
 EOF
@@ -484,25 +361,20 @@ EOF
 cat > .env.test << EOF
 PGDATABASE=footfive_test
 PGUSER=jd
-PGPASSWORD=K1ller1921
+PGPASSWORD=your_password
 PGHOST=localhost
 PGPORT=5432
 EOF
 
 # 3. Setup databases
-bash setup-database.sh
-bash setup-test-database.sh
+psql -U jd -d postgres -c "CREATE DATABASE footfive_dev;"
+psql -U jd -d postgres -c "CREATE DATABASE footfive_test;"
 
 # 4. Seed development database
-npm run seed
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm run seed
 
 # 5. Start main server
-npm start
-
-# 6. In a new terminal: Setup test server
-cd test-server
-npm install
-npm start
+env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm start
 ```
 
 ---
@@ -512,9 +384,8 @@ npm start
 After installation, you can:
 
 1. **Explore the API** - Check available endpoints in the codebase
-2. **Run the test suite** - `npm test` to verify everything works
-3. **Use the test server** - Open `http://localhost:3001` to simulate matches
-4. **Review documentation** - See [README.md](README.md) (index), [API_REFERENCE.md](API_REFERENCE.md), and [../LIVING_ARCHITECTURE.md](../LIVING_ARCHITECTURE.md)
+2. **Run the test suite** - `env -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGHOST -u PGPORT npm test` to verify everything works
+3. **Review documentation** - See [README.md](README.md) (index), [API_REFERENCE.md](API_REFERENCE.md), and [../LIVING_ARCHITECTURE.md](../LIVING_ARCHITECTURE.md)
 
 ---
 
@@ -523,12 +394,10 @@ After installation, you can:
 - **Documentation index:** [docs/README.md](README.md)
 - **API reference:** [docs/API_REFERENCE.md](API_REFERENCE.md)
 - **File map:** [LIVING_ARCHITECTURE.md](../LIVING_ARCHITECTURE.md) (repository root)
-- **Testing:** [docs/old/TESTING.md](old/TESTING.md) and [AGENTS.md](../AGENTS.md)
-- **Test Server Guide:** `test-server/README.md` (if present in your checkout)
+- **Testing:** [TEST_SUITE_REVIEW.md](TEST_SUITE_REVIEW.md) and [AGENTS.md](../AGENTS.md)
 
 ---
 
 **Version:** 1.0.0  
 **Author:** JD  
 **License:** ISC
-

@@ -2,7 +2,7 @@
   "name": "footfive",
   "version": "1.0.0",
   "description": "backend for footfive",
-  "main": "index.js",
+  "main": "listen.js",
   "scripts": {
     "migrate": "node ./db/migrations/run-migration.js",
     "seed": "node ./db/run-seed.js",

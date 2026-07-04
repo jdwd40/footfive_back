@@ -142,7 +142,20 @@ describe('CommentaryEngine', () => {
       };
       const before = { ...breakdown };
       engine.decorate(breakdown);
-      expect(breakdown).toEqual(before); // legacy-parsed type left alone
+      // Description is varied, but every structured/chain field survives.
+      expect(typeof breakdown.description).toBe('string');
+      expect(breakdown.description.length).toBeGreaterThan(0);
+      expect(breakdown.side).toBe(before.side);
+      expect(breakdown.teamId).toBe(before.teamId);
+      expect(breakdown.chain_type).toBe(before.chain_type);
+      expect(breakdown.chain_terminal).toBe(before.chain_terminal);
+      expect(breakdown.bundleId).toBe(before.bundleId);
+
+      const unsupported = {
+        type: EVENT_TYPES.MATCH_START, minute: 1, description: 'stock start'
+      };
+      engine.decorate(unsupported);
+      expect(unsupported.description).toBe('stock start');
 
       const goal = {
         type: EVENT_TYPES.GOAL, minute: 20, side: 'home', teamId: homeTeam.id,
@@ -155,6 +168,137 @@ describe('CommentaryEngine', () => {
       expect(goal.chain_terminal).toBe(true);
       expect(goal.xg).toBe(0.4);
       expect(goal.side).toBe('home');
+    });
+  });
+
+  describe('decorate: flow-chain variety (build-up / breakdown / counter / restart)', () => {
+    const homePlayers = [
+      { playerId: 1, name: 'M. Vane', attack: 85, isGoalkeeper: false },
+      { playerId: 2, name: 'T. Orr', attack: 70, isGoalkeeper: false },
+      { playerId: 3, name: 'G. Keeper', attack: 10, isGoalkeeper: true }
+    ];
+
+    const makePlayerEngine = ({ rng = Math.random } = {}) => {
+      const score = { home: 0, away: 0 };
+      const ctx = { fixtureId: 123, homeTeam, awayTeam, score, homePlayers, awayPlayers: [] };
+      return new CommentaryEngine(ctx, makeCreateEvent(score), { rng });
+    };
+
+    const flowEvent = (type, extra = {}) => ({
+      type, minute: 20, side: 'home', teamId: homeTeam.id,
+      bundleId: 'attack_123_20_1', bundleStep: 0, chain_type: 'attack',
+      chain_terminal: false, description: 'stock', ...extra
+    });
+
+    it('varies goal_build_up per phase without undefined values', () => {
+      const engine = makePlayerEngine();
+      for (const phase of ['push_forward', 'beat_defender', 'force_issue']) {
+        const seen = new Set();
+        for (let i = 0; i < 15; i++) {
+          const evt = flowEvent(EVENT_TYPES.GOAL_BUILD_UP, { phase });
+          engine.decorate(evt);
+          expect(evt.description).not.toBe('stock');
+          expect(evt.description).not.toMatch(/undefined|null|\$\{/);
+          seen.add(evt.description);
+        }
+        expect(seen.size).toBeGreaterThan(1);
+      }
+    });
+
+    it('leaves the shot_attempt build-up (already varied at emission) alone', () => {
+      const engine = makePlayerEngine();
+      const evt = flowEvent(EVENT_TYPES.GOAL_BUILD_UP, {
+        phase: 'shot_attempt', displayName: 'M. Vane', description: 'M. Vane lets fly!'
+      });
+      engine.decorate(evt);
+      expect(evt.description).toBe('M. Vane lets fly!');
+    });
+
+    it('stamps a player on player-less build-up steps when rng allows, team-only otherwise', () => {
+      // rng below FLOW_PLAYER_LINE_CHANCE → player attached and named.
+      const withPlayer = makePlayerEngine({ rng: () => 0.1 });
+      const evt = flowEvent(EVENT_TYPES.GOAL_BUILD_UP, { phase: 'beat_defender' });
+      withPlayer.decorate(evt);
+      expect(evt.displayName).toBe('M. Vane');
+      expect(evt.playerId).toBe(1);
+      expect(evt.description).toContain('M. Vane');
+      // Chain metadata untouched.
+      expect(evt.bundleId).toBe('attack_123_20_1');
+      expect(evt.chain_terminal).toBe(false);
+
+      // rng above the gate → no player, team-only line.
+      const teamOnly = makePlayerEngine({ rng: () => 0.9 });
+      const evt2 = flowEvent(EVENT_TYPES.GOAL_BUILD_UP, { phase: 'beat_defender' });
+      teamOnly.decorate(evt2);
+      expect(evt2.displayName).toBeUndefined();
+      expect(evt2.description).toContain(homeTeam.name);
+    });
+
+    it('falls back to team-only lines when the side has no player data', () => {
+      const { engine } = makeEngine({ rng: () => 0.1 }); // ctx without players
+      const evt = flowEvent(EVENT_TYPES.COUNTER_ATTACK, {
+        chain_type: 'counter', bundleId: 'counter_123_20_1'
+      });
+      engine.decorate(evt);
+      expect(evt.displayName).toBeUndefined();
+      expect(evt.description).toContain(homeTeam.name);
+      expect(evt.description).not.toMatch(/undefined/);
+    });
+
+    it('names the defender as the stopper and the attacker as the loser on attack_breakdown', () => {
+      const engine = makePlayerEngine();
+      let namedAttacker = 0;
+      for (let i = 0; i < 15; i++) {
+        // Away defends (teamId = away), home was attacking.
+        const evt = flowEvent(EVENT_TYPES.ATTACK_BREAKDOWN, {
+          side: 'away', teamId: awayTeam.id, chain_terminal: true
+        });
+        engine.decorate(evt);
+        expect(evt.description).toContain(awayTeam.name);
+        if (evt.description.includes(homeTeam.name)) namedAttacker++;
+        expect(evt.description).not.toMatch(/undefined/);
+      }
+      expect(namedAttacker).toBeGreaterThan(0);
+    });
+
+    it('varies counter_breakdown, kickoff_restart and midfield_battle', () => {
+      const engine = makePlayerEngine();
+      for (const [type, extra] of [
+        [EVENT_TYPES.COUNTER_BREAKDOWN, { chain_type: 'counter', chain_terminal: true }],
+        [EVENT_TYPES.KICKOFF_RESTART, { bundleId: undefined, chain_type: undefined }],
+        [EVENT_TYPES.MIDFIELD_BATTLE, {}]
+      ]) {
+        const seen = new Set();
+        for (let i = 0; i < 15; i++) {
+          const evt = flowEvent(type, extra);
+          engine.decorate(evt);
+          expect(evt.description).not.toBe('stock');
+          expect(evt.description).toContain(homeTeam.name);
+          expect(evt.description).not.toMatch(/undefined/);
+          seen.add(evt.description);
+        }
+        expect(seen.size).toBeGreaterThan(1);
+      }
+    });
+
+    it('varies the pre-corner block-behind but never as a turnover, and skips flow-filler defensive_action', () => {
+      const engine = makePlayerEngine();
+      for (let i = 0; i < 15; i++) {
+        const evt = flowEvent(EVENT_TYPES.DEFENSIVE_ACTION, {
+          side: 'away', teamId: awayTeam.id, reason: 'blocked_behind',
+          chain_terminal: true, cornerConceded: true
+        });
+        engine.decorate(evt);
+        expect(evt.description).toContain(awayTeam.name);
+        expect(evt.description).not.toMatch(/lose|lost|shut down|breaks down/i);
+      }
+
+      const filler = {
+        type: EVENT_TYPES.DEFENSIVE_ACTION, minute: 30, side: 'home',
+        teamId: homeTeam.id, description: 'Metro City hold a firm line.'
+      };
+      engine.decorate(filler);
+      expect(filler.description).toBe('Metro City hold a firm line.');
     });
   });
 
