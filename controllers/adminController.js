@@ -211,6 +211,19 @@ function getFullState(req, res) {
   });
 }
 
+// Settlement sweep: settle any pending bets whose result is already
+// confirmed in the DB. Idempotent - safe to run repeatedly.
+async function settlementSweep(req, res) {
+  try {
+    const SettlementService = require('../services/SettlementService');
+    const results = await SettlementService.sweepPendingBets();
+    res.json({ success: true, ...results });
+  } catch (err) {
+    console.error('settlementSweep error:', err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
 function clearEvents(req, res) {
   const eventBus = getEventBus();
   eventBus.eventBuffer = [];
@@ -232,5 +245,6 @@ module.exports = {
   resumeSimulation,
   setSpeed,
   getFullState,
-  clearEvents
+  clearEvents,
+  settlementSweep
 };

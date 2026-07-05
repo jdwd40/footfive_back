@@ -52,6 +52,34 @@ class Team {
         throw new Error(`Team with ID ${teamId} not found.`);
     }
 
+    // Ratings plus cup form / championship history, for betting odds
+    static async getBettingProfileById(teamId) {
+        const result = await db.query(`
+            SELECT t.team_id, t.name, t.wins, t.losses, t.jcups_won,
+                   (SELECT MAX(attack) FROM players WHERE team_id = t.team_id AND is_goalkeeper = false) AS attack_rating,
+                   (SELECT MAX(defense) FROM players WHERE team_id = t.team_id AND is_goalkeeper = false) AS defense_rating,
+                   (SELECT MAX(defense) FROM players WHERE team_id = t.team_id AND is_goalkeeper = true) AS goalkeeper_rating
+            FROM teams t
+            WHERE t.team_id = $1
+        `, [teamId]);
+
+        if (!result.rows.length) {
+            throw new Error(`Team with ID ${teamId} not found.`);
+        }
+
+        const t = result.rows[0];
+        return {
+            id: t.team_id,
+            name: t.name,
+            attackRating: t.attack_rating || 0,
+            defenseRating: t.defense_rating || 0,
+            goalkeeperRating: t.goalkeeper_rating || 0,
+            wins: t.wins || 0,
+            losses: t.losses || 0,
+            jcupsWon: t.jcups_won || 0
+        };
+    }
+
     static async getRatingByTeamName(teamName) {
         const result = await db.query(`
             SELECT team_id, name,

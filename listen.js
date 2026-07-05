@@ -66,6 +66,13 @@ async function startSimulation() {
         await loop.start();
 
         console.log('[Server] Simulation system started');
+
+        // Settle any bets whose results were confirmed while the server was
+        // down (idempotent - already-settled bets are never touched again).
+        const SettlementService = require('./services/SettlementService');
+        SettlementService.sweepPendingBets()
+            .then(results => console.log('[Server] Settlement sweep:', results))
+            .catch(err => console.error('[Server] Settlement sweep failed:', err));
     } catch (err) {
         console.error('[Server] Failed to start simulation:', err);
     }

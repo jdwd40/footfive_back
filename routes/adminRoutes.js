@@ -13,7 +13,8 @@ const {
   resumeSimulation,
   setSpeed,
   getFullState,
-  clearEvents
+  clearEvents,
+  settlementSweep
 } = require('../controllers/adminController');
 
 // In production, routes require DEV_ADMIN=true or X-Admin-Secret; non-production is open for local dev.
@@ -38,6 +39,9 @@ router.post('/match/:fixtureId/force-end', forceEndMatch);  // POST /api/admin/m
 router.post('/clock/pause', pauseSimulation);     // POST /api/admin/clock/pause
 router.post('/clock/resume', resumeSimulation);   // POST /api/admin/clock/resume
 router.post('/clock/set-speed', setSpeed);        // POST /api/admin/clock/set-speed
+
+// Betting settlement (idempotent safety-net sweep)
+router.post('/settlement/sweep', settlementSweep); // POST /api/admin/settlement/sweep
 
 // Debug
 router.get('/state', getFullState);               // GET /api/admin/state

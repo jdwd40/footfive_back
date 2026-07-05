@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **Added** virtual betting system (virtual/dummy funds only, no real money):
+  user accounts (bcrypt + JWT), virtual wallets with dummy fund top-ups and
+  transaction history, pre-match / live in-play / championship winner betting,
+  deterministic odds engine (`gamelogic/BettingOddsService.js`), and
+  idempotent backend settlement hooked into fixture completion and
+  `tournament_end` (penalty-shootout winners count as match winners).
+  Migration `008_betting_system.sql` adds `users`, `user_wallets`,
+  `wallet_transactions`, `bets`. New routes: `/api/auth`, `/api/wallet`,
+  `/api/betting`, plus `POST /api/admin/settlement/sweep`.
+  (see `new_features.md`)
+- **Added** frontend betting UI: Account page (register/login/wallet),
+  My Bets page, navbar wallet chip, fixture-card odds + bet slip,
+  championship odds board, and a collapsible live betting panel that polls
+  odds independently of the event reveal queue. Mobile-first, virtual credits
+  (FC) labelling throughout.
+- **Fixed** `db/seed.js` inline `match_events` schema missing the
+  `match_observation` event type added by migration 007 (re-seeding via the
+  diagnostic endpoint would recreate the table without it).
+- No changes to score/winner logic, event pacing, shootout score separation,
+  or round progression; betting tests assert settlement uses confirmed
+  backend results only. Backend suite: 498 tests green. Frontend: 179 tests
+  green.
+
 - **Added** varied, player-aware commentary for generic flow events
   (`midfield_battle`, `goal_build_up` phases, `attack_breakdown`,
   `counter_attack`, `counter_breakdown`, `kickoff_restart`, pre-corner

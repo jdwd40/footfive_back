@@ -1,6 +1,60 @@
 # New Features
 
-Live-match commentary / event-generation improvements. Newest first.
+Newest first.
+
+## Virtual betting system (2026-07-04) — ACTIVE
+
+Optional virtual betting layer across backend and frontend. Virtual/dummy
+funds only ("Footfive Credits" / FC) — no real money, no payment providers.
+
+Backend (`footfive_back`):
+
+- User accounts: `POST /api/auth/register`, `POST /api/auth/login`,
+  `GET /api/auth/profile` (bcrypt password hashing + JWT middleware).
+- Virtual wallet: `GET /api/wallet`, `POST /api/wallet/add-funds` (dummy
+  funds, capped per top-up), `GET /api/wallet/transactions`. New users start
+  with 1,000 FC. Every balance change is recorded as a wallet transaction.
+- Betting endpoints under `/api/betting`: fixture odds, live odds,
+  championship odds (public); place pre-match / live / championship bets,
+  list bets, betting summary (authenticated).
+- Odds engine (`gamelogic/BettingOddsService.js`): deterministic formula from
+  team ratings, cup wins, and J-Cups won; live odds fold in scoreline and
+  match minute; championship odds use power share of remaining teams. Odds
+  are clamped (1.05–21.0) and frozen on each bet at placement time.
+- Rules enforced server-side: win-only bets, no backing both sides of one
+  fixture (repeat bets must be same side), no live bets after full time, no
+  championship bets once semi-finals begin, stake deducted atomically with
+  row-level locking.
+- Settlement (`services/SettlementService.js`): idempotent, backend-driven.
+  Fixture bets settle when the fixture result is finalised (shootout winners
+  count as winners); championship bets settle on `tournament_end`; bets are
+  voided (stake refunded) if a tournament is cancelled. Startup + admin
+  sweep (`POST /api/admin/settlement/sweep`) recover any missed settlements.
+- Migration `008_betting_system.sql`: `users`, `user_wallets`,
+  `wallet_transactions`, `bets`.
+
+Frontend (`footfive_front`):
+
+- Account page (`/account`): register/login/logout, balance, dummy fund
+  top-ups, recent transactions. Navbar shows a wallet chip when logged in.
+- Fixtures screen: pre-match odds + bet slip on scheduled fixture cards, and
+  a championship winner odds board (closes at semi-finals, eliminated teams
+  drop off).
+- Live match screen: compact collapsible live betting panel with polled
+  dynamic odds; separate from the event reveal queue so commentary pacing,
+  score sync, and match controls are untouched.
+- My Bets page (`/bets`): pending/won/lost/void bets with type, team, stake,
+  odds, potential return, and summary totals.
+- All money UI is labelled as virtual credits (FC).
+
+Tests: backend Jest unit tests for the odds engine + full integration suite
+(auth, wallet, bet rules, live/championship gating, idempotent settlement,
+shootout settlement); frontend Vitest tests for betting utils. Full suites
+green.
+
+---
+
+Live-match commentary / event-generation improvements below.
 
 ## More varied event messages (2026-07-04)
 

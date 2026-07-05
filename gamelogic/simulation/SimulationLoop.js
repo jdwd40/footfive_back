@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const { EVENT_TYPES } = require('../constants');
+const SettlementService = require('../../services/SettlementService');
 
 // Will be implemented in separate files
 // const TournamentManager = require('./TournamentManager');
@@ -75,9 +76,23 @@ class SimulationLoop extends EventEmitter {
 
       this.tournamentManager.on('round_start', data => this._emitTournamentEvent(EVENT_TYPES.ROUND_START, data));
       this.tournamentManager.on('tournament_break_started', data => this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_BREAK_STARTED, data));
-      this.tournamentManager.on('tournament_end', data => this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_END, data));
+      this.tournamentManager.on('tournament_end', data => {
+        this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_END, data);
+        // Settle championship bets from the confirmed Final result in the DB.
+        if (data && data.tournamentId) {
+          SettlementService.settleChampionshipBets(data.tournamentId).catch(err => {
+            console.error('[SimulationLoop] Championship bet settlement error:', err);
+          });
+        }
+      });
       this.tournamentManager.on('tournament_setup', data => this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_SETUP, data));
-      this.tournamentManager.on('tournament_cancelled', data => this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_CANCELLED, data));
+      this.tournamentManager.on('tournament_cancelled', data => {
+        this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_CANCELLED, data);
+        // Refund stakes so cancelled tournaments don't strand pending bets.
+        SettlementService.voidAllPendingBets('Tournament cancelled').catch(err => {
+          console.error('[SimulationLoop] Bet void error:', err);
+        });
+      });
     }
 
     return this;
@@ -286,6 +301,18 @@ class SimulationLoop extends EventEmitter {
             console.error('[SimulationLoop] Error in onMatchFinalized:', err);
           });
         }
+
+        // Settle fixture bets once the result is persisted to the DB.
+        // awaitFinalization guarantees Fixture.complete() has committed,
+        // so settlement always reads a confirmed winner.
+        const finalization = typeof match.awaitFinalization === 'function'
+          ? match.awaitFinalization()
+          : Promise.resolve();
+        finalization
+          .then(() => SettlementService.settleFixtureBets(fixtureId))
+          .catch(err => {
+            console.error(`[SimulationLoop] Bet settlement error for fixture ${fixtureId}:`, err);
+          });
       }
     }
   }
