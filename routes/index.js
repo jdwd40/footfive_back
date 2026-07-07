@@ -10,6 +10,7 @@ const adminRoutes = require('./adminRoutes');
 const authRoutes = require('./authRoutes');
 const walletRoutes = require('./walletRoutes');
 const betRoutes = require('./betRoutes');
+const garageRoutes = require('./garageRoutes');
 
 router.get('/', (req, res) => {
     res.send({ msg: 'ok' });
@@ -32,5 +33,7 @@ router.use('/auth', authRoutes);
 router.use('/wallet', walletRoutes);
 
 router.use('/betting', betRoutes);
+
+router.use('/garage', garageRoutes);
 
 module.exports = router;

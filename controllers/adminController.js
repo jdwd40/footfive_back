@@ -131,8 +131,15 @@ function isClientValidationError(err) {
 function forceScore(req, res) {
   try {
     const loop = getSimulationLoop();
-    const { home, away } = req.body;
+    const home = Number(req.body?.home);
+    const away = Number(req.body?.away);
     const fixtureId = parseInt(req.params.fixtureId, 10);
+
+    // Reject missing/invalid scores instead of silently setting undefined
+    // (which reads as a draw at full time and forces penalties on end).
+    if (!Number.isInteger(home) || !Number.isInteger(away) || home < 0 || away < 0) {
+      return res.status(400).json({ error: 'Body must include integer home and away scores >= 0' });
+    }
 
     loop.forceSetScore(fixtureId, home, away);
     res.json({ success: true, score: { home, away } });

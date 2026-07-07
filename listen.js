@@ -45,6 +45,12 @@ app.use('/api', routes); // Mount your API routes here
 const server = app.listen(9001, async () => {
     console.log('Server is running on port 9001');
 
+    // Cyborg Garage: make sure garage data exists (idempotent). Runs even
+    // when the simulation is started later via the admin API.
+    const GarageService = require('./services/GarageService');
+    GarageService.ensureInitialized()
+        .catch(err => console.error('[Server] Garage init failed:', err));
+
     // Auto-start simulation if enabled
     if (process.env.SIMULATION_AUTO_START === 'true') {
         await startSimulation();
@@ -73,6 +79,13 @@ async function startSimulation() {
         SettlementService.sweepPendingBets()
             .then(results => console.log('[Server] Settlement sweep:', results))
             .catch(err => console.error('[Server] Settlement sweep failed:', err));
+
+        // Cyborg Garage: process any garage results confirmed while the
+        // server was down (idempotent).
+        const GarageRewardService = require('./services/GarageRewardService');
+        GarageRewardService.sweep()
+            .then(results => console.log('[Server] Garage sweep:', results))
+            .catch(err => console.error('[Server] Garage sweep failed:', err));
     } catch (err) {
         console.error('[Server] Failed to start simulation:', err);
     }

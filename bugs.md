@@ -15,6 +15,18 @@ pre-existing in `PenaltyShootout.processTick`.
 
 ## Fixed
 
+### Admin force-score accepted any body and silently set undefined scores (2026-07-07)
+
+**Symptom:** `POST /api/admin/match/:id/force-score` read `{ home, away }`
+from the body with no validation. Sending wrong keys (e.g. `{ homeScore,
+awayScore }`) responded `{"success":true,"score":{}}` and set the live
+match score to `undefined`/`undefined`, which then read as a draw at full
+time (forced penalties on force-end). Admin/dev only; found while
+E2E-testing the Cyborg Garage.
+
+**Fix:** `adminController.forceScore` now requires both values to be
+integers ≥ 0 and returns 400 otherwise (unit-tested).
+
 ### Corner awarded immediately after a same-team possession-loss (2026-06-29)
 
 **Symptom:** A corner could be shown directly after a message saying the same

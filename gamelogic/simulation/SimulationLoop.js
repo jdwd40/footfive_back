@@ -1,6 +1,8 @@
 const EventEmitter = require('events');
 const { EVENT_TYPES } = require('../constants');
 const SettlementService = require('../../services/SettlementService');
+const GarageRewardService = require('../../services/GarageRewardService');
+const GarageService = require('../../services/GarageService');
 
 // Will be implemented in separate files
 // const TournamentManager = require('./TournamentManager');
@@ -85,7 +87,14 @@ class SimulationLoop extends EventEmitter {
           });
         }
       });
-      this.tournamentManager.on('tournament_setup', data => this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_SETUP, data));
+      this.tournamentManager.on('tournament_setup', data => {
+        this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_SETUP, data);
+        // Cyborg Garage: every new cup starts with a fully rested squad
+        // (condition is not reset - repairs carry across cup runs).
+        GarageService.resetEnergyForNewTournament().catch(err => {
+          console.error('[SimulationLoop] Garage energy reset error:', err);
+        });
+      });
       this.tournamentManager.on('tournament_cancelled', data => {
         this._emitTournamentEvent(EVENT_TYPES.TOURNAMENT_CANCELLED, data);
         // Refund stakes so cancelled tournaments don't strand pending bets.
@@ -312,6 +321,15 @@ class SimulationLoop extends EventEmitter {
           .then(() => SettlementService.settleFixtureBets(fixtureId))
           .catch(err => {
             console.error(`[SimulationLoop] Bet settlement error for fixture ${fixtureId}:`, err);
+          });
+
+        // Cyborg Garage: apply post-match wear + win reward for the user
+        // team. Idempotent (garage_match_results PK) and a no-op for
+        // fixtures that don't involve the garage team.
+        finalization
+          .then(() => GarageRewardService.processFixtureResult(fixtureId))
+          .catch(err => {
+            console.error(`[SimulationLoop] Garage reward error for fixture ${fixtureId}:`, err);
           });
       }
     }

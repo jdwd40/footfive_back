@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **Added** garage team picker + per-tournament energy reset (2026-07-07):
+  `PUT /api/garage/team` switches the user-controlled team (balance kept;
+  new team gets spares/garage state on first pick; old team's state stays
+  dormant for switching back), with a team dropdown on the `/garage` page.
+  Squad energy resets to 100 at every new tournament setup (condition is
+  NOT reset — repairs carry across cup runs).
+- **Fixed** admin `force-score` silently setting undefined scores on
+  wrong/missing body keys — now validates integer `home`/`away` ≥ 0 and
+  returns 400 (see `bugs.md`). Backend 537 tests green.
+
+- **Added** Cyborg Garage layer (2026-07-07, approved scope change): one
+  shared user-controlled team (Swirl City) with virtual Garage Credits,
+  7-player squad (5 active + 2 spares), Passive/Balanced/Aggressive modes,
+  energy/condition wear, energy packs, repairs, quadratic-cost stat
+  upgrades, stadium sizes on teams, and idempotent post-match win rewards
+  (round base + opponent tier + upset + away-stadium + history bonuses)
+  hooked into match finalization next to bet settlement. Match sim not
+  rewritten — garage only overrides the user team's input ratings; foul
+  side pick now honours an optional `foulRiskMultiplier` (defaults = old
+  behaviour). Migration `009_cyborg_garage.sql`; routes under
+  `/api/garage`; new frontend `/garage` page. Backend 534 tests green
+  (36 new), frontend 187 green; win/loss/pens flows verified live E2E.
+  (see `new_features.md`)
+
 - **Added** pre/post-match navigation flow (2026-07-07). Backend:
   `TournamentManager.getState()` exposes `nextRoundStartAt` (round breaks)
   and `nextTournamentStartAt` (tournament break) as epoch ms;

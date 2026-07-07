@@ -6,6 +6,10 @@ const seed = async (data) => {
     const teamsData = data && data.teams ? data.teams : require('./data/teams');
 
     // Start by clearing all existing data (in reverse dependency order)
+    await db.query('DROP TABLE IF EXISTS garage_transactions CASCADE;');
+    await db.query('DROP TABLE IF EXISTS garage_match_results CASCADE;');
+    await db.query('DROP TABLE IF EXISTS garage_players CASCADE;');
+    await db.query('DROP TABLE IF EXISTS garage CASCADE;');
     await db.query('DROP TABLE IF EXISTS bets CASCADE;');
     await db.query('DROP TABLE IF EXISTS wallet_transactions CASCADE;');
     await db.query('DROP TABLE IF EXISTS user_wallets CASCADE;');
@@ -31,6 +35,7 @@ const seed = async (data) => {
         highest_round_reached VARCHAR(50) DEFAULT NULL,
         recent_form VARCHAR(10) DEFAULT '',
         goal_diff INTEGER DEFAULT 0,
+        stadium_size VARCHAR(10) NOT NULL DEFAULT 'medium',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -221,6 +226,57 @@ const seed = async (data) => {
             placed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             settled_at TIMESTAMPTZ DEFAULT NULL,
             settlement_note TEXT DEFAULT NULL
+        );
+    `);
+
+    // Create Cyborg Garage tables (virtual garage credits only).
+    // NOTE: keep in sync with migration 009_cyborg_garage.sql. Garage DATA
+    // (garage row, spare players, stadium sizes) is initialised in code by
+    // GarageService.ensureInitialized() at server startup.
+    await db.query(`
+        CREATE TABLE garage (
+            garage_id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (garage_id = 1),
+            team_id INTEGER UNIQUE NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
+            balance NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+    `);
+
+    await db.query(`
+        CREATE TABLE garage_players (
+            player_id INTEGER PRIMARY KEY REFERENCES players(player_id) ON DELETE CASCADE,
+            is_active BOOLEAN NOT NULL DEFAULT FALSE,
+            mode VARCHAR(10) NOT NULL DEFAULT 'balanced'
+              CHECK (mode IN ('passive', 'balanced', 'aggressive')),
+            speed INTEGER NOT NULL DEFAULT 50 CHECK (speed BETWEEN 0 AND 100),
+            condition INTEGER NOT NULL DEFAULT 100 CHECK (condition BETWEEN 0 AND 100),
+            energy INTEGER NOT NULL DEFAULT 100 CHECK (energy BETWEEN 0 AND 100)
+        );
+    `);
+
+    await db.query(`
+        CREATE TABLE garage_match_results (
+            fixture_id INTEGER PRIMARY KEY REFERENCES fixtures(fixture_id) ON DELETE CASCADE,
+            won BOOLEAN NOT NULL,
+            reward_total NUMERIC(12,2) NOT NULL DEFAULT 0,
+            breakdown JSONB NOT NULL DEFAULT '{}',
+            player_changes JSONB NOT NULL DEFAULT '[]',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+    `);
+
+    await db.query(`
+        CREATE TABLE garage_transactions (
+            transaction_id SERIAL PRIMARY KEY,
+            amount NUMERIC(12,2) NOT NULL,
+            balance_after NUMERIC(12,2) NOT NULL,
+            transaction_type VARCHAR(30) NOT NULL
+              CHECK (transaction_type IN ('starting_funds', 'match_reward', 'energy_purchase', 'repair', 'upgrade')),
+            fixture_id INTEGER DEFAULT NULL,
+            player_id INTEGER DEFAULT NULL,
+            description TEXT DEFAULT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
     `);
 

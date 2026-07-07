@@ -142,6 +142,11 @@ class BracketManager {
     // Load ALL players in parallel
     await Promise.all(matchData.map(m => m.match.loadPlayers()));
 
+    // Cyborg Garage: apply lineup/mode/energy/condition modifiers to the
+    // user-controlled team's match (no-op for every other match).
+    const GarageService = require('../../services/GarageService');
+    await Promise.all(matchData.map(m => GarageService.applyToLiveMatch(m.match)));
+
     // Build result arrays
     const fixtures = [];
     const liveMatches = [];

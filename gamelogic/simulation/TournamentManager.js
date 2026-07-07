@@ -644,6 +644,10 @@ class TournamentManager extends EventEmitter {
           Date.now(),
           this.rules
         );
+        // Cyborg Garage: re-apply user-team modifiers on recovery
+        // (no-op for every other match).
+        const GarageService = require('../../services/GarageService');
+        await GarageService.applyToLiveMatch(match);
         this.liveMatches.push(match);
       }
 

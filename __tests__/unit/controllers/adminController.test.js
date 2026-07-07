@@ -301,6 +301,17 @@ describe('adminController', () => {
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(mockRes.json).toHaveBeenCalledWith({ error: 'Match 999 not found' });
     });
+
+    it('rejects missing or invalid scores instead of setting undefined', () => {
+      for (const body of [{}, { homeScore: 1, awayScore: 0 }, { home: -1, away: 0 }, { home: 1.5, away: 0 }]) {
+        mockReq.params = { fixtureId: '1' };
+        mockReq.body = body;
+        forceScore(mockReq, mockRes);
+        expect(mockRes.status).toHaveBeenCalledWith(400);
+        expect(mockLoop.forceSetScore).not.toHaveBeenCalled();
+        jest.clearAllMocks();
+      }
+    });
   });
 
   describe('forceEndMatch', () => {

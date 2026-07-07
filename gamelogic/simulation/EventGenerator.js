@@ -702,7 +702,13 @@ class EventGenerator {
 
   _handleFoul(minute) {
     const events = [];
-    const isHomeFoul = Math.random() < 0.5;
+    // Which side commits the foul. Even split by default; the Cyborg Garage
+    // can set foulRiskMultiplier on a team (aggressive lineups foul more,
+    // passive ones less). With both multipliers at 1 this is exactly 0.5,
+    // so non-garage matches are untouched.
+    const homeRisk = this.ctx.homeTeam.foulRiskMultiplier || 1;
+    const awayRisk = this.ctx.awayTeam.foulRiskMultiplier || 1;
+    const isHomeFoul = Math.random() < homeRisk / (homeRisk + awayRisk);
     const side = isHomeFoul ? 'home' : 'away';
     const team = isHomeFoul ? this.ctx.homeTeam : this.ctx.awayTeam;
     const opposingTeam = isHomeFoul ? this.ctx.awayTeam : this.ctx.homeTeam;

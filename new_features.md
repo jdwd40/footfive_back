@@ -2,6 +2,65 @@
 
 Newest first.
 
+## Cyborg Garage (2026-07-07) — COMPLETE
+
+Light, casual arcade-management layer around the existing 16-team knockout
+cup (explicitly approved scope change — see `project_plan.md` §3). One shared
+user-controlled lower-tier team (Swirl City), virtual Garage Credits only.
+
+Backend (`footfive_back`):
+
+- Migration `009_cyborg_garage.sql`: `teams.stadium_size`, `garage` (single
+  row: team + balance), `garage_players` (is_active, mode, speed, condition,
+  energy), `garage_match_results` (PK fixture_id = idempotent rewards),
+  `garage_transactions` (money audit). Seed + test-seed kept in sync.
+- `GarageService.ensureInitialized()` at server startup: creates the garage
+  with ₵500 starting funds, tops the squad up to 7 players (2 spares),
+  stamps stadium sizes on all teams from strength (C small → A+/A++ mega).
+- Squad: 7 players, exactly 5 active (validated), 2 spares, rotation only
+  between matches. Modes: Passive / Balanced / Aggressive (attack/defence/
+  speed modifiers + energy drain 12/20/30 + foul-risk + damage-risk).
+- Match integration (no sim rewrite): garage overrides the user team's
+  input ratings from the active 5's effective stats (mode × energy ×
+  condition effectiveness), filters commentary players to the active 5,
+  and biases foul-side selection by `foulRiskMultiplier` (defaults keep
+  every other match byte-identical). Applied at round creation and recovery.
+- Post-match processing hooked next to bet settlement in `SimulationLoop`
+  (plus a startup sweep): drains energy + damages condition for the active
+  5 (win or lose), credits win rewards inside one DB transaction.
+  Idempotent — a fixture can never pay twice.
+- Rewards: round base (R16 200 / QF 350 / SF 600 / Final 1000) + tier bonus
+  (A- 100 … A++ 400) + upset bonus (150) + away stadium bonus (large 75 /
+  mega 150) + opponent history bonus (wins + 25×championships, capped 200).
+- Money sinks (all balance-validated, transactional, never negative):
+  small energy pack (+25, ₵40), full squad recharge (₵150), repair
+  (₵2/condition point), stat upgrade `cost = 20 + stat² × 0.15` (attack/
+  defence in `players`, speed in `garage_players`; cap 99).
+- Routes under `/api/garage`: state, team switch (`PUT /team` — balance
+  kept, new team garage-readied, old team's state stays dormant), lineup,
+  mode, energy, repair, upgrade, reward summaries (`/rewards/latest`,
+  `/rewards/:fixtureId`), idempotent `/rewards/:fixtureId/process`,
+  transactions.
+- Squad energy resets to 100 at every new tournament setup (hooked on
+  `tournament_setup`); condition is NOT reset so repairs matter across
+  cup runs.
+- All tunables in `gamelogic/garage/garageConfig.js`; pure calculations in
+  `gamelogic/garage/garageCalc.js`.
+
+Frontend (`footfive_front`):
+
+- New `/garage` page (navbar "Garage"): team picker dropdown (confirm
+  before switching), bank balance, 7 player cards with
+  attack/defence/speed (tap to upgrade, price shown), energy/condition bars,
+  mode chips, active/spare toggle with confirm-lineup flow, small pack /
+  full recharge / repair buttons, pre-match panel (opponent, round,
+  home/away, stadium, low energy/condition warnings), post-match reward
+  breakdown + squad wear summary. Mobile-first.
+
+Tests: 17 unit (reward/cost/mode/energy calcs) + 19 integration (API,
+lineup validation, money validation, idempotent rewards, sim overrides).
+Full backend suite 534 green; frontend 187 green.
+
 ## Pre-match & post-match navigation (2026-07-07) — COMPLETE
 
 Countdown-driven waiting states between fixtures screen and live match view.

@@ -5,12 +5,16 @@ const format = require('pg-format');
 const teamsData = require('./data/teams');
 
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
-const MIGRATION_ORDER = ['001_match_system.sql', '002_add_event_types.sql', '003_bracket_system.sql', '004_tournament_state.sql', '005_expand_match_event_types.sql', '006_expand_match_event_types.sql', '007_add_match_observation.sql', '008_betting_system.sql'];
+const MIGRATION_ORDER = ['001_match_system.sql', '002_add_event_types.sql', '003_bracket_system.sql', '004_tournament_state.sql', '005_expand_match_event_types.sql', '006_expand_match_event_types.sql', '007_add_match_observation.sql', '008_betting_system.sql', '009_cyborg_garage.sql'];
 
 const setupTestDatabase = async () => {
     try {
         console.log('Setting up test database...');
         // Drop all app tables so migrations run from clean state (idempotent across runs)
+        await db.query('DROP TABLE IF EXISTS garage_transactions CASCADE;');
+        await db.query('DROP TABLE IF EXISTS garage_match_results CASCADE;');
+        await db.query('DROP TABLE IF EXISTS garage_players CASCADE;');
+        await db.query('DROP TABLE IF EXISTS garage CASCADE;');
         await db.query('DROP TABLE IF EXISTS bets CASCADE;');
         await db.query('DROP TABLE IF EXISTS wallet_transactions CASCADE;');
         await db.query('DROP TABLE IF EXISTS user_wallets CASCADE;');
@@ -120,6 +124,10 @@ const cleanupTestDatabase = async () => {
         // Truncate in dependency order so each test starts from clean state
         await db.query(`
             TRUNCATE TABLE
+                garage_transactions,
+                garage_match_results,
+                garage_players,
+                garage,
                 bets,
                 wallet_transactions,
                 user_wallets,
