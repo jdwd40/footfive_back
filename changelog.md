@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Added** pre/post-match navigation flow (2026-07-07). Backend:
+  `TournamentManager.getState()` exposes `nextRoundStartAt` (round breaks)
+  and `nextTournamentStartAt` (tournament break) as epoch ms;
+  `GET /api/live/fixtures` returns null score/minute for SCHEDULED fixtures
+  (no fake 0-0 pre-kickoff). Frontend: kickoff countdowns on Live Dashboard
+  header + Fixtures "Coming Up" section (`KickoffCountdown.jsx`,
+  `getNextKickoffAt`/`formatCountdown`); Live View opens pre-kickoff with
+  teams, "Kickoff in MM:SS" and pre-match panel instead of 0-0 / 0' / empty
+  feed; auto-return to `/live` 60s after the final match message is visible
+  (skipped for matches opened already-finished; manual back cancels).
+  Score sync, shootout separation, pacing, round progression untouched.
+  Frontend 187 tests green; backend unit 352 green.
+
 - **Added** virtual betting system (virtual/dummy funds only, no real money):
   user accounts (bcrypt + JWT), virtual wallets with dummy fund top-ups and
   transaction history, pre-match / live in-play / championship winner betting,

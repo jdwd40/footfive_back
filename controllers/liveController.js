@@ -258,11 +258,12 @@ const getLiveFixtures = async (req, res) => {
         };
         result.winnerId = fixture.winnerTeamId;
       } else {
-        // Scheduled match - not yet started
+        // Scheduled match - not yet started. Score is null (not 0-0) so the
+        // frontend never renders a fake active score before kickoff.
         result.state = 'SCHEDULED';
         result.isFinished = false;
-        result.minute = 0; // Always include minute
-        result.score = { home: 0, away: 0 };
+        result.minute = null;
+        result.score = { home: null, away: null };
         result.penaltyScore = { home: 0, away: 0 };
         result.winnerId = null;
       }

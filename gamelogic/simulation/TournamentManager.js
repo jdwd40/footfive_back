@@ -693,7 +693,15 @@ class TournamentManager extends EventEmitter {
       activeMatches: this.liveMatches.length,
       winner: this.winner ? { id: this.winner.id, name: this.winner.name } : null,
       runnerUp: this.runnerUp ? { id: this.runnerUp.id, name: this.runnerUp.name } : null,
-      lastCompleted: this.lastCompletedTournament
+      lastCompleted: this.lastCompletedTournament,
+      // Kickoff timing (epoch ms) so the frontend can show real countdowns.
+      // Only set while the corresponding break is running.
+      nextRoundStartAt: this.scheduler.isBreakState(this.state)
+        ? (this.scheduler.breakEndTime ?? null)
+        : null,
+      nextTournamentStartAt: this.state === TOURNAMENT_STATES.TOURNAMENT_BREAK
+        ? (this.scheduler.tournamentBreakEndTime ?? null)
+        : null
     };
   }
 

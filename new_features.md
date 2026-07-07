@@ -2,6 +2,25 @@
 
 Newest first.
 
+## Pre-match & post-match navigation (2026-07-07) — COMPLETE
+
+Countdown-driven waiting states between fixtures screen and live match view.
+
+- Fixtures screen (Live Dashboard + Fixtures page): real kickoff countdown
+  during round/tournament breaks ("Next round kicks off in MM:SS", "New cup
+  drops in MM:SS"), fed by new `nextRoundStartAt` / `nextTournamentStartAt`
+  in tournament status. Fallback copy ("Preparing next fixture…") when no
+  timestamp yet.
+- Live View pre-kickoff: opens normally for SCHEDULED fixtures; shows teams,
+  "Kickoff Soon" badge, countdown, "Players entering the neon cage…"
+  placeholder. No 0-0 active score, no 0' minute, no empty feed. Match
+  starts via existing SSE `match_start` / poll flow when countdown ends.
+- Backend stops fabricating 0-0 for SCHEDULED fixtures in
+  `GET /api/live/fixtures` (null score/minute).
+- Auto-return: 60s after `match_end`/`shootout_end` message is visible,
+  navigate back to fixtures screen. Never during play/ET/shootout/reveal
+  queue; never for matches opened already finished; manual back cancels.
+
 ## Virtual betting system (2026-07-04) — ACTIVE
 
 Optional virtual betting layer across backend and frontend. Virtual/dummy
