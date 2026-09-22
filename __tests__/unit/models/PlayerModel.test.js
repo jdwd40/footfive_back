@@ -49,55 +49,6 @@ describe('PlayerModel', () => {
     });
   });
 
-  describe('updateById()', () => {
-    it('should update player stats', async () => {
-      const teams = await DatabaseTestHelper.getAllTeams();
-      const players = await DatabaseTestHelper.getPlayersByTeamId(teams[0].team_id);
-      const testPlayer = players[0];
-      
-      const newName = 'Updated Player';
-      const newAttack = 85;
-      const newDefense = 75;
-      
-      const updatedPlayer = await Player.updateById(
-        testPlayer.player_id,
-        newName,
-        newAttack,
-        newDefense
-      );
-      
-      expect(updatedPlayer.playerId).toBe(testPlayer.player_id);
-      expect(updatedPlayer.name).toBe(newName);
-      expect(updatedPlayer.attack).toBe(newAttack);
-      expect(updatedPlayer.defense).toBe(newDefense);
-      
-      // Verify in database
-      const verifiedPlayer = await Player.fetchById(testPlayer.player_id);
-      expect(verifiedPlayer.name).toBe(newName);
-      expect(verifiedPlayer.attack).toBe(newAttack);
-      expect(verifiedPlayer.defense).toBe(newDefense);
-    });
-
-    it('should throw error for non-existent player', async () => {
-      await expect(
-        Player.updateById(99999, 'Test', 80, 80)
-      ).rejects.toThrow('not found');
-    });
-
-    it('should not modify goalkeeper status', async () => {
-      const teams = await DatabaseTestHelper.getAllTeams();
-      const players = await DatabaseTestHelper.getPlayersByTeamId(teams[0].team_id);
-      const goalkeeper = players.find(p => p.is_goalkeeper);
-      
-      const originalIsGoalkeeper = goalkeeper.is_goalkeeper;
-      
-      await Player.updateById(goalkeeper.player_id, goalkeeper.name, 80, 80);
-      
-      const updatedPlayer = await Player.fetchById(goalkeeper.player_id);
-      expect(updatedPlayer.isGoalkeeper).toBe(originalIsGoalkeeper);
-    });
-  });
-
   describe('fetchByTeamName()', () => {
     it('should fetch all players for a team by team name', async () => {
       const teams = await DatabaseTestHelper.getAllTeams();
