@@ -1,4 +1,13 @@
-# FootFive Backend
+# FootFive Backend (historical implementation)
+
+> **Legacy repository:** This contains an earlier Node.js/Express/PostgreSQL implementation of FootFive. The current FootFive / Proball Manager application is developed separately in a private repository. **Do not assume this code is the version running in production.**
+
+- [View the current FootFive application](https://jdwd40.com/footfive/)
+- [Developer's GitHub profile and project overview](https://github.com/jdwd40)
+
+---
+
+## Earlier backend design
 
 Node.js / Express REST API backed by PostgreSQL. It runs a real-time knockout tournament simulator and exposes JSON and SSE under `/api`.
 
